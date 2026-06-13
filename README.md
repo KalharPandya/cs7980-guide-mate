@@ -2,9 +2,13 @@
 
 CS7980 project — TurtleBot 4 guide robot.
 
-## Docs
+## Documentation
 
-- [docs/network/nuwave-setup.md](docs/network/nuwave-setup.md) — connecting the robot
-  to NUwave (802.1X), ROS 2 over the campus network, what works / what doesn't, and
-  every fix applied (regulatory domain, stale-IP cleanup, discovery-server corruption,
-  NTP).
+See [docs/README.md](docs/README.md) for the full index. Highlights:
+
+- [Network overview](docs/network/README.md) — two-computer architecture, discovery
+  model, addressing, time sync
+- [Connecting to NUwave](docs/network/nuwave-connection.md) — step-by-step, including
+  the 5 GHz regulatory-domain fix
+- [ROS 2 over NUwave](docs/network/ros2-over-nuwave.md) — what works / what doesn't,
+  the four root causes, and the working laptop setup

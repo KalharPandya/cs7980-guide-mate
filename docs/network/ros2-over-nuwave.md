@@ -58,15 +58,19 @@ Notes:
 ---
 
 ## Root causes found & fixed (the debugging trail)
-Three separate problems, each masked the next:
+Four separate problems, each masked the next:
 
-1. **Robot couldn't see NUwave at all.** WiFi regulatory domain was unset (`regdom=00`), which disables 5 GHz; NUwave here is 5 GHz. → Set country to **US**. See [nuwave-connection.md](nuwave-connection.md).
+1. **Robot couldn't see NUwave at all.** WiFi regulatory domain was unset (`regdom=00`), which disables 5 GHz; the strong nearby NUwave APs are 5 GHz. → Set country to **US**. See [nuwave-connection.md](nuwave-connection.md).
 
-2. **Discovery worked but zero data — attempt 1.** The laptop super-client was configured via an **XML profile (`FASTRTPS_DEFAULT_PROFILES_FILE`)** that **silently did not apply** (behaved as a plain client → no full graph). → Use the **`ROS_SUPER_CLIENT=True` env var** instead. This restored topic discovery (all 28 topics).
+2. **All Create 3 base topics silent** (`battery_state`, `odom`, `dock_status`, every motion command/action) — found robot-side during the compatibility check, *unrelated to NUwave*. The Create 3 was configured to register with a discovery server at **`192.168.50.31:11811`** — a stale IP from the previous lab network, unreachable over its wired link. → Fixed via the base's web config at `http://192.168.186.2/ros-config`: set the discovery server to **`192.168.186.3:11811`** (the Pi's usb0 address), then `curl -X POST http://192.168.186.2/api/restart-app`. Base topics returned within ~2 min.
 
-3. **Discovery worked, still zero data — the real bug.** The robot's FastDDS **discovery-server database was corrupted**: it received the laptop's endpoint announcements but **failed to relay them** to the robot's own nodes (confirmed robot-side via tcpdump + `DISCOVERY_DATABASE` error logs; the robot reported `Subscription count: 0` for the laptop's reader, and a new laptop-published topic never appeared in the robot's own graph). → **Restart the discovery server + the full robot ROS stack.** After restart, data flowed immediately.
+3. **Discovery worked but zero data — attempt 1.** The laptop super-client was configured via an **XML profile (`FASTRTPS_DEFAULT_PROFILES_FILE`)** that **silently did not apply** (behaved as a plain client → no full graph). → Use the **`ROS_SUPER_CLIENT=True` env var** instead. This restored topic discovery (all 28 topics).
 
-### How #3 presented (so you recognize it again)
+4. **Discovery worked, still zero data — the real bug.** The robot's FastDDS **discovery-server database was corrupted**: it received the laptop's endpoint announcements but **failed to relay them** to the robot's own nodes (confirmed robot-side via tcpdump + `DISCOVERY_DATABASE` error logs; the robot reported `Subscription count: 0` for the laptop's reader, and a new laptop-published topic never appeared in the robot's own graph). → **Restart the discovery server + the full robot ROS stack** (`sudo systemctl restart discovery && sleep 3 && sudo systemctl restart turtlebot4`). After restart, data flowed immediately.
+
+Health check for #4 (run on the robot): `sudo journalctl -u discovery | grep -c "DISCOVERY_DATABASE Error"` — non-zero and growing means restart the discovery service.
+
+### How #4 presented (so you recognize it again)
 - `ros2 topic list` from the laptop shows the full graph. ✅
 - `ros2 topic echo <topic>` hangs forever, no data. ❌
 - On the robot: `ros2 topic info -v <topic>` shows `Subscription count: 0` even while the laptop subscriber is live.
@@ -76,8 +80,10 @@ Three separate problems, each masked the next:
 ---
 
 ## Other findings
-- **Clocks: fine.** Robot NTP-synced (chrony, stratum 3, ~0.5 ms off); laptop NTP-synced. Timestamps/TF consistent. (Robot timezone is cosmetically `America/Los_Angeles` — does not affect ROS, which uses UTC epoch.)
+- **Clocks: fine once booted and online.** Robot NTP-synced (chrony → `pool.ntp.org`, ~µs off); laptop NTP-synced. Timestamps/TF consistent. (Robot timezone is cosmetically `America/Los_Angeles` — does not affect ROS, which uses UTC epoch.) **Caveat:** the Pi has no RTC and boots with a stale clock until WiFi connects — see [network README](README.md#time-sync).
+- **Robot-side scripting gotcha:** `/etc/turtlebot4/setup.bash` force-sets `ROS_SUPER_CLIENT` from a TTY check (`[ -t 0 ]`), so non-interactive shells get `False` and see an empty graph. In scripts on the robot, `export ROS_SUPER_CLIENT=True` **after** sourcing it.
 - **Bandwidth caution:** camera `image_raw` topics can saturate WiFi — test last, with `--once`, and prefer `compressed` variants.
+- **OAK-D camera (robot 468):** throws recurring `X_LINK_ERROR` communication failures — a hardware/USB issue, unrelated to networking; camera topics exist but the device is unhealthy.
 - **Create 3:** stays on the wired USB link (Discovery Server), correctly never on NUwave.
 
 ---
@@ -86,7 +92,8 @@ Three separate problems, each masked the next:
 - [ ] Robot Pi on NUwave (5 GHz enabled, `regdom=US`).
 - [ ] Laptop on NUwave; env vars set as above (`ROS_SUPER_CLIENT=True`, `ROS_DISCOVERY_SERVER=<robot-ip>:11811`).
 - [ ] One `ros2 daemon` running with that env.
-- [ ] If discovery works but data doesn't → restart the robot's discovery server + stack (root cause #3).
+- [ ] If discovery works but data doesn't → restart the robot's discovery server + stack (root cause #4).
+- [ ] If base topics (battery/odom/cmd_vel) are silent while Pi topics work → check the Create 3's discovery-server address (root cause #2).
 - [ ] Robot IP is DHCP — confirm current IP on the robot display if it changes.
 
 ## Reproduce the key tests
