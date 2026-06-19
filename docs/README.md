@@ -9,6 +9,10 @@ Working documentation for the cs7980 TurtleBot 4 project.
 - [Connecting a TurtleBot 4 to NUwave](network/nuwave-connection.md) — step-by-step, including the 5 GHz fix that was the real blocker
 - [ROS 2 over NUwave — what works and what doesn't](network/ros2-over-nuwave.md) — compatibility findings
 
+### Camera
+- [Camera overview](camera/README.md) — the OAK-D-LITE depth/RGB camera
+- [OAK-D-LITE camera — test, findings, fixes, pending issues](camera/oak-d-camera-test.md) — both streams work on USB 2; USB 3 boot-loop root-caused to power; bandwidth-limited frame drops
+
 ---
 
 ## ⚠️ Security note
