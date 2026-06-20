@@ -1,0 +1,30 @@
+# OAK-D-LITE config tuned for depth mapping on robot 468.
+# Key deviations from the stock oakd_lite.yaml:
+#   - i_usb_speed: HIGH  -> force USB 2.0 (USB3/SUPER_PLUS boot-loops here; power-limited)
+#   - depth (stereo) published at low resolution + low fps to fit the USB2 bandwidth
+#   - RGB preview/full image disabled to save bandwidth (we only need depth for mapping)
+/oakd:
+  ros__parameters:
+    camera:
+      i_enable_imu: false
+      i_enable_ir: true
+      i_nn_type: none
+      i_pipeline_type: RGBD
+      i_usb_speed: HIGH
+    rgb:
+      i_board_socket_id: 0
+      i_fps: 5.0
+      i_enable_preview: false
+      i_publish_topic: false
+      i_low_bandwidth: true
+      i_resolution: '1080'
+    stereo:
+      i_publish_topic: true
+      i_align_depth: false
+      i_resolution: '400'
+      i_fps: 5.0
+      i_width: 640
+      i_height: 400
+      i_subpixel: false
+      i_low_bandwidth: false
+    use_sim_time: false

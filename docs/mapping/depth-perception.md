@@ -95,8 +95,8 @@ original "depth in the mapping" goal).
 
 **What it does, per frame:**
 1. **Collapse** the depth image per column to the nearest pixel inside the height band
-   (`camera_height − (v−cy)·z/fy ∈ [0.06, 0.50] m`) — drops the floor, keeps the metal base.
-   One vectorised numpy pass over 640 columns.
+   (`height ∈ [0.06, 0.50] m`) — drops the floor, keeps the metal base. The floor reference is
+   **data-driven** (see below), not assumed. One vectorised numpy pass over 640 columns.
 2. **Back-project** those ≤640 points and transform them into the **lidar frame** with a
    one-time static TF lookup (`scan_frame ← optical_frame`). Working in x/y rather than bearing
    is what accounts for the ~2 cm lidar↔camera offset.
@@ -123,6 +123,56 @@ the costmap only. With the **fast collapse** (fresh ~10 Hz) and **min-combine of
 confident static base**, injecting becomes reasonable — but it now touches **localization**,
 so the remaining step is an on-robot sanity check (map stays crisp, no double-walls). The
 `scan`/`scan_fused` split keeps it instantly revertible.
+
+## Ground (floor) detection — data-driven
+Removing the floor is the make-or-break step: leak it and the robot treats clear floor as a
+wall; over-cut it and you lose the low glass base. A *fixed* height band assumes the camera is
+perfectly level at an **exactly** known height over a flat floor — and the OAK intrinsics here
+are only approximate (the camera_info mismatch above), so that assumption is shaky.
+
+Instead `depth_lidar_fusion` fits the floor **from each frame**. For a level camera every floor
+pixel obeys a straight line in (inverse-depth, row) space:
+
+```
+v = A·(1/z) + B          with  A = camera_height·fy,  B ≈ cy
+```
+
+independent of column. We take the **per-row median inverse-depth** of the lower image (the
+median rejects the minority of obstacle pixels in each row), robustly fit that line (least
+squares + MAD outlier rejection), EMA-smooth it across frames, and compute height above the
+**fitted** floor: `height = (A + (B − v)·z)/fy`. This self-calibrates camera **height and
+pitch** every frame. A sanity bound on `A` (camera height ∈ [0.10, 0.45] m) plus a frame
+counter make it **fall back** to the assumed model when the floor isn't reliably in view, so it
+never locks onto a near wall as if it were the floor.
+
+**Offline-validated:** with a deliberately wrong assumed height (0.35 m vs a true 0.244 m
+floor), the fixed band leaked the **entire floor** (134k px) as fake obstacles, while the
+data-driven fit recovered the true 0.244 m → **zero floor leak**, base kept. It also tracked a
+pitched floor (recovered the shifted intercept) and fell back correctly facing a wall.
+Cost ≈ +2–4 ms/frame. Toggle with `ground_estimation`; tune via the `ground_*` params.
+
+## Drops (negative obstacles)
+A guide robot must also not drive off a ledge or down stairs — the mirror image of a positive
+obstacle. Two depth layers ride on the same fitted floor, plus a hardware backstop:
+
+1. **Below-floor returns ("convert negatives to positives").** A return whose height is
+   `−0.50 … −0.06 m` (below the plane) is flagged like a positive one. One line; catches a
+   *visible* step-down.
+2. **Missing-floor edge (`_drop_edges`).** The important one. Because the camera is mounted
+   **level**, a drop's bottom is **occluded behind its lip** — so a real ledge gives **no
+   return where the floor should be**, not a below-plane return. So we walk each column near→far
+   along the expected floor `z = A/(v−B)`; if it goes missing (no return / falls away) for
+   several consecutive rows *before* any nearer surface occludes it, we flag the **near edge**
+   as an obstacle (the cliff thus becomes a positive in the costmap, detected at the right
+   place). `abs()` alone would silently miss exactly these stairs/cliffs.
+3. **Create 3 cliff sensors (pending).** The level camera only sees the floor from ~0.44 m out,
+   so a foot-level drop is in its blind zone — the base's hardware cliff IR (the `CLIFF` hazard,
+   same channel `glass_guard` reads for `BUMP`) must backstop that. *(TODO, needs the robot.)*
+
+**Offline-validated:** a cliff (void) is flagged at the correct near-edge range (~1.5 m), a
+partial cliff is localized to the right columns, flat floor and walls produce **zero** false
+drops, and `_depth_cb` emits positive + drop obstacles together end-to-end. Toggle
+`drop_detection`; tune `drop_*`.
 
 ## Parameters worth knowing
 | Where | Param | Value | Why |

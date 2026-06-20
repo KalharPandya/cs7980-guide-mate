@@ -1,0 +1,13 @@
+# colcon / ROS 2 workspace build artifacts
+/build/
+/install/
+/log/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Saved maps (regenerable output, keep out of source)
+*.pgm
