@@ -27,6 +27,8 @@ Fixed frame is **`map`**. The robot drives ~metres from the map origin, so the o
 | **LaserScan (Depth)** | `/turtlebot468/oakd/scan` | blue points — the height-filtered depth scan that catches glass. |
 | **PointCloud2 (OAK-D)** | `/turtlebot468/oakd/points` | depth cloud, coloured by height (Z). |
 | **OAK-D Stereo Image** | `/turtlebot468/oakd/stereo/image_raw` | raw depth/stereo image panel. |
+| **Frontiers / Goal (BFS)** | `/turtlebot468/frontier_markers` | the explorer's frontier clusters + current goal — **watch this to see mapping progress** (which way BFS is sending the robot). |
+| **Nav2 Plan** | `/turtlebot468/plan` | **cyan** line — the global path Nav2 is currently driving toward the chosen frontier. |
 | **RobotModel (Lite)** | `/lite_description` | the TB4 **Lite** URDF — see the model gotcha below. |
 | **TF** | `/turtlebot468/tf(_static)` | frame axes; chain is `map → odom → base_link → …`. |
 

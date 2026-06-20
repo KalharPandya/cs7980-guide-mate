@@ -152,6 +152,32 @@ Visualization Manager:
         Value: /turtlebot468/oakd/points
       Use Fixed Frame: true
       Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Frontiers / Goal (BFS)
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /turtlebot468/frontier_markers
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 0; 255; 255
+      Enabled: true
+      Line Style: Lines
+      Name: Nav2 Plan
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /turtlebot468/plan
+      Value: true
     - Class: rviz_default_plugins/Image
       Enabled: true
       Max Value: 1
