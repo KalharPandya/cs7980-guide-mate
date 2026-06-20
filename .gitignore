@@ -11,3 +11,13 @@ __pycache__/
 
 # Saved maps (regenerable output, keep out of source)
 *.pgm
+
+# AWS IoT credentials & device package — NEVER commit (see docs/aws-iot/README.md)
+*.pem
+*.key
+*.crt
+*-Policy
+*AccessToken*
+connect_device_package.zip
+/aws-iot-device-sdk-python-v2/
+start.sh

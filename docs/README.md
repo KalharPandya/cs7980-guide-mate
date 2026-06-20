@@ -23,6 +23,12 @@ Working documentation for the cs7980 TurtleBot 4 project.
 - [Power overview](power/README.md) — battery-powered robot; only `battery_state` metering; ~14 W idle
 - [Power consumption & saving](power/power-saving.md) — measured draw, what's always running, and the working "park" (stop SLAM → lidar auto-idles + CPU freed); what does *not* work
 
+### AWS IoT Core (cloud connectivity)
+- [AWS IoT Core overview](aws-iot/README.md) — what we set up on robot 468, where it could help, and the security note on keeping credentials out of the repo
+- [What IoT Core is — building blocks](aws-iot/iot-core-overview.md) — things, certs/policies, the MQTT broker, shadows, rules, jobs, Greengrass; how our files map to each
+- [IoT Core ↔ other AWS services + EC2 access](aws-iot/service-integration.md) — the Rules Engine, service-to-device, EventBridge, and the three ways EC2 can reach IoT Core
+- [Secure Tunneling — remote SSH to a robot](aws-iot/secure-tunneling.md) — source/destination tokens, `localproxy`, the MQTT auto-delivery path, and why it isn't connected yet
+
 ---
 
 ## ⚠️ Security note
