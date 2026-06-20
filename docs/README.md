@@ -16,6 +16,7 @@ Working documentation for the cs7980 TurtleBot 4 project.
 ### Mapping & navigation
 - [Autonomous mapping — overview](mapping/README.md) — BFS frontier explorer + SLAM + Nav2, glass handling, how to run, status
 - [Depth camera for mapping](mapping/depth-perception.md) — using the OAK-D depth to see glass the lidar can't: FOV, the height-filtered pipeline, compute, and the planned lidar-scan injection
+- [Viewing live mapping in RViz](mapping/rviz-visualization.md) — laptop-side RViz for the map, lidar, depth scan and cloud; the tf-remap, QoS, and Lite-vs-Standard model gotchas
 - Code: [`src/guide_mate_explorer`](../src/guide_mate_explorer) — the `bfs_explorer` and `glass_guard` nodes
 
 ### Power & battery

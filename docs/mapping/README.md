@@ -77,6 +77,9 @@ ros2 topic echo /turtlebot468/exploration_complete
 ls -la ~/maps/
 ```
 
+To **watch** the map, lidar, depth scan and cloud build live from a laptop, see
+[Viewing live mapping in RViz](rviz-visualization.md).
+
 ## Hard-won constraints (read before debugging)
 - **Namespaced TF** needs `('/tf','tf'),('/tf_static','tf_static')` remaps or lookups fail silently. See [`turtlebot4-namespaced-tf-remap`](../../CLAUDE.md).
 - **Pi 4 is compute-bound** — SLAM ≈ 1 core; running SLAM + full depth pointcloud + Nav2 together saturates it. We freed ~25% by killing diagnostics/joy/teleop. The fast depth-collapse (see depth doc) is the on-robot answer; offloading to a laptop is the long-term one.
