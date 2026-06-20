@@ -13,6 +13,15 @@ Working documentation for the cs7980 TurtleBot 4 project.
 - [Camera overview](camera/README.md) — the OAK-D-LITE depth/RGB camera
 - [OAK-D-LITE camera — test, findings, fixes, pending issues](camera/oak-d-camera-test.md) — both streams work on USB 2; USB 3 boot-loop root-caused to power; bandwidth-limited frame drops
 
+### Mapping & navigation
+- [Autonomous mapping — overview](mapping/README.md) — BFS frontier explorer + SLAM + Nav2, glass handling, how to run, status
+- [Depth camera for mapping](mapping/depth-perception.md) — using the OAK-D depth to see glass the lidar can't: FOV, the height-filtered pipeline, compute, and the planned lidar-scan injection
+- Code: [`src/guide_mate_explorer`](../src/guide_mate_explorer) — the `bfs_explorer` and `glass_guard` nodes
+
+### Power & battery
+- [Power overview](power/README.md) — battery-powered robot; only `battery_state` metering; ~14 W idle
+- [Power consumption & saving](power/power-saving.md) — measured draw, what's always running, and the working "park" (stop SLAM → lidar auto-idles + CPU freed); what does *not* work
+
 ---
 
 ## ⚠️ Security note
