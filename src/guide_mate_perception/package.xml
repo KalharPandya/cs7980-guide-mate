@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>guide_mate_perception</name>
+  <version>0.1.0</version>
+  <description>C++ perception nodes for guide-mate. depth_lidar_fusion: a faithful
+    C++ port of the Python node (folds OAK-D depth into the lidar scan -> scan_fused),
+    ~10x cheaper TF/image handling than rclpy. Coexists with the Python
+    guide_mate_explorer package over DDS.</description>
+  <maintainer email="kalharpandya38@gmail.com">Kalhar Pandya</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>nav2_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>irobot_create_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

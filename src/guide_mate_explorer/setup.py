@@ -28,6 +28,9 @@ setup(
             'bfs_explorer = guide_mate_explorer.bfs_explorer:main',
             'glass_guard = guide_mate_explorer.glass_guard:main',
             'depth_lidar_fusion = guide_mate_explorer.depth_lidar_fusion:main',
+            # Combined single-process runner (glass_guard + bfs_explorer) to pay
+            # the per-node rclpy/DDS overhead once. Individual entries above stay.
+            'guide_mate_bringup = guide_mate_explorer.combined_node:main',
         ],
     },
 )

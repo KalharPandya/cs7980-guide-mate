@@ -1,8 +1,15 @@
-# Power consumption & saving — robot 468
+# Power & Battery
 
-Robot 468 is battery-powered, and the full perception/SLAM stack runs **continuously whether or not the robot is moving**. Nothing in the stack gates on motion. This doc records what we measured, what's always running and why, and the one verified way to actually cut power when parked.
+Robot 468 is battery-powered (the iRobot Create 3 base battery feeds both the Create 3 *and* the Raspberry Pi 4 over the USB-C link). The full perception/SLAM stack runs **continuously regardless of motion** — nothing in the stack gates on movement — so understanding and reducing idle draw matters for runtime. This doc records what we measured, what's always running and why, and the one verified way to actually cut power when parked.
 
 > All commands assume the `turtlebot468` namespace. Source ROS first: `source /opt/ros/humble/setup.bash`.
+
+## Quick facts
+- **Only power sensor on the robot:** `/turtlebot468/battery_state` (whole-pack, aggregate — no per-component metering exists on stock TB4).
+- **Measured idle draw (undocked, stationary, full stack):** **~14 W** (−1.0 A @ ~14.15 V).
+- **Pack:** ~1.968 Ah / ~14.4 V ≈ 28 Wh → roughly **2 h** idle runtime from full, before driving load.
+- **Battery current sign:** negative = discharging (real load, only visible **undocked**); positive = charging.
+- **Working park method:** stop the SLAM process → lidar `auto_standby` idles the motor + the ~95% SLAM CPU core is freed. Saves ~0.15 A / ~2 W (~14%).
 
 ---
 
@@ -119,4 +126,4 @@ A parked/low-power robot is **blind**: no obstacle perception, no mapping, no lo
 - [ ] Decide if it's worth it: ~2 W for a blind robot. Likely only for long *known-stationary* periods (e.g. waiting/charging-adjacent idle), not routine stops.
 - [ ] If pursued, automate: a node that watches `cmd_vel`/`odom`, parks (stop SLAM + camera) after N s stationary, and restores + waits for lidar spin-up on the next motion/wake.
 - [ ] Bigger lever is elsewhere: the always-on floor (~12 W) dominates. Reducing it would mean offloading SLAM/perception to the laptop rather than parking on-robot.
-- [ ] Camera is bus-powered with no per-port control on the Pi 4 — full camera power-down would need a hardware change (see [camera test doc](../camera/oak-d-camera-test.md)).
+- [ ] Camera is bus-powered with no per-port control on the Pi 4 — full camera power-down would need a hardware change (see [camera doc](camera.md)).

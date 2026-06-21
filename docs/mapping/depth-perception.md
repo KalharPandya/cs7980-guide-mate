@@ -7,7 +7,12 @@ low objects, overhangs), and turn it into obstacles for mapping/navigation on ro
 base (~5–30 cm) while dropping the floor. Validated: it sees the base at ~0.32 m. The full
 pointcloud path is slow on the Pi (~0.9 Hz), so the `depth_lidar_fusion` node does a cheap
 **vertical-collapse** (~16 ms/frame) and **injects into the lidar scan** (`scan_fused`) so
-glass enters the SLAM map. Built and offline-validated; on-robot localization check pending.
+glass enters the SLAM map. `scan_fused` is now the **single fused obstacle source for both
+Nav2 and SLAM** (the separate pointcloud→`oakd/scan` costmap path is now legacy). Fusion is
+**hardware-validated on robot 468** (facing the glass wall: depth saw the base on **205 beams
+0.37–1.63 m** where the lidar was blind/saw through; fusion **injected 195**); a C++ rclcpp
+port (`guide_mate_perception`) mirrors the Python numerics ~10× cheaper on the Pi-4. The
+on-robot SLAM-map localization sanity check is still pending.
 
 ---
 
@@ -19,9 +24,10 @@ texture), so depth detects the door *by its frame*; the bumper (`glass_guard`) b
 fully-transparent gaps.
 
 ## Camera bring-up
-- Driver: `depthai_ros_driver` (standard). The camera does **not** start by default and
-  **boot-loops on USB3** (power) — bring it up forced to **USB2** (`i_usb_speed:=HIGH`),
-  no NN (`i_nn_type:=none`), depth only. See [`../camera/oak-d-camera-test.md`](../camera/oak-d-camera-test.md).
+- Driver: `depthai_ros_driver` (standard). The camera does **not** start by default; the
+  daily wedge is the kernel `usbfs_memory_mb=16` default (fix: 256 — **not** power). Run
+  depth-only (`i_usb_speed:=HIGH`, no NN, no RGB/IMU): lightest + stable on either bus. Use
+  [`scripts/oak_bringup.sh`](../../scripts/README.md). Full analysis: [`../camera.md`](../camera.md).
 - Output: `/turtlebot468/oakd/stereo/image_raw` — 16UC1 (mm) depth, **640×480**, frame
   `oakd_rgb_camera_optical_frame`, ~4–22 Hz depending on the fps params.
 - **QoS gotcha:** depth is BEST_EFFORT — `ros2 topic hz/echo` need `--qos-reliability best_effort`.
@@ -44,7 +50,12 @@ Consequences: a **near blind zone** (<~0.3 m, only things taller than ~8 cm; ste
 no depth under ~0.2 m) → the bumper covers this. The **floor enters view at ~0.44 m**, which
 is why we height-filter. The glass metal base is fully visible once it's ~0.45 m+ ahead.
 
-## The pipeline (current)
+## The pipeline (legacy alternative)
+> **Heads-up:** this pointcloud→`oakd/scan` path is now the **LEGACY/alternative** route. The
+> **active** path is `depth_lidar_fusion` → `scan_fused`, which is the **single** fused source
+> wired into both Nav2 and SLAM (see [Wiring: `scan_fused` is the single source](#built-inject-depth-into-the-lidar-scan-depth_lidar_fusion)).
+> Keep this section for the standalone `oakd/scan` costmap-only option (`depth_perception.launch.py`).
+
 All standard packages:
 
 ```
@@ -105,11 +116,23 @@ original "depth in the mapping" goal).
    Injection **only ever lowers a beam** (or fills an empty one) — it never erases a real lidar
    return.
 
-**Wiring / toggle.** The raw lidar stays untouched on `scan`; the node publishes the fused
-scan on `scan_fused` (both topic names are params). To enable fusion, point slam_toolbox's
-`scan_topic` and the Nav2 costmap observation source at `scan_fused`; to revert, point them
-back at `scan`. If depth goes **stale** (older than `max_depth_age`, default 0.4 s) the node
-passes the raw lidar straight through, so a camera dropout is graceful.
+**Wiring / toggle — `scan_fused` is now the single source.** The raw lidar stays untouched on
+`scan`; the node publishes the fused scan on `scan_fused` (both topic names are params).
+`scan_fused` is now the **single fused obstacle source for both Nav2 and SLAM** — this is
+already wired in the configs (the old "separate `oakd/scan` as a 2nd costmap source" design is
+**retired**):
+
+| Config | Setting | Effect | Revert to raw lidar |
+|---|---|---|---|
+| `nav2_glass.yaml` | local **and** global costmaps `observation_sources: scan` → `topic: scan_fused` | glass enters the live costmap | set `topic: scan` |
+| `slam_fused.yaml` | `scan_topic: scan_fused` | glass enters the **SLAM map**, not just the runtime costmap | set `scan_topic: scan` |
+
+If depth goes **stale** (older than `max_depth_age`, default 0.4 s) the node passes the raw
+lidar straight through, so a camera dropout is graceful. `autonomous_mapping.launch.py`
+self-starts the full producer chain staggered by `TimerAction`s (OAK-D `camera_node` →
+`depth_lidar_fusion` → SLAM `slam_fused.yaml` + Nav2 `nav2_glass.yaml` → `glass_guard` →
+`bfs_explorer`), so you do **not** run `depth_perception.launch.py` first; pass
+`start_camera:=false` if the camera is already up (e.g. the manual USB2 bring-up).
 
 **Offline validation** (synthetic wall 1.0 m ahead, no robot needed): the collapse produced
 one point per column over a **±38° wedge** (= the camera HFOV), ranges 1.02–1.30 m (nearest
@@ -117,12 +140,56 @@ straight ahead, farther at oblique edges); injection lowered exactly the forward
 left the rest at the lidar range, **raised no beam**, and stale depth fell back to the raw
 lidar. ✅ Geometry and min-combine logic confirmed before any on-robot run.
 
+**Hardware-validated on robot 468** (facing the glass wall): depth saw the metal base on
+**205 beams over 0.37–1.63 m** where the lidar was blind or saw straight through, and fusion
+**injected 195** of them (raised 0). ✅ So the fusion node itself is confirmed on real
+hardware. **Still pending on-robot:** the SLAM-map localization sanity check (map stays crisp,
+no double-walls) and a full autonomous mapping run — `scan_fused` is now wired into the SLAM +
+Nav2 configs (that part is **done**), but the localization behaviour hasn't been checked live.
+
 **Tradeoff (why this was initially avoided, and what changed):** a *slow, held* depth scan
 would smear the map and could degrade slam_toolbox's scan-matching, so we first kept depth in
 the costmap only. With the **fast collapse** (fresh ~10 Hz) and **min-combine of only the
 confident static base**, injecting becomes reasonable — but it now touches **localization**,
 so the remaining step is an on-robot sanity check (map stays crisp, no double-walls). The
 `scan`/`scan_fused` split keeps it instantly revertible.
+
+## C++ port (`guide_mate_perception`)
+**Motivation.** The Pi-4 is compute-bound (≈1 core for `slam_toolbox` alone; it can't
+comfortably run SLAM + Nav2 + depth together). The Python `depth_lidar_fusion` node is
+GIL/CPU-bound — its per-frame work (TF lookups, depth-image indexing, the numpy collapse) all
+contends for the interpreter — so it needs its own core. `guide_mate_perception` is a faithful
+**rclcpp port** of the fusion node that is roughly **~10× cheaper on TF/image handling** on the
+Pi-4. It **mirrors the Python numerics** (same ground-plane fit, per-column collapse,
+min-inject, FOV-vs-`camera_info` selection, drop detection) and produces the **same
+`scan_fused`** output with the same node behaviour, so it drops straight into the existing
+SLAM + Nav2 wiring above.
+
+```bash
+# C++ fusion (alternative to the Python depth_lidar_fusion)
+ros2 launch guide_mate_perception depth_lidar_fusion_cpp.launch.py namespace:=turtlebot468
+```
+
+**Run the Python OR the C++ fusion node — never both** (they publish the same `scan_fused`).
+This is also why the **combined runner** keeps fusion separate: `guide_mate_explorer`'s
+`combined_node.py` (entry point `guide_mate_bringup`, plus `combined.launch.py`) runs
+`glass_guard` + `bfs_explorer` in **one process under one executor** — paying the
+rclpy/DDS per-node overhead once — but **deliberately excludes** `depth_lidar_fusion`, because
+the fusion node is CPU/GIL-bound and should keep its **own core** (which is exactly what the
+C++ port is for). The individual `ros2 run` entry points still work.
+
+> **Two colcon packages now live in `src/`:**
+> - `guide_mate_explorer` (Python): `bfs_explorer`, `glass_guard`, `depth_lidar_fusion`.
+> - `guide_mate_perception` (C++): rclcpp ports of **all three** nodes **plus a shared-TF
+>   `guide_mate_container`** (one `/tf` listener for all). ~10–17× cheaper; benchmarks +
+>   details in [`src/guide_mate_perception/README.md`](../../src/guide_mate_perception/README.md).
+
+The C++ effort grew beyond fusion: `bfs_explorer` and `glass_guard` were ported too, and the
+**shared-TF container** removes the real Pi-4 tax — each node's own `TransformListener`
+deserializing the ~31 Hz `/tf` stream (~16% of a core *per node*). One injected
+`tf2_ros::Buffer` parses `/tf` once; the GIL-free `MultiThreadedExecutor` spreads callbacks
+across cores. Bundling the *Python* nodes did **not** help — the cost is per-listener, not
+per-process — which is what makes the C++ container the actual fix.
 
 ## Ground (floor) detection — data-driven
 Removing the floor is the make-or-break step: leak it and the robot treats clear floor as a
@@ -177,7 +244,7 @@ drops, and `_depth_cb` emits positive + drop obstacles together end-to-end. Togg
 ## Parameters worth knowing
 | Where | Param | Value | Why |
 |---|---|---|---|
-| camera | `i_usb_speed` | `HIGH` | USB3 boot-loops (power) |
+| camera | `i_usb_speed` | `HIGH` | depth-only is stable on either bus; USB2 lowest draw (only heavy-RGBD+USB3 brownouts) |
 | camera | `i_nn_type` | `none` | drop the mobilenet NN (load + crash) |
 | camera | `left/right.i_fps` | `6.0` | depth fps follows the mono cams; keep light |
 | camera | `stereo.i_align_depth` | `false` | use mono 640×480, fewer points than RGB-aligned 720p |

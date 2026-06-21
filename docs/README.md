@@ -10,18 +10,17 @@ Working documentation for the cs7980 TurtleBot 4 project.
 - [ROS 2 over NUwave — what works and what doesn't](network/ros2-over-nuwave.md) — compatibility findings
 
 ### Camera
-- [Camera overview](camera/README.md) — the OAK-D-LITE depth/RGB camera
-- [OAK-D-LITE camera — test, findings, fixes, pending issues](camera/oak-d-camera-test.md) — both streams work on USB 2; USB 3 boot-loop root-caused to power; bandwidth-limited frame drops
+- [OAK-D-LITE camera — root cause, mode matrix, fixes](camera.md) — daily wedge root-caused to `usbfs_memory_mb=16` (fix: 256, not power); residual drop is the heavy-RGBD+USB3 current brownout (not CPU/temp); depth-only/USB2 is stable; bring-up + watchdog in [`scripts/`](../scripts/README.md)
 
 ### Mapping & navigation
 - [Autonomous mapping — overview](mapping/README.md) — BFS frontier explorer + SLAM + Nav2, glass handling, how to run, status
 - [Depth camera for mapping](mapping/depth-perception.md) — using the OAK-D depth to see glass the lidar can't: FOV, the height-filtered pipeline, compute, and the planned lidar-scan injection
 - [Viewing live mapping in RViz](mapping/rviz-visualization.md) — laptop-side RViz for the map, lidar, depth scan and cloud; the tf-remap, QoS, and Lite-vs-Standard model gotchas
-- Code: [`src/guide_mate_explorer`](../src/guide_mate_explorer) — the `bfs_explorer` and `glass_guard` nodes
+- [No-motion full-stack bring-up](mapping/bringup-no-motion.md) — run the whole stack on a docked robot that can't move (zeroed-velocity Nav2 params); the `auto_standby` lidar wake + the Claude-shell DDS-isolation gotcha
+- Code: [`src/guide_mate_explorer`](../src/guide_mate_explorer) (Python) — `bfs_explorer`, `glass_guard`, `depth_lidar_fusion`, plus a combined `guide_mate_bringup` runner (glass_guard + bfs_explorer in one process); [`src/guide_mate_perception`](../src/guide_mate_perception) (C++, [README](../src/guide_mate_perception/README.md)) — rclcpp ports of **all three** nodes + a shared-TF container (~10–17× cheaper on the Pi 4)
 
 ### Power & battery
-- [Power overview](power/README.md) — battery-powered robot; only `battery_state` metering; ~14 W idle
-- [Power consumption & saving](power/power-saving.md) — measured draw, what's always running, and the working "park" (stop SLAM → lidar auto-idles + CPU freed); what does *not* work
+- [Power consumption & saving](power.md) — battery-powered robot; only `battery_state` metering; ~14 W idle; measured draw, what's always running, and the working "park" (stop SLAM → lidar auto-idles + CPU freed); what does *not* work
 
 ### AWS IoT Core (cloud connectivity)
 - [AWS IoT Core overview](aws-iot/README.md) — what we set up on robot 468, where it could help, and the security note on keeping credentials out of the repo
@@ -32,7 +31,7 @@ Working documentation for the cs7980 TurtleBot 4 project.
 ---
 
 ## ⚠️ Security note
-**Do not commit credentials to this repo.** NUwave usernames/passwords, robot passwords, and any private keys must stay out of version control. The docs use placeholders such as `<nuwave-username>` and `<nuwave-password>`. Keep real values in a local, untracked file (e.g. `secrets.local`, already gitignored) or a password manager.
+**Do not commit credentials to this repo.** NUwave usernames/passwords, robot passwords, and any private keys must stay out of version control. The docs use placeholders such as `<nuwave-username>` and `<nuwave-password>`; keep the real values in a local, gitignored file or a password manager.
 
 ## Quick facts
 - **Robots:** two TurtleBot 4 units — `turtlebot468` (room 468) and `turtlebot436` (room 436).
