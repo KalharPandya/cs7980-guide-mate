@@ -1,0 +1,17 @@
+[Unit]
+Description=OAK-D-LITE USB watchdog (detect 2485-bootloader/XLink wedge, reset + relaunch)
+Documentation=file:///home/ubuntu/cs7980-guide-mate/docs/camera.md
+After=multi-user.target
+
+[Service]
+Type=simple
+User=ubuntu
+# Supervises a STANDALONE camera (scripts/oak_bringup.sh). If you keep the camera in
+# turtlebot4.service instead, disable the oakd node there first to avoid two drivers
+# fighting for the one device. See scripts/README.md.
+ExecStart=/home/ubuntu/cs7980-guide-mate/scripts/oak_watchdog.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
