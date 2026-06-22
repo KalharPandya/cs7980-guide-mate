@@ -15,6 +15,30 @@ Archive this project's Claude Code session transcripts into the repo as slimmed,
 - "refresh the claude-conversations archive"
 - Periodically, to keep `claude-conversations/sessions/` current.
 
+## Where everything lives (the proper place)
+
+Collected transcripts are committed to the repo here — always write them to this
+location, never anywhere else:
+
+```
+cs7980-guide-mate/
+├─ claude-conversations/
+│  ├─ sessions/                      # ← OUTPUT: slimmed, redacted JSONL goes HERE
+│  │   └─ <YYYY-MM-DD>_<id8>.jsonl   #    one file per Claude session
+│  ├─ collect.config.json           # which directories to collect
+│  └─ README.md                     # full reference
+├─ scripts/
+│  ├─ collect_claude_conversations.py        # the collector
+│  ├─ test_collect_claude_conversations.py   # test suite
+│  └─ git-hooks/pre-commit                   # secret gate hook
+└─ .claude/skills/collect-claude-conversations/SKILL.md   # this skill
+```
+
+The default output dir (`claude-conversations/sessions/`) is resolved relative
+to the script's own location, so it is correct on every laptop. Only override it
+with `--out` for testing — committed archives must stay under
+`claude-conversations/sessions/`.
+
 ## What it does
 
 1. Scans `~/.claude/projects/**` (honors `CLAUDE_CONFIG_DIR`).
