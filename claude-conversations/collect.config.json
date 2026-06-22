@@ -1,6 +1,8 @@
 {
   "include": [
     "Project-code",
-    "cs7980-guide-mate"
+    "cs7980-guide-mate",
+    "/home/ubuntu/cs7980-guide-mate/src",
+    "/home/ubuntu"
   ]
 }
