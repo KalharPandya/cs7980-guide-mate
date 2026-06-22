@@ -1,0 +1,133 @@
+# Digest: 2026-06-20_agent-af.jsonl
+
+- raw_source: claude-conversations/sessions/2026-06-20_agent-af.jsonl
+- date: 2026-06-20
+- raw_bytes: 66725
+- user_turns: 8
+- assistant_turns: 12
+- tool_calls: 7
+- images: 0
+- top_tools: 4xRead, 2xBash, 1xStructuredOutput
+
+Citation format for analysis: (file: 2026-06-20_agent-af.jsonl, date: 2026-06-20, turn: N).
+
+---
+### Turn 1 [user] (2026-06-20)
+You are auditing ONE documentation file in a ROS2 robotics project (TurtleBot 4 autonomous "guide robot").
+Read these files: /home/ubuntu/cs7980-guide-mate/docs/network/ros2-over-nuwave.md (the target), and /home/ubuntu/cs7980-guide-mate/CLAUDE.md (project context). If the doc makes claims about code/launch/config, spot-check against the real files under /home/ubuntu/cs7980-guide-mate/src/.
+Topic hint: ROS2 over NUwave.
+
+ACTUAL CODE/CONFIG ON DISK (ground truth as of this audit):
+ROS2 package src/guide_mate_explorer/:
+  nodes: bfs_explorer.py, glass_guard.py, depth_lidar_fusion.py, combined_node.py(UNTRACKED/new)
+  launch: autonomous_mapping.launch.py, depth_lidar_fusion.launch.py, depth_perception.launch.py, explore.launch.py, combined.launch.py(UNTRACKED/new)
+  config: nav2_glass.yaml, oakd_mapping.yaml, slam_fused.yaml(UNTRACKED-ish/new)
+NEW untracked C++ package src/guide_mate_perception/:
+  src/depth_lidar_fusion_node.cpp, CMakeLists.txt, package.xml, launch/depth_lidar_fusion_cpp.launch.py
+rviz/: launch_rviz.sh, turtlebot468_mapping.rviz (tracked)
+Root: README.md, CLAUDE.md, .gitignore (tracked); start.sh (gitignored)
+Vendored third-party clone (gitignored, untracked, on-disk only): aws-iot-device-sdk-python-v2/ (full AWS SDK repo with its own .git, ~20 markdowns)
+On-disk credentials (gitignored, never committed): Turtlebot-468.cert.pem, Turtlebot-468.private.key, Turtlebot-468.public.key, Turtlebot-468-Policy, root-CA.crt, c9109663-*AccessToken.txt, connect_device_package.zip
+
+Assess the target doc honestly and critically. importance: 'critical'=needed to operate/understand the robot or repo; 'useful'=helpful reference; 'marginal'=nice-to-have/thin; 'obsolete'=stale/superseded/empty-stub. Many tiny section-index README.md files may be 'marginal' boilerplate. Flag any factual drift from the actual code inventory. Be specific in uniqueValue about what is irreplaceably documented here (real hardware findings, IPs, gotchas) vs. generic restatement.
+
+### Turn 2 [assistant] (2026-06-20)
+I'll audit the target documentation file. Let me start by reading the relevant files.
+
+### Turn 3 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/network/ros2-over-nuwave.md"}]
+
+### Turn 4 [user] (2026-06-20)
+[tool_result: 8028 chars] 1	# ROS 2 over NUwave — What Works and What Doesn't
+2	
+3	Compatibility findings for running ROS 2 (Humble, FastDDS) between a **lab laptop** and a **TurtleBot 4** when both are on **NUwave**. Verified June 2026 with `tur
+...[clipped 7808 chars]
+
+### Turn 5 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "ls -la /home/ubuntu/cs7980-guide-mate/docs/network/ 2>/dev/null; echo \"---DOCS-TREE---\"; find /home/ubuntu/cs7980-guide-mate/docs -type f | sort", "description": "List network docs dir and full docs tree"}]
+
+### Turn 6 [user] (2026-06-20)
+[tool_result: 1195 chars] total 28
+drwxrwxr-x 2 ubuntu ubuntu 4096 Jun 12 18:21 .
+drwxrwxr-x 7 ubuntu ubuntu 4096 Jun 20 00:16 ..
+-rw-rw-r-- 1 ubuntu ubuntu 3518 Jun 12 18:20 README.md
+-rw-rw-r-- 1 ubuntu ubuntu 5667 Jun 12 18:19 nuwave-connectio
+...[clipped 975 chars]
+
+### Turn 7 [assistant] (2026-06-20)
+Let me read the sibling network docs and the project context to assess redundancy and cross-references.
+
+### Turn 8 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/network/README.md"}]
+
+### Turn 9 [user] (2026-06-20)
+[tool_result: 3668 chars] 1	# Network Overview
+2	
+3	This section documents the network setup for the cs7980 TurtleBot 4 robots.
+4	
+5	## Documents
+6	- [Connecting a TurtleBot 4 to NUwave](nuwave-connection.md)
+7	- [ROS 2 over NUwave — what works a
+...[clipped 3448 chars]
+
+### Turn 10 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/network/nuwave-connection.md"}]
+
+### Turn 11 [user] (2026-06-20)
+[tool_result: 5955 chars] 1	# Connecting a TurtleBot 4 (Raspberry Pi) to NUwave
+2	
+3	How we got the TurtleBot 4's Raspberry Pi onto Northeastern's **NUwave** (WPA2-Enterprise, PEAP/MSCHAPv2) network — including the non-obvious blocker that cost u
+...[clipped 5735 chars]
+
+### Turn 12 [assistant] (2026-06-20)
+Now let me check the project context and spot-check a couple of the doc's technical claims against the actual code (the doc references namespacing, FastDDS, scan rates — let me verify the namespace and any cross-references are consistent).
+
+### Turn 13 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/README.md"}]
+
+### Turn 14 [user] (2026-06-20)
+[tool_result: 3428 chars] 1	# cs7980 Guide-Mate — Documentation
+2	
+3	Working documentation for the cs7980 TurtleBot 4 project.
+4	
+5	## Index
+6	
+7	### Network
+8	- [Network overview](network/README.md) — how the robots are connected, addressing, di
+...[clipped 3208 chars]
+
+### Turn 15 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "grep -rn \"ros2-over-nuwave\\|ROS_SUPER_CLIENT\\|ROS_DISCOVERY_SERVER\\|10.247.204.21\\|NUwave\\|scan_fused\\|192.168.186\" /home/ubuntu/cs7980-guide-mate/docs /home/ubuntu/cs7980-guide-mate/CLAUDE.md /home/
+...[clipped 178 chars]]
+
+### Turn 16 [user] (2026-06-20)
+[tool_result: 13085 chars] /home/ubuntu/cs7980-guide-mate/docs/README.md:9:- [Connecting a TurtleBot 4 to NUwave](network/nuwave-connection.md) — step-by-step, including the 5 GHz fix that was the real blocker
+/home/ubuntu/cs7980-guide-mate/docs/R
+...[clipped 12865 chars]
+
+### Turn 17 [assistant] (2026-06-20)
+I have enough to assess this doc thoroughly. It's a pure networking/operations doc (no claims about the ROS2 package code/launch/config, so no code drift to spot-check against `src/`). Let me verify internal consistency on the few cross-doc facts that overlap.
+
+Key cross-check observations:
+- The doc's `ROS_DISCOVERY_SERVER` IP `10.247.204.21:11811` matches `nuwave-connection.md` and `network/README.md`.
+- Root cause #2 (Create 3 stale discovery IP `192.168.50.31` → `192.168.186.3:11811`) is consistent with `network/README.md`'s cleanup note.
+- The Create 3 webserver IP `192.168.186.2` matches CLAUDE.md gotcha #3.
+- The `wifi.interface → wlan0` and `nuwave-connection.md` `regdom=US` (5 GHz) reference are consistent.
+- OAK-D `X_LINK_ERROR` matches CLAUDE.md gotcha #8.
+
+One minor internal tension: the laptop is described as `10.247.228.155/19` with subnet `10.247.224.0/19` and gateway `10.247.224.1`; the doc says "different /19 segments, routed." This is internally consistent and matches the sibling docs. No factual drift against actual code (the doc makes no code/launch/config claims).
+
+### Turn 18 [assistant] (2026-06-20)
+[tool_use: StructuredOutput {"path": "/home/ubuntu/cs7980-guide-mate/docs/network/ros2-over-nuwave.md", "purpose": "Operational recipe + debugging trail for running full ROS 2 (laptop to robot) over Northeastern's NUwave enterprise WiFi via a FastD
+...[clipped 3448 chars]]
+
+### Turn 19 [user] (2026-06-20)
+[tool_result: 39 chars] Structured output provided successfully
+
+### Turn 20 [assistant] (2026-06-20)
+Audit complete. Summary of findings for `/home/ubuntu/cs7980-guide-mate/docs/network/ros2-over-nuwave.md`:
+
+- **Verdict: keep, critical.** This is the canonical laptop-to-robot ROS 2 bring-up and troubleshooting runbook, and the sole home of the FastDDS discovery-server failure modes.
+- **No code drift.** The doc is pure networking/ops and makes no claims about `guide_mate_explorer`/`guide_mate_perception` code, launch, or config, so there was nothing in `src/` to contradict. All shared facts (discovery-server IP, Create 3 stale-IP fix, webserver `192.168.186.2`, OAK-D `X_LINK_ERROR`, `regdom=US`) are internally consistent with `network/README.md`, `nuwave-connection.md`, and `CLAUDE.md`.
+- **Irreplaceable content:** the four-root-cause debugging trail, especially the discovery-database-corruption failure mode (discovery works but `Subscription count: 0`, no data) and its restart fix + `journalctl` health check; the `ROS_SUPER_CLIENT=True` env-var-vs-silent-XML-profile gotcha; the `/etc/turtlebot4/setup.bash` `[ -t 0 ]` TTY trap; and that `ros2 topic hz` does not support `--no-daemon`.
+- **Minor issues:** the export block hardcodes the DHCP robot IP `10.247.204.21` (doc warns about this but it will still drift); modest overlap with `network/README.md` on the multicast/Discovery-Server rationale, acceptable for a standalone runbook. No contradictions found.

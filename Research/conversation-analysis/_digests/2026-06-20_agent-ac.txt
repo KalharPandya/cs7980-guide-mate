@@ -1,0 +1,249 @@
+# Digest: 2026-06-20_agent-ac.jsonl
+
+- raw_source: claude-conversations/sessions/2026-06-20_agent-ac.jsonl
+- date: 2026-06-20
+- raw_bytes: 92375
+- user_turns: 17
+- assistant_turns: 26
+- tool_calls: 16
+- images: 0
+- top_tools: 11xWebFetch, 2xWebSearch, 2xBash, 1xToolSearch
+
+Citation format for analysis: (file: 2026-06-20_agent-ac.jsonl, date: 2026-06-20, turn: N).
+
+---
+### Turn 1 [user] (2026-06-20)
+Research depthai_ros_driver (ros-humble-depthai, version ~2.29.0) ROS 2 parameters that affect STABILITY and AUTO-RECOVERY of an OAK-D-LITE on a Raspberry Pi 4.
+
+Use WebSearch and WebFetch (load via ToolSearch "select:WebSearch,WebFetch"). Search the luxonis/depthai-ros GitHub repo (README, ros2_examples, the parameter definitions in depthai_ros_driver), Luxonis docs.
+
+Enumerate every relevant parameter with its purpose, type, default, and recommended value for a power-constrained Pi4:
+- camera.i_usb_speed (HIGH vs SUPER vs SUPER_PLUS), camera.i_pipeline_type, camera.i_nn_type, camera.i_enable_imu, camera.i_reset_on_start, camera.i_restart_on_diagnostics_error (or similarly named auto-restart param), camera.i_mx_id / i_ip, camera.i_watchdog* / i_max_q_size.
+- stereo/left/right/rgb: i_fps, i_resolution, i_low_bandwidth, i_publish_topic, i_max_q_size, i_set_isp_scale, output bandwidth knobs.
+- Anything that makes the NODE auto-recover after a device disconnect (re-init the device) rather than sitting dead.
+
+Return a markdown TABLE of params (name | purpose | default | recommended-for-Pi4 | why) plus prose on which combination gives the most stable + auto-recovering bring-up. Cite URLs.
+
+### Turn 2 [assistant] (2026-06-20)
+I'll research the depthai_ros_driver parameters for OAK-D-LITE stability on a Pi 4. Let me start by loading the web tools and searching.
+
+### Turn 3 [assistant] (2026-06-20)
+[tool_use: ToolSearch {"query": "select:WebSearch,WebFetch", "max_results": 5}]
+
+### Turn 4 [user] (2026-06-20)
+[tool_result: 0 chars] 
+
+### Turn 5 [assistant] (2026-06-20)
+Now let me search for the relevant documentation and parameter definitions.
+
+### Turn 6 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "depthai_ros_driver camera_node ROS 2 parameters i_pipeline_type i_usb_speed i_restart_on_diagnostics_error"}]
+
+### Turn 7 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "luxonis depthai-ros camera.i_reset_on_start i_restart_on_diagnostics_error auto recover device disconnect"}]
+
+### Turn 8 [user] (2026-06-20)
+[tool_result: 2462 chars] Web search results for query: "depthai_ros_driver camera_node ROS 2 parameters i_pipeline_type i_usb_speed i_restart_on_diagnostics_error"
+
+Links: [{"title":"GitHub - westonrobot/depthai_ros: Official ROS Driver for Dept
+...[clipped 2242 chars]
+
+### Turn 9 [user] (2026-06-20)
+[tool_result: 2766 chars] Web search results for query: "luxonis depthai-ros camera.i_reset_on_start i_restart_on_diagnostics_error auto recover device disconnect"
+
+Links: [{"title":"[BUG] Drop in pointcloud rate after running for a couple of hou
+...[clipped 2546 chars]
+
+### Turn 10 [assistant] (2026-06-20)
+Let me fetch the canonical parameter documentation and the source-level parameter definitions in the humble branch of the repo.
+
+### Turn 11 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.luxonis.com/software-v3/depthai/ros/parameters", "prompt": "List every camera-level (camera.i_*) and sensor-level (stereo/left/right/rgb i_*) parameter with its purpose, type, default value, and all
+...[clipped 305 chars]]
+
+### Turn 12 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/luxonis/depthai-ros/blob/humble/depthai_ros_driver/src/param_handlers/camera_param_handler.cpp", "prompt": "List every parameter declared (declareAndLogParam) with its exact default value. Esp
+...[clipped 243 chars]]
+
+### Turn 13 [user] (2026-06-20)
+[tool_result: 1197 chars] # Parameters Declared in camera_param_handler.cpp
+
+Based on the source file, here are the parameters with their default values:
+
+| Parameter | Default Value |
+|-----------|----------------|
+| `i_pipeline_type` | `"RGBD"`
+...[clipped 977 chars]
+
+### Turn 14 [user] (2026-06-20)
+[tool_result: 20541 chars] # DepthAI ROS Driver Parameters Reference
+
+## Camera-Level Parameters
+
+### Driver Parameters
+- **`i_usb_speed`** (string, default: `SUPER`)
+  - Purpose: Sets USB interface speed
+  - Options: `LOW`, `FULL`, `HIGH`, `SUPER
+...[clipped 20321 chars]
+
+### Turn 15 [assistant] (2026-06-20)
+The docs reflect a newer (v3/RVC4) API. The project uses ros-humble-depthai ~2.29.0, so I need the v2 humble-branch parameter names. The source fetch gave me v2 defaults. Let me verify the key version-specific items: the older `camera.i_usb_speed` default, `i_reset_on_start`, watchdog/max_q_size behavior, and confirm the `i_pipeline_type`/`i_nn_type` defaults for the 2.x line. Let me check the GitHub issues about auto-recovery and the v2 README.
+
+### Turn 16 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://raw.githubusercontent.com/luxonis/depthai-ros/humble/depthai_ros_driver/src/param_handlers/camera_param_handler.cpp", "prompt": "Show every declareAndLogParam call with the exact parameter name and exact
+...[clipped 274 chars]]
+
+### Turn 17 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/luxonis/depthai-ros/issues/657", "prompt": "Summarize the problem (OAK-D-LITE non-responsive at 100% CPU after stop/start_camera on ROS2). What parameters or workarounds (i_restart_on_diagnost
+...[clipped 155 chars]]
+
+### Turn 18 [user] (2026-06-20)
+[tool_result: 695 chars] # CameraParamHandler Parameter Declarations
+
+Based on the source code, here are the requested parameters with their exact defaults:
+
+| Parameter | Default Value |
+|-----------|---------------|
+| `i_pipeline_type` | `"RGB
+...[clipped 475 chars]
+
+### Turn 19 [user] (2026-06-20)
+[tool_result: 1149 chars] # OAK-D-Lite CPU Issue Summary
+
+## Problem
+A user running ROS 2 Jazzy on a Turtlebot4 reported that after approximately 23 hours of operation, the OAK-D-Lite camera driver began consuming 100% CPU and stopped publishing 
+...[clipped 929 chars]
+
+### Turn 20 [assistant] (2026-06-20)
+Good — the v2 humble defaults are confirmed (`i_usb_speed=SUPER`, `i_pipeline_type=RGBD`, `i_nn_type=spatial`, `i_enable_diagnostics=true`, `i_enable_imu=true`, `i_enable_sync=true`, `i_restart_on_diagnostics_error=false`). Note: `i_nn_type` default is actually `spatial` in the source, not `none` as my earlier searches suggested. Let me confirm the sensor-level (left/right/rgb/stereo) parameter defaults for the v2 humble branch, and check the diagnostics-based restart mechanism in the camera.cpp source.
+
+### Turn 21 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://raw.githubusercontent.com/luxonis/depthai-ros/humble/depthai_ros_driver/src/param_handlers/sensor_param_handler.cpp", "prompt": "Show every declareAndLogParam call with exact parameter name and default. 
+...[clipped 343 chars]]
+
+### Turn 22 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://raw.githubusercontent.com/luxonis/depthai-ros/humble/depthai_ros_driver/src/camera.cpp", "prompt": "How does the driver handle device disconnect and auto-recovery? Describe the diagnostics callback / clo
+...[clipped 250 chars]]
+
+### Turn 23 [user] (2026-06-20)
+[tool_result: 1322 chars] # Parameter Declarations Summary
+
+Based on the source code, here are the exact `declareAndLogParam` calls for your requested parameters:
+
+## Common Parameters (all sensors)
+- `i_fps`: default `30.0`
+- `i_max_q_size`: def
+...[clipped 1102 chars]
+
+### Turn 24 [user] (2026-06-20)
+[tool_result: 1449 chars] # Device Disconnect and Auto-Recovery in DepthAI ROS Driver
+
+Based on the provided code, the driver implements limited auto-recovery mechanisms:
+
+## Diagnostics Callback
+
+The `diagCB()` function monitors diagnostics mess
+...[clipped 1229 chars]
+
+### Turn 25 [assistant] (2026-06-20)
+I now have the full picture. The key recovery mechanism is: the SystemLogger publishes diagnostics → `diagCB()` watches for an error status on the camera's sys_logger → if `i_restart_on_diagnostics_error: true`, calls `restart()` (stop+start), which re-initializes the device. This requires `i_enable_diagnostics: true` (the default in v2 humble). Let me confirm one detail about the diagnostics node and the v2 README recommendations for low-resource/Pi setups.
+
+### Turn 26 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://raw.githubusercontent.com/luxonis/depthai-ros/humble/depthai_ros_driver/README.md", "prompt": "What does the README say about: i_restart_on_diagnostics_error and auto-restart on error, i_enable_diagnosti
+...[clipped 237 chars]]
+
+### Turn 27 [user] (2026-06-20)
+[tool_result: 215 chars] The server returned HTTP 404 Not Found.
+
+The response body was not retrieved. If this URL requires authentication, use an authenticated tool (e.g. `gh` for GitHub, or an MCP-provided fetch tool) instead of WebFetch.
+
+### Turn 28 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "gh api repos/luxonis/depthai-ros/contents/depthai_ros_driver/README.md --jq '.content' 2>/dev/null | base64 -d 2>/dev/null | grep -iE -A2 -B1 'restart_on_diagnostics|enable_diagnostics|usb_speed|low_bandwidt
+...[clipped 143 chars]]
+
+### Turn 29 [user] (2026-06-20)
+[tool_result: 31 chars] (Bash completed with no output)
+
+### Turn 30 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "for p in depthai_ros_driver/Readme.md depthai_ros_driver/README.md README.md; do echo \"=== $p ===\"; gh api \"repos/luxonis/depthai-ros/contents/$p?ref=humble\" --jq '.download_url' 2>/dev/null; done", "des
+...[clipped 51 chars]]
+
+### Turn 31 [user] (2026-06-20)
+[tool_result: 105 chars] Exit code 127
+=== depthai_ros_driver/Readme.md ===
+=== depthai_ros_driver/README.md ===
+=== README.md ===
+
+### Turn 32 [assistant] (2026-06-20)
+gh isn't authenticated/available in this sandbox. Let me try WebFetch with the alternate filename casing and the docs driver page.
+
+### Turn 33 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/luxonis/depthai-ros/blob/humble/depthai_ros_driver/Readme.md", "prompt": "What does it say about i_restart_on_diagnostics_error / auto-restart on error, i_enable_diagnostics, i_usb_speed, i_pi
+...[clipped 187 chars]]
+
+### Turn 34 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.luxonis.com/software-v3/depthai/ros/depthai-ros/driver", "prompt": "What does it say about auto-restart on diagnostics error (i_restart_on_diagnostics_error), enabling diagnostics, low-bandwidth mod
+...[clipped 146 chars]]
+
+### Turn 35 [user] (2026-06-20)
+[tool_result: 215 chars] The server returned HTTP 404 Not Found.
+
+The response body was not retrieved. If this URL requires authentication, use an authenticated tool (e.g. `gh` for GitHub, or an MCP-provided fetch tool) instead of WebFetch.
+
+### Turn 36 [user] (2026-06-20)
+[tool_result: 215 chars] The server returned HTTP 404 Not Found.
+
+The response body was not retrieved. If this URL requires authentication, use an authenticated tool (e.g. `gh` for GitHub, or an MCP-provided fetch tool) instead of WebFetch.
+
+### Turn 37 [assistant] (2026-06-20)
+I have enough from the source files (the authoritative defaults) and the parameters doc. Let me do two final confirmations: the v2 README content via DeepWiki (which mirrors the repo), and verify whether `i_low_bandwidth` provides actual recovery/bandwidth benefit and how diagnostics gating works.
+
+### Turn 38 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://deepwiki.com/luxonis/depthai-ros/4-ros-driver", "prompt": "Describe the auto-restart/recovery mechanism: diagCB, i_restart_on_diagnostics_error, the diagnostics SystemLogger node, i_enable_diagnostics, a
+...[clipped 209 chars]]
+
+### Turn 39 [user] (2026-06-20)
+[tool_result: 1393 chars] # ROS Driver Recovery and Configuration
+
+Based on the provided documentation, I cannot find specific details about the auto-restart/recovery mechanism you're asking about. The page mentions:
+
+- The `Camera` class "Handle
+...[clipped 1173 chars]
+
+### Turn 40 [assistant] (2026-06-20)
+I have authoritative information directly from the v2/humble source files. Let me verify one remaining stability-relevant detail — the diagnostics node's role and the `i_enable_diagnostics` gating in the v2 humble README, by fetching the raw README from the repo root (which documents the example configs).
+
+### Turn 41 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://raw.githubusercontent.com/luxonis/depthai-ros/humble/README.md", "prompt": "Find any mention of i_restart_on_diagnostics_error, i_enable_diagnostics, USB2/HIGH usb_speed, low_bandwidth, nn_type none, or 
+...[clipped 125 chars]]
+
+### Turn 42 [user] (2026-06-20)
+[tool_result: 587 chars] I've reviewed the content provided, but it does not contain any mentions of:
+
+- `i_restart_on_diagnostics_error`
+- `i_enable_diagnostics`
+- USB2/HIGH usb_speed
+- low_bandwidth
+- nn_type none
+- Raspberry Pi / low-power ho
+...[clipped 367 chars]
+
+### Turn 43 [assistant] (2026-06-20)
+I have all the authoritative data I need from the source files. Here is the final research report.
+
+---
+
+# depthai_ros_driver (ros-humble-depthai ~2.29.0) — OAK-D-LITE stability & auto-recovery on a Pi 4
+
+All defaults below are confirmed against the **`humble` branch source** (`camera_param_handler.cpp`, `sensor_param_handler.cpp`, `camera.cpp`), not the v3/RVC4 docs — the v3 docs disagree on several defaults (e.g. v3 says `i_usb_speed` defaults to `SUPER`/`SUPER_PLUS` and `i_nn_type` to `none`; the humble source actually ships `i_usb_speed=SUPER` and `i_nn_type=spatial`). For the 2.x line you SSH into, **trust the source-derived values in the table.**
+
+## The one thing that matters most for auto-recovery
+
+The driver's **only** built-in self-healing path is diagnostics-gated and is **OFF by default**:
+
+- A `SystemLogger` (diagnostics) node publishes device health. This node only exists when **`camera.i_enable_diagnostics: true`** (default `true` in humble).
+- `Camera::diagCB()` watches diagnostics for an **error** status on the camera node's `sys_logger`. On error, **if `camera.i_restart_on_diagnostics_error: true`**, it calls `Camera::restart()`.
+- `restart()` does `stop(); start();` — it **tears down and re-initializes the device**, which is exactly the "don't sit dead after a disconnect" behavior you want. If it can't come back it logs `"Restarting camera failed."`
+
+There is **no separate USB-disconnect callback and no watchdog timer** in the humble driver. Recovery is **reactive** via diagnostics. So the recovery recipe is: keep `i_enable_diagnostics: true` **and** set 
+...[clipped 9420 chars]

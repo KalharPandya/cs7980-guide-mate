@@ -1,0 +1,1234 @@
+[
+  {
+    "file": "2026-06-03_d29ce515.jsonl",
+    "date": "2026-06-03",
+    "motive": "The user is standing up a TurtleBot 4 simulation environment on Windows 11 (WSL2 + ROS 2 Humble + Ignition Gazebo Fortress) that mirrors the physical TB4 for the CS7980 guide-robot research project. The session is environment setup and troubleshooting, not control-algorithm development.",
+    "outcome": "partial",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Evidence FOR the thesis. The assistant was strong at the software-engineering side of robotics: tight write-run-read-error-fix loops to install ROS, recover a deadlocked WSL VM, and root-cause via ros2 topic/node inspection why the robot did not spawn (timing race, turn 307) and why teleop failed (docked Create 3 motion_control blocking cmd_vel, turns 356-368). The predicted embodiment weakness also shows: the assistant could not verify the runtime/physical result itself, depending on user screenshots/reports for whether the robot moved or rendered (turns 335-344, 369, 490, 543), and the 'did the robot move' question was left visually unconfirmed in-transcript. Strong at code/config engineering, weak at closing the loop on the embodied runtime outcome.",
+    "automation_level": "medium",
+    "user_input_count": 249,
+    "tasks_done_n": 11,
+    "tasks_failed_n": 3,
+    "key_evidence": [
+      {
+        "claim": "Ran read-only OS/WSL/GPU probes before changing anything, as instructed",
+        "citation": "(file: 2026-06-03_d29ce515.jsonl, date: 2026-06-03, turn: 4-23)"
+      },
+      {
+        "claim": "Recovered a fully hung WSL by killing vmmemWSL and locating the distro via LXSS registry and AppData GUID paths",
+        "citation": "(file: 2026-06-03_d29ce515.jsonl, date: 2026-06-03, turn: 84-109)"
+      },
+      {
+        "claim": "Installed ROS 2 Humble + TB4 packages non-interactively and verified with ros2 pkg list",
+        "citation": "(file: 2026-06-03_d29ce515.jsonl, date: 2026-06-03, turn: 154-178)"
+      },
+      {
+        "claim": "Root-caused robot-not-spawning as a robot_description timing race and fixed with pkill cleanup plus a /scan wait loop",
+        "citation": "(file: 2026-06-03_d29ce515.jsonl, date: 2026-06-03, turn: 307)"
+      },
+      {
+        "claim": "Root-caused teleop failure to the robot being docked, with Create 3 motion_control blocking cmd_vel",
+        "citation": "(file: 2026-06-03_d29ce515.jsonl, date: 2026-06-03, turn: 356-368)"
+      },
+      {
+        "claim": "Could not observe the GUI or whether the robot moved; relied on user images/reports for ground truth",
+        "citation": "(file: 2026-06-03_d29ce515.jsonl, date: 2026-06-03, turn: 337, 369, 490, 543)"
+      },
+      {
+        "claim": "Gave the honest negative result that NVIDIA was idle and AMD integrated was still the renderer",
+        "citation": "(file: 2026-06-03_d29ce515.jsonl, date: 2026-06-03, turn: 550)"
+      },
+      {
+        "claim": "Correctly identified hard blockers (Mesa 23.2.1 GL gap, dead Kisak/oibaf PPAs, Noble Mesa needing glibc 2.38)",
+        "citation": "(file: 2026-06-03_d29ce515.jsonl, date: 2026-06-03, turn: 510, 566, 580)"
+      },
+      {
+        "claim": "Queued an 8-task Mesa-from-source plan; user rejected deps install and pivoted to native dual-boot Ubuntu",
+        "citation": "(file: 2026-06-03_d29ce515.jsonl, date: 2026-06-04, turn: 596-616, 626-629)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-12_284d799e.jsonl",
+    "date": "2026-06-12",
+    "motive": "The user needed a TurtleBot 4 (Pi 4 + Create 3) onto the university enterprise WiFi (NUwave/802.1X), stated as an absolute requirement, then ran a ROS 2 compatibility check to confirm topics, services, actions, and time sync work over that network, ending in documentation and a GitHub commit.",
+    "outcome": "reached",
+    "thesis_category": "mixed",
+    "thesis_alignment": "Evidence FOR the thesis. The AI was strong exactly where predicted: networking, OS config, DDS/ROS 2 plumbing, and closed-loop write-run-read-error-fix debugging, iterating against live output to fix regdom, the 802.1X profile, the stale discovery address, the corrupted discovery database, and NTP, each re-verified (turn 34, 50, 220, 343, 359). It performed no low-level sensorimotor control, navigation, spatial reasoning, or multi-robot coordination; the only actuation was a single connectivity-probe beep (turn 258), and a base reboot was correctly withheld as out of scope (turn 172). So it supports strong-at-software-engineering and stays deliberately out of the embodied control loop.",
+    "automation_level": "high",
+    "user_input_count": 21,
+    "tasks_done_n": 8,
+    "tasks_failed_n": 4,
+    "key_evidence": [
+      {
+        "claim": "On-device confirmation of regdom=00 disabling 5 GHz, then NUwave appearing after setting country US",
+        "citation": "(file: 2026-06-12_284d799e.jsonl, date: 2026-06-12, turn 20, 31, 34)"
+      },
+      {
+        "claim": "Auto-revert safety net engineered and then torn down on success so a headless robot could not be stranded",
+        "citation": "(file: 2026-06-12_284d799e.jsonl, date: 2026-06-12, turn 50, 98, 102)"
+      },
+      {
+        "claim": "Unrequested Create 3 reboot blocked by the auto-mode classifier; assistant pivoted to a non-destructive restart",
+        "citation": "(file: 2026-06-12_284d799e.jsonl, date: 2026-06-12, turn 171, 172)"
+      },
+      {
+        "claim": "Human gating via AskUserQuestion before mutating the base config and restarting the discovery server",
+        "citation": "(file: 2026-06-12_284d799e.jsonl, date: 2026-06-12, turn 187, 341)"
+      },
+      {
+        "claim": "Corrupted FastDDS discovery database identified from DISCOVERY_DATABASE logs and tcpdump, fixed by restart",
+        "citation": "(file: 2026-06-12_284d799e.jsonl, date: 2026-06-12, turn 338, 343)"
+      },
+      {
+        "claim": "Verified end-to-end ROS 2 over NUwave: discovery, battery 16.45V, odom 17.8Hz, lidar 7.6Hz, publish, service call",
+        "citation": "(file: 2026-06-12_284d799e.jsonl, date: 2026-06-12, turn 359)"
+      },
+      {
+        "claim": "Self-review caught and corrected three overstatements in its own documentation",
+        "citation": "(file: 2026-06-12_284d799e.jsonl, date: 2026-06-12, turn 384)"
+      },
+      {
+        "claim": "Secrets exposed: 802.1X password in a pasted runbook and a GitHub PAT pasted in chat and stored in the repo remote",
+        "citation": "(file: 2026-06-12_284d799e.jsonl, date: 2026-06-12, turn 35, 397, 400)"
+      },
+      {
+        "claim": "Only physical actuation was a single beep used as a connectivity probe, not control",
+        "citation": "(file: 2026-06-12_284d799e.jsonl, date: 2026-06-12, turn 258)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-12_dd0bc487.jsonl",
+    "date": "2026-06-12",
+    "motive": "A real-world TurtleBot 4 capstone working session: locate the robots on the network, clone the project repo, author and refine a sprint progress/individual report, summarize the ROS 2 connectivity fixes, and assess whether live lidar/video can be viewed in RViz over a VPN, ending with a handoff doc for a WSL agent to continue the robot bring-up.",
+    "outcome": "partial",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Evidence FOR the thesis. The AI was strong at software-engineering and systems diagnosis: closed-loop network discovery to a correct conclusion (turn 21), precise ROS 2/FastDDS and VPN-routing reasoning (turns 92, 111), iterative document authoring/repair (turns 70-89), and a rigorous agent-to-agent handoff (turn 124). Where the task crossed into the embodied runtime layer (actually bringing up the real robot's sensors and seeing live lidar/video), it could not close the loop: the robot was unreachable and it depended on physical-world facts only the human could read off the robot, so it deferred via a handoff doc rather than driving the robot itself (turns 99, 111, 124). The split maps directly onto the thesis.",
+    "automation_level": "medium",
+    "user_input_count": 47,
+    "tasks_done_n": 8,
+    "tasks_failed_n": 3,
+    "key_evidence": [
+      {
+        "claim": "Correct multi-robot network identification via MAC OUI and port signatures, with honest uncertainty",
+        "citation": "(file: 2026-06-12_dd0bc487.jsonl, date: 2026-06-12, turn 21)"
+      },
+      {
+        "claim": "Asked clarifying questions and refused to fabricate for a graded doc",
+        "citation": "(file: 2026-06-12_dd0bc487.jsonl, date: 2026-06-12, turn 66)"
+      },
+      {
+        "claim": "Em-dash removal self-verified with Grep returning no matches",
+        "citation": "(file: 2026-06-12_dd0bc487.jsonl, date: 2026-06-12, turn 82)"
+      },
+      {
+        "claim": "Concise correct four-bug ROS 2 connectivity root-cause summary",
+        "citation": "(file: 2026-06-12_dd0bc487.jsonl, date: 2026-06-12, turn 92)"
+      },
+      {
+        "claim": "Diagnosed VPN-vs-physical-network reality from route evidence and gave an honest feasibility verdict",
+        "citation": "(file: 2026-06-12_dd0bc487.jsonl, date: 2026-06-12, turn 111)"
+      },
+      {
+        "claim": "Robots unreachable from VPN-tunneled laptop, blocking the live RViz goal",
+        "citation": "(file: 2026-06-12_dd0bc487.jsonl, date: 2026-06-12, turn 99)"
+      },
+      {
+        "claim": "Embodiment goal deferred to a separate WSL agent via a self-contained handoff doc",
+        "citation": "(file: 2026-06-12_dd0bc487.jsonl, date: 2026-06-12, turn 124)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-13_67626b7d.md",
+    "date": "2026-06-13",
+    "motive": "An empty housekeeping session. The transcript contains only local-command artifacts: the user ran the /model slash command and set the default model to \"Fable 5\". No robotics task, question, or work was initiated.",
+    "outcome": "not-reached",
+    "thesis_category": "non-technical",
+    "thesis_alignment": "Neither FOR nor AGAINST the thesis. This is a null/empty session containing only a /model command and its output (file: 2026-06-13_67626b7d.jsonl, date: 2026-06-13, turn: 2-3). There is no code writing, debugging, ROS/ROS2 work, sensorimotor control, spatial reasoning, multi-robot coordination, or error recovery to evaluate, so it should be excluded from thesis evidence.",
+    "automation_level": "not-determinable",
+    "user_input_count": 3,
+    "tasks_done_n": 0,
+    "tasks_failed_n": 0,
+    "key_evidence": [
+      {
+        "claim": "The session is only a local-command sequence; the system caveat states these messages were generated while running local commands and should not be treated as a request.",
+        "citation": "(file: 2026-06-13_67626b7d.jsonl, date: 2026-06-13, turn 1)"
+      },
+      {
+        "claim": "The substantive content is the /model command invocation.",
+        "citation": "(file: 2026-06-13_67626b7d.jsonl, date: 2026-06-13, turn 2)"
+      },
+      {
+        "claim": "The result was a default-model change to 'Fable 5' saved for new sessions.",
+        "citation": "(file: 2026-06-13_67626b7d.jsonl, date: 2026-06-13, turn 3)"
+      },
+      {
+        "claim": "The digest header confirms 3 user turns, 0 assistant turns, 0 tool calls, and 0 images.",
+        "citation": "(file: 2026-06-13_67626b7d.jsonl, date: 2026-06-13, turn 1-3)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-15_40f8e5f3.jsonl",
+    "date": "2026-06-15",
+    "motive": "The user wanted to turn a rough auto-transcribed team meeting into presentation deliverables for a GuideMate (TurtleBot 4) capstone status update. This grew to include meeting notes, a designed PowerPoint deck, a full redesign under strict style constraints, and several companion markdown docs.",
+    "outcome": "reached",
+    "thesis_category": "non-technical",
+    "thesis_alignment": "Neutral / not directly on point. The session is presentation and documentation production for a robotics capstone, with no ROS/ROS2 code, no robot runtime, and no embodied control. It offers weak INDIRECT support for the thesis's software-engineering half (closed-loop write-run-read-error-fix on a Node/pptx toolchain: building scripts, recovering from npm and EBUSY failures, dispatching QA subagents; turns 49, 91, 121, 81), but provides NO evidence about embodiment because no robot or simulator was driven. Net: not strong evidence FOR or AGAINST the thesis.",
+    "automation_level": "high",
+    "user_input_count": 7,
+    "tasks_done_n": 6,
+    "tasks_failed_n": 1,
+    "key_evidence": [
+      {
+        "claim": "Opening task is converting a meeting transcript into presentation notes and a team tracker",
+        "citation": "(file: 2026-06-15_40f8e5f3.jsonl, date: 2026-06-15, turn 1)"
+      },
+      {
+        "claim": "Assistant read repo context and corrected transcript artifacts to real project terms (NUwave, Gazebo, Nav2)",
+        "citation": "(file: 2026-06-15_40f8e5f3.jsonl, date: 2026-06-15, turn 18)"
+      },
+      {
+        "claim": "Recovered from a failed bulk npm install by isolating packages and smoke-tested sharp before the full build",
+        "citation": "(file: 2026-06-15_40f8e5f3.jsonl, date: 2026-06-15, turn 49)"
+      },
+      {
+        "claim": "Generated a 12-slide deck and exported all slides to PNG via PowerPoint COM",
+        "citation": "(file: 2026-06-15_40f8e5f3.jsonl, date: 2026-06-15, turn 79)"
+      },
+      {
+        "claim": "Dispatched a subagent for adversarial visual QA on both deck versions",
+        "citation": "(file: 2026-06-15_40f8e5f3.jsonl, date: 2026-06-15, turn 81)"
+      },
+      {
+        "claim": "User demanded a full redesign (no reused fonts/colors, no em dashes, drop the one-side border) and the assistant complied",
+        "citation": "(file: 2026-06-15_40f8e5f3.jsonl, date: 2026-06-15, turn 84)"
+      },
+      {
+        "claim": "Diagnosed and worked around EBUSY locks from the user's open PowerPoint without disturbing the user's window",
+        "citation": "(file: 2026-06-15_40f8e5f3.jsonl, date: 2026-06-15, turn 91)"
+      },
+      {
+        "claim": "Claimed the final two fixes 'verified' despite 0-char image reads",
+        "citation": "(file: 2026-06-15_40f8e5f3.jsonl, date: 2026-06-15, turn 135)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-19_69022496.jsonl",
+    "date": "2026-06-19",
+    "motive": "Developing a TurtleBot 4 guide robot (robot 468) for autonomous indoor mapping with ROS 2: stand up self-driven SLAM/Nav2 mapping, build a custom BFS frontier explorer, and solve the glass-wall problem (the 2D lidar cannot see glass) using the Create 3 bump sensor and the OAK-D depth camera, while keeping compute on the Pi 4.",
+    "outcome": "partial",
+    "thesis_category": "mixed",
+    "thesis_alignment": "Strong evidence FOR the thesis. On the software-engineering side the agent was genuinely strong: it wrote, built, ran, and debugged real ROS 2 packages in closed loops, fixing the namespaced-TF bug (turn 158) and the camera_info resolution mismatch that skewed the depth wedge to -89 degrees, verifying the corrected +/-38 degree forward wedge (turn 1073), and correctly diagnosing the event-only hazard topic against a QoS red herring (turn 349). On the embodied/runtime-brain side it was the weaker link, as the thesis predicts: the robot physically drove into glass (turn 257) and still tapped it repeatedly on the reactive glass-aware re-run (turn 428), and the user had to correct the agent's spatial reasoning about the camera mount and the metal base (turns 453, 456). The cleverest runtime ideas (vertical-collapse, scan injection, data-driven ground fit) were prompted by the user (turns 719, 726, 1334) with the agent executing them well in software, fitting AI as strong implementer but weaker autonomous embodied strategist.",
+    "automation_level": "high",
+    "user_input_count": 457,
+    "tasks_done_n": 14,
+    "tasks_failed_n": 4,
+    "key_evidence": [
+      {
+        "claim": "Custom BFS explorer built; read-only dry run found 19 frontier clusters with no motion",
+        "citation": "(file: 2026-06-19_69022496.jsonl, date: 2026-06-19, turn: 167)"
+      },
+      {
+        "claim": "Namespaced-TF remap bug (/tf to tf) diagnosed and fixed; without it the explorer would never get a pose",
+        "citation": "(file: 2026-06-19_69022496.jsonl, date: 2026-06-19, turn: 158)"
+      },
+      {
+        "claim": "First autonomous run drove the robot into the glass wall; emergency stop required killing all of Nav2",
+        "citation": "(file: 2026-06-19_69022496.jsonl, date: 2026-06-19, turn: 257)"
+      },
+      {
+        "claim": "Hazard stream correctly diagnosed as event-only on the raw topic, proven by 96 msgs/5s on _do_not_use/odom while hazard stayed silent",
+        "citation": "(file: 2026-06-19_69022496.jsonl, date: 2026-06-19, turn: 349)"
+      },
+      {
+        "claim": "Glass-aware re-run still tapped the glass repeatedly; the reactive mark/blacklist did not block the path fast enough",
+        "citation": "(file: 2026-06-19_69022496.jsonl, date: 2026-06-19, turn: 428)"
+      },
+      {
+        "claim": "User had to correct the agent's spatial reasoning: the TB4 camera is mounted parallel with no downward tilt",
+        "citation": "(file: 2026-06-19_69022496.jsonl, date: 2026-06-19, turn: 456)"
+      },
+      {
+        "claim": "camera_info 1280x720 vs depth 640x480 mismatch found and FOV-fallback fix verified to produce a correct forward wedge",
+        "citation": "(file: 2026-06-19_69022496.jsonl, date: 2026-06-19, turn: 1073)"
+      },
+      {
+        "claim": "Hardware validation: depth saw the glass base on 205 beams, fusion injected 195, raised 0, where raw lidar read open space",
+        "citation": "(file: 2026-06-19_69022496.jsonl, date: 2026-06-19, turn: 1158)"
+      },
+      {
+        "claim": "SLAM-on-fused in-motion localization held 0.0 cm / 0.00 degrees with no double-walls",
+        "citation": "(file: 2026-06-19_69022496.jsonl, date: 2026-06-19, turn: 1255)"
+      },
+      {
+        "claim": "Final glass-aware autonomous run never launched; robot docked then low battery, work left uncommitted",
+        "citation": "(file: 2026-06-19_69022496.jsonl, date: 2026-06-19, turn: 1327)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-19_fa008639.jsonl",
+    "date": "2026-06-19",
+    "motive": "The user remotely operates a TurtleBot 4 via DWService and reports that ROS becomes randomly inaccessible during those sessions. They want a reliable fix, then to get keyboard teleop running on the robot.",
+    "outcome": "partial",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Evidence FOR the thesis. On the SE/config side the AI ran the credited closed-loop write-run-read-error-fix iteration: read the live system, diagnosed an expired GPG key from an apt error, fixed it, re-ran to a successful install (turn 32, 34, 39, 41, 42, 44). The one weak spot also fits the thesis: everything touching the embodied runtime stayed unverified. The assistant never confirmed the robot drives under teleop (turn 44) and could not verify the on-device DWService login behavior (turn 61). The session never reaches sensorimotor/embodied control, so it supports the strong-at-SE half and does not contradict the weak-at-embodiment half.",
+    "automation_level": "medium",
+    "user_input_count": 21,
+    "tasks_done_n": 6,
+    "tasks_failed_n": 3,
+    "key_evidence": [
+      {
+        "claim": "Confident initial network/DDS mis-diagnosis, rejected by the user",
+        "citation": "(file: 2026-06-19_fa008639.jsonl, date: 2026-06-19, turn 3, 4)"
+      },
+      {
+        "claim": "Correct re-diagnosis as user-context / root-vs-login-shell problem",
+        "citation": "(file: 2026-06-19_fa008639.jsonl, date: 2026-06-19, turn 6)"
+      },
+      {
+        "claim": "Live-system inspection (id, human users, .bashrc ROS lines, DWService owner) grounding the diagnosis",
+        "citation": "(file: 2026-06-19_fa008639.jsonl, date: 2026-06-19, turn 9, 10, 11, 14, 16)"
+      },
+      {
+        "claim": "Closed-loop apt recovery: expired ROS GPG key (Exit 100) diagnosed, keyring refreshed, teleop_twist_keyboard v2.4.1 installed",
+        "citation": "(file: 2026-06-19_fa008639.jsonl, date: 2026-06-20, turn 32, 34, 39, 41, 42)"
+      },
+      {
+        "claim": "Auto-mode classifier blocked the /root/.bashrc edit, enforcing human approval",
+        "citation": "(file: 2026-06-19_fa008639.jsonl, date: 2026-06-20, turn 54, 57)"
+      },
+      {
+        "claim": "Final fix left unverified for the actual DWService login path",
+        "citation": "(file: 2026-06-19_fa008639.jsonl, date: 2026-06-20, turn 61)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_29aff2bd.md",
+    "date": "2026-06-20",
+    "motive": "A very long multi-thread session on a real TurtleBot 4 (turtlebot468) that began as a battery/power-consumption investigation, moved through ROS 2 localization and fusion Q&A and a Create 3 base-offline recovery, then became a large software-engineering effort: porting three custom Python ROS 2 nodes to C++ with multi-agent adversarial verification, benchmarking, and a shared-TF container. The robot was deliberately never driven autonomously.",
+    "outcome": "partial",
+    "thesis_category": "mixed",
+    "thesis_alignment": "FOR the thesis. On the software-engineering side the AI was genuinely capable: closed-loop ROS2 code edits, faithful C++ ports of three nontrivial nodes (including numpy float32 parity), self-caught bugs via multi-agent adversarial review, self-built/debugged test harnesses, and real ~14-17x benchmarked speedups (turns 807, 909, 1009, 1153, 1216). On the runtime embodied side it was weak exactly as predicted: it could not get the perception/SLAM/Nav2 brain to actually run on the robot (compute saturation, lifecycle timeouts, load 18, turns 561, 612), it depended on the human for all spatial/physical ground truth (lidar motor stopped turn 117, base light ring turns 364/392, area clear turn 531), and never closed the loop on autonomous motion. Even its biggest embodied diagnostic win (the per-node TF tax, turn 723) was a software/architecture insight, not sensorimotor control.",
+    "automation_level": "high",
+    "user_input_count": 65,
+    "tasks_done_n": 12,
+    "tasks_failed_n": 4,
+    "key_evidence": [
+      {
+        "claim": "Soft park services reported success but did not cut power: stop_motor kept the lidar at 8 Hz and SLAM pause kept pinning 95% CPU",
+        "citation": "(file: 2026-06-20_29aff2bd.jsonl, date: 2026-06-20, turn 73)"
+      },
+      {
+        "claim": "User supplied physical ground truth the AI could not sense ('motor is stopped')",
+        "citation": "(file: 2026-06-20_29aff2bd.jsonl, date: 2026-06-20, turn 117)"
+      },
+      {
+        "claim": "Assistant overturned its own low-battery brownout hypothesis using kernel logs (usb0 never disconnected, under-voltage never tripped)",
+        "citation": "(file: 2026-06-20_29aff2bd.jsonl, date: 2026-06-20, turn 385)"
+      },
+      {
+        "claim": "Embodied failure: the robot never moved because the Pi hit its compute wall and Nav2 lifecycle never activated (smoother_server change_state timeout, unbounded SLAM queue)",
+        "citation": "(file: 2026-06-20_29aff2bd.jsonl, date: 2026-06-20, turns 561, 575)"
+      },
+      {
+        "claim": "Software root-cause via experiment: an empty rclpy node = 0% CPU, the ~16%/node was each node's TransformListener parsing the 31 Hz /tf firehose",
+        "citation": "(file: 2026-06-20_29aff2bd.jsonl, date: 2026-06-20, turns 723, 727)"
+      },
+      {
+        "claim": "C++ port verified by multi-agent workflow with zero critical/major findings and re-verified allFixConfirmed; offline bfs test hit the exact expected frontier goal (0.950, 0.050)",
+        "citation": "(file: 2026-06-20_29aff2bd.jsonl, date: 2026-06-20, turns 807, 909, 1007)"
+      },
+      {
+        "claim": "Benchmarked CPU savings: fusion 52.4%->3.7% (~14x), bfs 95.8%->5.7% (~17x), glass_guard 17.8%->1.8% (~10x)",
+        "citation": "(file: 2026-06-20_29aff2bd.jsonl, date: 2026-06-20, turn 1216)"
+      },
+      {
+        "claim": "Shared-TF container validated: 4 nodes in one process, /tf subscription count = 1, ~1.5% idle CPU",
+        "citation": "(file: 2026-06-20_29aff2bd.jsonl, date: 2026-06-20, turn 1153)"
+      },
+      {
+        "claim": "The AI's own monitoring (claude ~55% CPU) worsened the very Pi saturation it was diagnosing",
+        "citation": "(file: 2026-06-20_29aff2bd.jsonl, date: 2026-06-20, turn 553)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_6fb45153.md",
+    "date": "2026-06-20",
+    "motive": "A live TurtleBot 4 operations session: the user wanted to read the robot's battery status and then send a dock command after seeing the battery was low. It is a runtime robot-operations session, not code authoring.",
+    "outcome": "partial",
+    "thesis_category": "embodied-hardware",
+    "thesis_alignment": "Evidence FOR the thesis on both halves. Strong on the software/tooling side: the agent fluently used the ROS 2 CLI, recovered from namespacing errors via a write-run-read-error loop, and decoded message types correctly (turns 15-21). Weak as the embodied runtime brain: when the task crossed into the physical world (actually docking), the action ABORTED and the agent could not close the loop or recover, neither diagnosing via dock_status nor retrying (turns 27,28).",
+    "automation_level": "medium",
+    "user_input_count": 16,
+    "tasks_done_n": 3,
+    "tasks_failed_n": 1,
+    "key_evidence": [
+      {
+        "claim": "Agent first checked the host Pi battery instead of the robot, needing user correction",
+        "citation": "(file: 2026-06-20_6fb45153.jsonl, date: 2026-06-20, turn 7,12,13)"
+      },
+      {
+        "claim": "Self-corrected to the namespaced topic and successfully read the battery",
+        "citation": "(file: 2026-06-20_6fb45153.jsonl, date: 2026-06-20, turn 17,18,20)"
+      },
+      {
+        "claim": "Correctly interpreted battery as 23%, discharging, recommending recharge",
+        "citation": "(file: 2026-06-20_6fb45153.jsonl, date: 2026-06-20, turn 21)"
+      },
+      {
+        "claim": "Discovered and sent the Dock action with the correct message type",
+        "citation": "(file: 2026-06-20_6fb45153.jsonl, date: 2026-06-20, turn 24,26)"
+      },
+      {
+        "claim": "Embodied failure: dock action finished ABORTED with is_docked false",
+        "citation": "(file: 2026-06-20_6fb45153.jsonl, date: 2026-06-20, turn 27)"
+      },
+      {
+        "claim": "Honest but non-recovering failure report; no dock_status diagnosis attempted",
+        "citation": "(file: 2026-06-20_6fb45153.jsonl, date: 2026-06-20, turn 25,28)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_7382bfa4.jsonl",
+    "date": "2026-06-20",
+    "motive": "A documentation-housekeeping request on a ROS 2 robotics repo: analyze all docs and material, design a properly structured layout, and remove non-important content. It later pivoted into an on-robot hardware verification of a depth-image size conflict.",
+    "outcome": "reached",
+    "thesis_category": "mixed",
+    "thesis_alignment": "Evidence FOR the thesis. On the software-engineering side Claude was strongly autonomous and accurate: it separated tracked repo content from gitignored clutter (turns 21-23), caught a build-breaking setup.py/combined_node.py split (turns 50, 56), orchestrated multi-agent audit and execution, and verified its own output with link scans and fact-preservation checks (turns 83-141). The embodied portion succeeded only on a narrow, deterministic bring-up-and-measure task and leaned heavily on pre-existing human-documented gotchas (X_LINK stall gotcha #8, pkill -f trap gotcha #6) at turns 171-172; no autonomous sensorimotor control, multi-robot coordination, or novel runtime recovery, and the harder embodied items (full autonomous mapping run, localization sanity check) stayed deferred in Next (turn 139). Strong autonomous competence sits on the software side, consistent with the thesis.",
+    "automation_level": "high",
+    "user_input_count": 5,
+    "tasks_done_n": 5,
+    "tasks_failed_n": 1,
+    "key_evidence": [
+      {
+        "claim": "User's sole broad opening instruction, which Claude self-directed into a full multi-agent workflow",
+        "citation": "(file: 2026-06-20_7382bfa4.jsonl, date: 2026-06-20, turn: 3)"
+      },
+      {
+        "claim": "Claude separates the real 35-file tracked repo from gitignored vendored SDK noise and verifies clean git history for secrets",
+        "citation": "(file: 2026-06-20_7382bfa4.jsonl, date: 2026-06-20, turn: 21)"
+      },
+      {
+        "claim": "22-agent audit surfaces a build-breaking setup.py / untracked combined_node.py split",
+        "citation": "(file: 2026-06-20_7382bfa4.jsonl, date: 2026-06-20, turn: 56)"
+      },
+      {
+        "claim": "Claude independently reads nav2_glass.yaml and slam_fused.yaml to confirm scan_fused migration before editing docs",
+        "citation": "(file: 2026-06-20_7382bfa4.jsonl, date: 2026-06-20, turn: 68)"
+      },
+      {
+        "claim": "git rm aborted on root:root ownership, resolved via non-interactive sudo chown",
+        "citation": "(file: 2026-06-20_7382bfa4.jsonl, date: 2026-06-20, turn: 127)"
+      },
+      {
+        "claim": "On-robot: camera reproduced the X_LINK stall, Claude killed by exact name and relaunched, then measured depth 640x480 vs camera_info 1280x720",
+        "citation": "(file: 2026-06-20_7382bfa4.jsonl, date: 2026-06-20, turn: 181)"
+      },
+      {
+        "claim": "Honest status: localization sanity check kept in Next, not over-claimed",
+        "citation": "(file: 2026-06-20_7382bfa4.jsonl, date: 2026-06-20, turn: 139)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_7833e513.jsonl",
+    "date": "2026-06-20",
+    "motive": "The user reported persistent OAK-D-LITE camera/depth-sensor failures on a TurtleBot 4 robot and gave an open-ended, time-unbounded mandate to find when/why it fails, how to recover, and how to permanently prevent and fix it. The session is a deep on-robot debugging investigation of the camera driver, USB stack, and ROS 2 config.",
+    "outcome": "partial",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "FOR the thesis. The AI was strong at the software-engineering/systems-debugging side of robotics: it wrote instrumentation, ran it against the live ROS 2 / depthai driver, read kernel and driver errors (X_LINK_ERROR, get_throttled), and iterated via a controlled write-run-read-error-fix loop to a falsifiable root cause that overturned the project's prior wrong docs (turns 101, 159). It reasoned correctly about ROS 2 specifics (SLAM not needing the OAK IMU, RGB/depth co-existence, DDS discovery artifacts) and produced validated tooling and consistent docs (turns 543, 684). The one thing it could NOT solve was the embodied physical limit: the residual heavy+USB3 brownout is hardware power delivery, which the AI could only characterize and route around, not fix (turns 470, 566). That boundary matches the thesis prediction. The session does not directly test closed-loop motion control or multi-robot coordination, so the embodiment-weakness claim is only indirectly supported, but where physical embodiment intruded the AI hit exactly the predicted wall.",
+    "automation_level": "high",
+    "user_input_count": 17,
+    "tasks_done_n": 8,
+    "tasks_failed_n": 3,
+    "key_evidence": [
+      {
+        "claim": "Controlled single-variable experiment proved the root cause: usbfs=16 aborts in ~5s with X_LINK_ERROR; usbfs=256 (same config) runs 199s on USB3 with zero disconnects, throttled=0x0",
+        "citation": "(2026-06-20_7833e513.jsonl, 2026-06-20, turn 101)"
+      },
+      {
+        "claim": "Overturned the documented power-starvation root cause: under-voltage bit never latched in the entire investigation; only flag seen (0x80000) was thermal from synthetic CPU stress",
+        "citation": "(2026-06-20_7833e513.jsonl, 2026-06-20, turn 261)"
+      },
+      {
+        "claim": "Rigorous mode matrix: light+USB2, light+USB3, heavy+USB2 all 0 drops over ~285s; heavy+USB3 drops at ~28-31s as the only failing mode",
+        "citation": "(2026-06-20_7833e513.jsonl, 2026-06-21, turn 535)"
+      },
+      {
+        "claim": "Load sweep ruled out CPU and temperature: depth-only camera survived 0-3 extra cores plus active Pi thermal-throttling with zero drops, confirming power/draw",
+        "citation": "(2026-06-20_7833e513.jsonl, 2026-06-21, turn 566)"
+      },
+      {
+        "claim": "Self-corrected an over-claim: stated I was too optimistic when I said idle stays up after a no-safety-net soak dropped at ~59s idle",
+        "citation": "(2026-06-20_7833e513.jsonl, 2026-06-21, turn 432)"
+      },
+      {
+        "claim": "Watchdog validated end-to-end on real hardware: detect wedge -> 30s grace -> kill -> usbreset -> relaunch -> Camera ready",
+        "citation": "(2026-06-20_7833e513.jsonl, 2026-06-20, turn 315)"
+      },
+      {
+        "claim": "Embodied/hardware limit acknowledged: the residual drop is hardware-side and not fixable in software; true fix is power-delivery hardware, mitigation is depth-only + watchdog",
+        "citation": "(2026-06-20_7833e513.jsonl, 2026-06-21, turn 470)"
+      },
+      {
+        "claim": "Infrastructure safety: auto-mode classifier blocked the kernel boot-config edit; agent routed it through explicit consent and applied only after the user chose Installer, no reboot",
+        "citation": "(2026-06-20_7833e513.jsonl, 2026-06-20, turn 263)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_agent-a0.jsonl",
+    "date": "2026-06-20",
+    "motive": "An orchestration harness tasked the agent with auditing one documentation file (docs/aws-iot/iot-core-overview.md) in a TurtleBot 4 ROS2 \"guide robot\" repo: read it plus project context, spot-check its claims against on-disk code/config/credentials, rate importance, flag drift, and return a structured verdict.",
+    "outcome": "reached",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Weak/neutral evidence FOR the thesis, exercising only its SE-strength half. The agent performed accurate, methodical static verification of documentation against on-disk ROS2 code/config/credentials via autonomous file inspection (turns 8,12,14,17), supporting \"AI is strong at the software-engineering side of robotics.\" It never touches runtime control, sensorimotor loops, spatial reasoning, or multi-robot coordination, so it provides no evidence about the embodiment-weakness half. Consistent with, but not a strong test of, the thesis.",
+    "automation_level": "high",
+    "user_input_count": 7,
+    "tasks_done_n": 7,
+    "tasks_failed_n": 0,
+    "key_evidence": [
+      {
+        "claim": "Agent tasked to audit one doc and spot-check against ground-truth code inventory",
+        "citation": "(file: 2026-06-20_agent-a0.jsonl, date: 2026-06-20, turn: 1)"
+      },
+      {
+        "claim": "Read the target doc then autonomously listed directory and credential files",
+        "citation": "(file: 2026-06-20_agent-a0.jsonl, date: 2026-06-20, turn: 3, 5)"
+      },
+      {
+        "claim": "Verified policy topics sdk/test/{python,java,js} and client IDs matched the doc exactly",
+        "citation": "(file: 2026-06-20_agent-a0.jsonl, date: 2026-06-20, turn: 9, 14)"
+      },
+      {
+        "claim": "Confirmed start.sh runs the MQTT sample on sdk/test/python with client_id basicPubSub",
+        "citation": "(file: 2026-06-20_agent-a0.jsonl, date: 2026-06-20, turn: 13, 14)"
+      },
+      {
+        "claim": "Confirmed security boundary: real account ID/region/endpoint gitignored, doc uses placeholders",
+        "citation": "(file: 2026-06-20_agent-a0.jsonl, date: 2026-06-20, turn: 14, 17)"
+      },
+      {
+        "claim": "Reported no src/ drift because the doc makes no ROS2 code claims",
+        "citation": "(file: 2026-06-20_agent-a0.jsonl, date: 2026-06-20, turn: 14, 17)"
+      },
+      {
+        "claim": "Returned structured verdict (keep, useful, accurate) accepted by the harness",
+        "citation": "(file: 2026-06-20_agent-a0.jsonl, date: 2026-06-20, turn: 15, 16)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_agent-a1.jsonl",
+    "date": "2026-06-20",
+    "motive": "A single autonomous research task: find KNOWN, documented OAK-D / OAK-D-LITE random-disconnect issues on Raspberry Pi 4 / ARM hosts under depthai or depthai_ros_driver, capture symptom/cause/fix per issue from primary sources, and rank which documented causes most likely match the team's own observed failure signature (2485 to f63b USB id cycling, disconnect without under-voltage).",
+    "outcome": "partial",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Weak-to-moderate evidence FOR the thesis on the software-engineering side. The agent showed the predicted strength: autonomous closed-loop information gathering with write-run-read-error-fix style iteration applied to web tooling, self-recovering from a missing gh CLI (turn 37) and 404s (turn 24) by substituting working endpoints (turns 31,42,45) and assembling a correctly structured, source-cited debugging report (turn 66). It never touched the embodied runtime (no robot driven, no sensorimotor loop, no spatial reasoning), so it does not test the embodiment weakness. The caveat against an unqualified FOR reading: the agent reported the dominant public root cause (power brown-out) without flagging that the team's own stated signature contradicts it (turn 1 vs turn 66), a context-grounded diagnostic discrimination gap that separates retrieval from genuine debugging.",
+    "automation_level": "high",
+    "user_input_count": 1,
+    "tasks_done_n": 4,
+    "tasks_failed_n": 4,
+    "key_evidence": [
+      {
+        "claim": "A single human brief defined the full task and the team's failure signature; no human follow-ups after this",
+        "citation": "(file: 2026-06-20_agent-a1.jsonl, date: 2026-06-20, turn: 1)"
+      },
+      {
+        "claim": "Agent autonomously loaded web tools and dispatched parallel searches with no human input after turn 1",
+        "citation": "(file: 2026-06-20_agent-a1.jsonl, date: 2026-06-20, turn: 3)"
+      },
+      {
+        "claim": "Error recovery: gh issue view returned empty then 'gh: command not found'; agent pivoted to WebFetch on raw/rendered URLs",
+        "citation": "(file: 2026-06-20_agent-a1.jsonl, date: 2026-06-20, turn: 37)"
+      },
+      {
+        "claim": "Routed around dead pages (404 / render failures) by fetching alternate sources",
+        "citation": "(file: 2026-06-20_agent-a1.jsonl, date: 2026-06-20, turn: 24)"
+      },
+      {
+        "claim": "Concrete fixes extracted including udev/usbfs command, watchdog mechanism, and 105C thermal cutoff",
+        "citation": "(file: 2026-06-20_agent-a1.jsonl, date: 2026-06-20, turn: 62)"
+      },
+      {
+        "claim": "Final synthesis framed root cause as power brown-out, not reconciling the team's stated disconnect-without-under-voltage signature",
+        "citation": "(file: 2026-06-20_agent-a1.jsonl, date: 2026-06-20, turn: 66)"
+      },
+      {
+        "claim": "Self-directed completion: agent declared coverage sufficient and compiled the report unprompted",
+        "citation": "(file: 2026-06-20_agent-a1.jsonl, date: 2026-06-20, turn: 49)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_agent-a2.md",
+    "date": "2026-06-20",
+    "motive": "A synthesis task: the user supplied extensive web/driver research into OAK-D-LITE camera/depth USB-disconnect failures on a Raspberry Pi 4 (turtlebot468, ROS 2 Humble) and asked Claude to consolidate it into one authoritative report, reconciled against the live repo and robot state, with a recovery playbook, on-robot experiments, and a watchdog design.",
+    "outcome": "reached",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Evidence FOR the thesis. The assistant performed the software-engineering strength the thesis predicts: it read the codebase and docs via a read-verify loop (greps at turns 3, 5, 7), reconciled conflicting evidence, corrected a wrong root-cause claim in the project docs, and produced a rigorous diagnosis and remediation plan (turn 9), all without touching the embodied system. The embodied side (whether the device physically recovers, whether the brownout hypothesis holds under real current spikes) was entirely punted to human-run on-robot experiments (turn 9), matching the runtime-embodiment weakness the thesis describes. Caveat: this is a diagnosis/planning session rather than ROS-code-repair, so it supports the broader 'AI strong at the software side of robotics' claim more than the narrow code-fix claim.",
+    "automation_level": "medium",
+    "user_input_count": 4,
+    "tasks_done_n": 3,
+    "tasks_failed_n": 0,
+    "key_evidence": [
+      {
+        "claim": "The single human prompt sets a pure synthesis-and-reconciliation task with supplied research and a directive to ground it in live state",
+        "citation": "(file: 2026-06-20_agent-a2.jsonl, date: 2026-06-20, turn: 1)"
+      },
+      {
+        "claim": "The assistant self-initiated repo verification before writing, grepping the launch file camera node section",
+        "citation": "(file: 2026-06-20_agent-a2.jsonl, date: 2026-06-20, turn: 3)"
+      },
+      {
+        "claim": "It grepped the fusion node confirming max_depth_age=0.4 and silent stale passthrough",
+        "citation": "(file: 2026-06-20_agent-a2.jsonl, date: 2026-06-20, turn: 5 and 6)"
+      },
+      {
+        "claim": "It grepped docs/camera.md to check its claims directly",
+        "citation": "(file: 2026-06-20_agent-a2.jsonl, date: 2026-06-20, turn: 7 and 8)"
+      },
+      {
+        "claim": "It identified the core contradiction: the repo claim that power is proven by the under-voltage flag is refuted by a full disconnect-cycle boot with a clean 0x0 flag",
+        "citation": "(file: 2026-06-20_agent-a2.jsonl, date: 2026-06-20, turn: 9)"
+      },
+      {
+        "claim": "It built a six-mode failure taxonomy and ranked five root-cause hypotheses each with a discriminating test",
+        "citation": "(file: 2026-06-20_agent-a2.jsonl, date: 2026-06-20, turn: 9)"
+      },
+      {
+        "claim": "All physical validation was deferred to seven human-run on-robot experiments and an untested watchdog script, leaving the brownout conclusion unconfirmed",
+        "citation": "(file: 2026-06-20_agent-a2.jsonl, date: 2026-06-20, turn: 9)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_agent-a3.md",
+    "date": "2026-06-20",
+    "motive": "The user asked the agent to update one documentation file (docs/mapping/README.md) that had drifted from the ROS 2 codebase, correcting it from a legacy oakd/scan second-costmap-source architecture to the current scan_fused single-source fusion design, with verified ground-truth facts supplied.",
+    "outcome": "reached",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Evidence FOR the thesis. The task is purely software-engineering/authoring for a robotics codebase: reconciling docs with ROS 2 code, launch semantics, and config wiring, which the agent did cleanly via a Read-then-Edit loop while tracking a non-trivial oakd/scan-to-scan_fused migration (turns 1, 6-24). No embodied capability was exercised: no sensorimotor control, no spatial reasoning, no live robot, no multi-robot coordination. The agent copied the embodied ground-truth (on-robot 205-beam validation) from the human rather than producing it, and left the on-robot localization check PENDING (turns 1, 22, 24). So it supports strong-at-robotics-software-engineering and is silent-by-design on embodiment.",
+    "automation_level": "high",
+    "user_input_count": 9,
+    "tasks_done_n": 5,
+    "tasks_failed_n": 0,
+    "key_evidence": [
+      {
+        "claim": "Single human instruction defines a precise multi-part doc update with supplied ground truth",
+        "citation": "(file: 2026-06-20_agent-a3.jsonl, date: 2026-06-20, turn 1)"
+      },
+      {
+        "claim": "Agent reads the target file before editing, following the prescribed workflow",
+        "citation": "(file: 2026-06-20_agent-a3.jsonl, date: 2026-06-20, turn 3)"
+      },
+      {
+        "claim": "Six in-place Edits executed autonomously, each returning success",
+        "citation": "(file: 2026-06-20_agent-a3.jsonl, date: 2026-06-20, turn 6)"
+      },
+      {
+        "claim": "Status update reproduces supplied hardware-validation numbers without invention and keeps the on-robot sanity check PENDING",
+        "citation": "(file: 2026-06-20_agent-a3.jsonl, date: 2026-06-20, turn 22)"
+      },
+      {
+        "claim": "Final summary maps changes back to all four requested parts plus camera-name standardization",
+        "citation": "(file: 2026-06-20_agent-a3.jsonl, date: 2026-06-20, turn 24)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_agent-a4.jsonl",
+    "date": "2026-06-20",
+    "motive": "Re-verify a just-fixed C++ ROS2 perception port (depth_lidar_fusion_node.cpp) against its Python ground truth: confirm a previously-flagged float64-vs-float32 height divergence is resolved and adversarially check the fix introduced no new numeric bug.",
+    "outcome": "reached",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Evidence FOR the thesis. The session is pure static, offline source analysis of robotics (ROS2) code: closed-loop write-run-read-error-fix iteration to verify numeric fidelity of a C++ port against a Python reference, including hypothesis formation, empirical script testing, self-correction, and a provably-grounded verdict (turns 10, 13, 16, 19, 22). No robot, sensor, runtime control, spatial reasoning, or multi-robot coordination is involved, so it does not test the embodied-runtime side and provides no counter-evidence to it. A clean positive data point for the code-engineering strength only.",
+    "automation_level": "high",
+    "user_input_count": 9,
+    "tasks_done_n": 6,
+    "tasks_failed_n": 0,
+    "key_evidence": [
+      {
+        "claim": "Single human task prompt requesting fix confirmation plus adversarial regression hunt",
+        "citation": "(file: 2026-06-20_agent-a4.jsonl, date: 2026-06-20, turn 1)"
+      },
+      {
+        "claim": "Agent read both Python ground truth and C++ port in full before analyzing",
+        "citation": "(file: 2026-06-20_agent-a4.jsonl, date: 2026-06-20, turn 3, 5)"
+      },
+      {
+        "claim": "Agent self-corrected after empirical test showed float32(0.06) is below float64 0.06, opposite its initial on-paper estimate",
+        "citation": "(file: 2026-06-20_agent-a4.jsonl, date: 2026-06-20, turn 12, 13)"
+      },
+      {
+        "claim": "General proof that no float32 lies strictly between a limit's float32-cast and float64 value, making the band comparison bit-for-bit equivalent to numpy",
+        "citation": "(file: 2026-06-20_agent-a4.jsonl, date: 2026-06-20, turn 16, 18, 19)"
+      },
+      {
+        "claim": "Empirical bit-equality of numpy f64_scalar - f32_array versus pre-cast float32 arithmetic confirmed op-order equivalence",
+        "citation": "(file: 2026-06-20_agent-a4.jsonl, date: 2026-06-20, turn 20, 21, 22)"
+      },
+      {
+        "claim": "Final verdict fix_confirmed:true with no regressions accepted by harness",
+        "citation": "(file: 2026-06-20_agent-a4.jsonl, date: 2026-06-20, turn 23, 24, 25)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_agent-a5.jsonl",
+    "date": "2026-06-20",
+    "motive": "The user asked the agent to research Linux/Raspberry Pi 4 USB-level techniques to both prevent and recover an OAK-D-LITE camera that disconnects or wedges (the 0 Hz / X_LINK stall failure) without physically replugging, and to return a cited, copy-pasteable markdown report with exact commands, kernel params, and a watchdog script skeleton.",
+    "outcome": "partial",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Broadly evidence FOR the thesis, with a caveat. The agent was strong at the software-engineering/knowledge-work side: autonomously running a multi-source research loop, extracting exact commands, catching a weak source (turn 25), and injecting correct Pi-4-specific reasoning (turn 28, turn 42). But the task was research ABOUT an embodied failure mode, not embodied control itself: the agent never had to detect the wedge live, time a reset, or recover the sensorimotor loop on the actual robot, so it does not test (and therefore does not contradict) the 'weak as the runtime embodied brain' half of the thesis. The embodied claim remains untested here (file: 2026-06-20_agent-a5.jsonl, date: 2026-06-20, turn: 42).",
+    "automation_level": "high",
+    "user_input_count": 18,
+    "tasks_done_n": 4,
+    "tasks_failed_n": 2,
+    "key_evidence": [
+      {
+        "claim": "Single human prompt defines a four-bucket USB recovery research task with explicit tool instructions",
+        "citation": "(file: 2026-06-20_agent-a5.jsonl, date: 2026-06-20, turn 1)"
+      },
+      {
+        "claim": "Agent loaded WebSearch/WebFetch via ToolSearch then batched parallel searches autonomously",
+        "citation": "(file: 2026-06-20_agent-a5.jsonl, date: 2026-06-20, turn 3)"
+      },
+      {
+        "claim": "Agent fetched primary sources (usbreset.c, kernel power doc, uhubctl, Luxonis udev) for exact command text",
+        "citation": "(file: 2026-06-20_agent-a5.jsonl, date: 2026-06-20, turn 33)"
+      },
+      {
+        "claim": "Agent caught that the TechOverflow xHCI article had no Pi-4-specific fix and was generic",
+        "citation": "(file: 2026-06-20_agent-a5.jsonl, date: 2026-06-20, turn 25)"
+      },
+      {
+        "claim": "Agent injected correct domain reasoning: Pi 4 xHCI is the VL805 on PCIe, so PCI unbind/bind applies unlike Pi 3",
+        "citation": "(file: 2026-06-20_agent-a5.jsonl, date: 2026-06-20, turn 28)"
+      },
+      {
+        "claim": "Final report opens with the operationally critical VID/PID-changes-between-states fact tied to project gotcha #8, and the autosuspend-disable prevention fix",
+        "citation": "(file: 2026-06-20_agent-a5.jsonl, date: 2026-06-20, turn 42)"
+      },
+      {
+        "claim": "No hardware execution or empirical validation occurred; the deliverable is a recommendation document only",
+        "citation": "(file: 2026-06-20_agent-a5.jsonl, date: 2026-06-20, turn 42)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_agent-a6.jsonl",
+    "date": "2026-06-20",
+    "motive": "A single-shot research delegation: investigate the root cause of OAK-D-LITE USB disconnects on a Raspberry Pi 4 running ROS 2 Humble with depthai_ros_driver, distinguish candidate causes from on-device evidence, and return a detailed cited markdown root-cause section.",
+    "outcome": "reached",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Mixed, leaning FOR on process and AGAINST on embodied ground truth. FOR: the agent autonomously ran a competent self-directed multi-source investigation, adapted queries, recovered from failed fetches, and synthesized a well-cited answer with no human help (turns 3, 17, 23, 37, 58), matching the thesis that AI is strong at the desk-bound software-engineering side of robotics. AGAINST/caveat: the confident causal verdict (on-board 5V brownout, fix with independent power) was reached purely from documents and could not be validated against the device; the project CLAUDE.md gotcha 2 (corrected the same day) marks the power-centric daily-wedge claim wrong and attributes the real fix to a kernel parameter (usbfs_memory_mb=256). This illustrates the thesis boundary: away from the running robot the agent produced a polished, plausible, well-cited analysis that on-device evidence later contradicted, and the corrective signal came from embodied testing the agent never performed in this session.",
+    "automation_level": "high",
+    "user_input_count": 1,
+    "tasks_done_n": 5,
+    "tasks_failed_n": 2,
+    "key_evidence": [
+      {
+        "claim": "Single human research prompt specifying the 2485/f63b cycle, no under-voltage flag, and no over-current event",
+        "citation": "(file: 2026-06-20_agent-a6.jsonl, date: 2026-06-20, turn: 1)"
+      },
+      {
+        "claim": "Agent loaded WebSearch and WebFetch itself via ToolSearch before any research",
+        "citation": "(file: 2026-06-20_agent-a6.jsonl, date: 2026-06-20, turn: 3)"
+      },
+      {
+        "claim": "Adaptive, signature-targeted query refinement toward the specific failure pattern",
+        "citation": "(file: 2026-06-20_agent-a6.jsonl, date: 2026-06-20, turns: 17, 18)"
+      },
+      {
+        "claim": "Recovered the decisive corroborating case: 9.5W avg / 9.8W peaks, host crash without under-voltage firing, fixed with a separate 5.1V 2A supply",
+        "citation": "(file: 2026-06-20_agent-a6.jsonl, date: 2026-06-20, turns: 35, 37)"
+      },
+      {
+        "claim": "Confirmed the dmesg over-current message format to cleanly rule out that cause",
+        "citation": "(file: 2026-06-20_agent-a6.jsonl, date: 2026-06-20, turn: 52)"
+      },
+      {
+        "claim": "Final synthesized cited root-cause section with verdict (c)+(d) and the independent-power fix",
+        "citation": "(file: 2026-06-20_agent-a6.jsonl, date: 2026-06-20, turn: 58)"
+      },
+      {
+        "claim": "Repo cross-check shows the power-centric daily-wedge conclusion was corrected on-robot to usbfs_memory_mb=256, not power",
+        "citation": "(file: CLAUDE.md, date: 2026-06-20, turn: n/a project record)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_agent-a7.jsonl",
+    "date": "2026-06-20",
+    "motive": "A single-shot research subagent task: investigate DepthAI XLink errors and firmware/boot behavior for an OAK-D-LITE on a Raspberry Pi 4 running ROS 2 Humble, and return a citation-backed markdown section with concrete fixes (env var, sysctl, udev values). It supports CLAUDE.md gotcha #8, the OAK depth runtime drop / X_LINK disconnect problem.",
+    "outcome": "reached",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Evidence FOR the thesis. The agent demonstrated the software-engineering-side strength the thesis predicts: closed-loop information gathering with error-driven recovery (re-searching after a 404 at turn 29-30, switching to raw RST after navigation-only pages at turn 26-27) and synthesis of a correct, citation-backed diagnosis of ROS 2 / DepthAI driver failure modes (turn 57). It did NOT touch the embodied side: no sensorimotor control, spatial reasoning, multi-robot coordination, or on-hardware validation. The deliverable is host-side config and driver-recovery guidance (usbfs, watchdog, udev, reconnection params), which sits in the software/devops layer, so the session supports the strong-at-code claim while explicitly deferring the embodied-runtime claim (turn 1, 57).",
+    "automation_level": "high",
+    "user_input_count": 24,
+    "tasks_done_n": 6,
+    "tasks_failed_n": 0,
+    "key_evidence": [
+      {
+        "claim": "Single human instruction defines the full five-part DepthAI/XLink research task and required output format",
+        "citation": "(file: 2026-06-20_agent-a7.jsonl, date: 2026-06-20, turn: 1)"
+      },
+      {
+        "claim": "Agent self-loads deferred web tools before researching",
+        "citation": "(file: 2026-06-20_agent-a7.jsonl, date: 2026-06-20, turn: 3)"
+      },
+      {
+        "claim": "Recovered from a GitHub 404 by immediately re-searching with a new query",
+        "citation": "(file: 2026-06-20_agent-a7.jsonl, date: 2026-06-20, turn: 29)"
+      },
+      {
+        "claim": "Recovered from navigation-only docs pages by fetching the raw GitHub RST source",
+        "citation": "(file: 2026-06-20_agent-a7.jsonl, date: 2026-06-20, turn: 27)"
+      },
+      {
+        "claim": "Confirmed VID:PID enumeration semantics (03e7:2485 vs 03e7:f63c)",
+        "citation": "(file: 2026-06-20_agent-a7.jsonl, date: 2026-06-20, turn: 33)"
+      },
+      {
+        "claim": "Identified i_restart_on_diagnostics_error as the auto-recovery parameter tied to the project gotcha",
+        "citation": "(file: 2026-06-20_agent-a7.jsonl, date: 2026-06-20, turn: 40)"
+      },
+      {
+        "claim": "Final synthesized deliverable with concrete sysctl/env/udev values and a unified XLink-failure explanation",
+        "citation": "(file: 2026-06-20_agent-a7.jsonl, date: 2026-06-20, turn: 57)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_agent-a8.md",
+    "date": "2026-06-20",
+    "motive": "A single-file documentation audit in a ROS2 TurtleBot 4 guide-robot project. The agent critically assessed docs/aws-iot/README.md, classified its importance, and spot-checked its claims against on-disk code/config ground truth to flag any factual drift.",
+    "outcome": "reached",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Mild evidence FOR the software-engineering half of the thesis; not evidence about embodiment. The agent autonomously ran shell commands to validate documentation against actual repo files, used git check-ignore correctly, traced cross-file links, and produced an accurate assessment (turn 8, 13, 15, 18), demonstrating reliable agentic software-engineering hygiene on a robotics codebase. This is a read-and-verify auditing task (no fix needed), so it exercises the closed loop only partially. It touches none of the embodied-brain weaknesses (no sensorimotor control, spatial reasoning, multi-robot coordination, or runtime error recovery), so it cannot count against the thesis (turn 1, 15, 18).",
+    "automation_level": "high",
+    "user_input_count": 7,
+    "tasks_done_n": 5,
+    "tasks_failed_n": 0,
+    "key_evidence": [
+      {
+        "claim": "Sole human instruction fully specified the audit task, ground-truth inventory, and importance rubric",
+        "citation": "(file: 2026-06-20_agent-a8.jsonl, date: 2026-06-20, turn: 1)"
+      },
+      {
+        "claim": "Agent read the target doc before acting",
+        "citation": "(file: 2026-06-20_agent-a8.jsonl, date: 2026-06-20, turn: 3)"
+      },
+      {
+        "claim": "Agent verified start.sh content and matched the sdk/test/python topic claim",
+        "citation": "(file: 2026-06-20_agent-a8.jsonl, date: 2026-06-20, turn: 8)"
+      },
+      {
+        "claim": "Agent used git check-ignore to authoritatively confirm credential files are gitignored",
+        "citation": "(file: 2026-06-20_agent-a8.jsonl, date: 2026-06-20, turn: 13)"
+      },
+      {
+        "claim": "Agent self-corrected its pattern-matching reasoning (root-CA.crt via *.crt, not *.pem)",
+        "citation": "(file: 2026-06-20_agent-a8.jsonl, date: 2026-06-20, turn: 15)"
+      },
+      {
+        "claim": "Final verdict: accurate doc, no factual drift, recommend keep, with precise statement of irreplaceable content",
+        "citation": "(file: 2026-06-20_agent-a8.jsonl, date: 2026-06-20, turn: 18)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_agent-a9.jsonl",
+    "date": "2026-06-20",
+    "motive": "A documentation audit task: the agent was asked to critically assess one network doc (docs/network/nuwave-connection.md) in a TurtleBot 4 ROS2 project, rate its importance, flag any factual drift from the on-disk code inventory, and identify its irreplaceable hardware/site-specific value.",
+    "outcome": "reached",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Weak, indirect evidence FOR the thesis, and it does not test embodiment at all. The agent showed competent software-engineering-adjacent work: reading repo files, navigating a ROS2 colcon workspace's docs, cross-checking claims against a ground-truth inventory, and producing a grounded honest verdict (turns 7, 8, 13, 16), matching the 'AI strong at the software-engineering side of robotics' half. But this is static read-and-assess analysis, not the closed-loop write-run-read-error-fix iteration, and there was zero runtime embodied control, sensorimotor work, or multi-robot coordination, so the 'weak as the embodied brain' half is not determinable from this transcript (turns 1, 16).",
+    "automation_level": "high",
+    "user_input_count": 6,
+    "tasks_done_n": 6,
+    "tasks_failed_n": 0,
+    "key_evidence": [
+      {
+        "claim": "The single human instruction defines a doc-audit task with explicit importance buckets and a request to flag drift from the on-disk code inventory",
+        "citation": "(file: 2026-06-20_agent-a9.jsonl, date: 2026-06-20, turn 1)"
+      },
+      {
+        "claim": "The agent reads the target doc, then CLAUDE.md, then the network README",
+        "citation": "(file: 2026-06-20_agent-a9.jsonl, date: 2026-06-20, turn 3, 5, 11)"
+      },
+      {
+        "claim": "The agent runs one Bash ls to confirm the network docs tree and that cross-linked files exist",
+        "citation": "(file: 2026-06-20_agent-a9.jsonl, date: 2026-06-20, turn 8, 9)"
+      },
+      {
+        "claim": "The agent correctly concludes the doc makes no code claims so there is nothing to spot-check against src/, and finds no factual drift",
+        "citation": "(file: 2026-06-20_agent-a9.jsonl, date: 2026-06-20, turn 13, 16)"
+      },
+      {
+        "claim": "Final verdict is critical/keep, citing the ieee80211_regdom=00 5GHz gotcha as irreplaceable value and DHCP IP as the only cosmetic drift",
+        "citation": "(file: 2026-06-20_agent-a9.jsonl, date: 2026-06-20, turn 16)"
+      },
+      {
+        "claim": "Structured output provided successfully, confirming completion",
+        "citation": "(file: 2026-06-20_agent-a9.jsonl, date: 2026-06-20, turn 14, 15)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_agent-aa.md",
+    "date": "2026-06-20",
+    "motive": "A documentation audit task: the agent was asked to critically assess one ROS2 project doc (docs/camera/README.md) for a TurtleBot 4 guide robot, judge its importance and unique value, and flag factual drift between the doc and the actual code/config on disk.",
+    "outcome": "reached",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Evidence FOR the thesis. The work is purely software-engineering/documentation side of robotics (reading ROS2 code, config, launch files and cross-referencing via grep), and the agent performed strongly, catching a real doc-vs-code namespacing drift (turns 10, 13, 15). The session contains no embodied, runtime, or sensorimotor activity, so it supports the \"strong at the SE side\" half and offers no counter-evidence on embodiment because embodiment was never exercised (file: 2026-06-20_agent-aa.jsonl, date: 2026-06-20, turns: 1-18).",
+    "automation_level": "high",
+    "user_input_count": 7,
+    "tasks_done_n": 6,
+    "tasks_failed_n": 0,
+    "key_evidence": [
+      {
+        "claim": "Task was a critical doc audit plus code spot-check, not running the robot",
+        "citation": "(file: 2026-06-20_agent-aa.jsonl, date: 2026-06-20, turn: 1)"
+      },
+      {
+        "claim": "Agent read both the target README and the deeper sibling test doc on its own initiative",
+        "citation": "(file: 2026-06-20_agent-aa.jsonl, date: 2026-06-20, turns: 3, 8)"
+      },
+      {
+        "claim": "Agent formulated targeted grep queries over src/ and docs to verify model, topics, QoS, usb_speed",
+        "citation": "(file: 2026-06-20_agent-aa.jsonl, date: 2026-06-20, turns: 10, 13)"
+      },
+      {
+        "claim": "Found core drift: doc lists unnamespaced /camera/... topics but code uses namespaced oakd/stereo/... under /turtlebot468/oakd",
+        "citation": "(file: 2026-06-20_agent-aa.jsonl, date: 2026-06-20, turns: 15, 19)"
+      },
+      {
+        "claim": "Explained the drift's cause (bench bring-up without ns/node remaps) rather than just reporting a mismatch",
+        "citation": "(file: 2026-06-20_agent-aa.jsonl, date: 2026-06-20, turns: 12, 19)"
+      },
+      {
+        "claim": "Delivered a complete StructuredOutput verdict that was accepted",
+        "citation": "(file: 2026-06-20_agent-aa.jsonl, date: 2026-06-20, turns: 16, 17)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_agent-ac.jsonl",
+    "date": "2026-06-20",
+    "motive": "The user issued a single fire-and-forget deep research request: enumerate depthai_ros_driver (ros-humble-depthai ~2.29.0) ROS 2 parameters affecting stability and auto-recovery of an OAK-D-LITE on a Raspberry Pi 4, and return a cited parameter table plus prose on the most stable, auto-recovering bring-up combination.",
+    "outcome": "reached",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Evidence FOR the thesis. The agent performed a software-engineering task around robotics code (researching, cross-checking, and documenting ROS 2 driver parameters and reading the driver's C++ recovery code path) and did it well: it read source, resolved a version-defaults conflict by going to ground truth (turn 15, 20), traced the diagCB -> restart control flow (turn 24, 25, 43), and recovered from tool failures (turn 27-42). This is the read-source-and-reason competence the thesis attributes to AI on the software side. The session involves NO embodied runtime control (no live device, no sensorimotor loop, no spatial reasoning, no multi-robot coordination), so it does not test the weak-at-embodiment half directly, but the half it exercises it executes strongly, consistent with the thesis.",
+    "automation_level": "high",
+    "user_input_count": 1,
+    "tasks_done_n": 5,
+    "tasks_failed_n": 3,
+    "key_evidence": [
+      {
+        "claim": "Single human research prompt requesting parameter enumeration, table, and auto-recovery analysis",
+        "citation": "(file: 2026-06-20_agent-ac.jsonl, date: 2026-06-20, turn: 1)"
+      },
+      {
+        "claim": "Agent autonomously loaded web tools and ran searches/fetches",
+        "citation": "(file: 2026-06-20_agent-ac.jsonl, date: 2026-06-20, turn: 3, 6, 7, 11, 12)"
+      },
+      {
+        "claim": "Detected v3/RVC4 docs vs v2 humble source mismatch and switched to source-derived defaults",
+        "citation": "(file: 2026-06-20_agent-ac.jsonl, date: 2026-06-20, turn: 15, 20)"
+      },
+      {
+        "claim": "Traced recovery path: diagnostics SystemLogger -> diagCB -> restart (stop+start), no watchdog/USB-disconnect callback",
+        "citation": "(file: 2026-06-20_agent-ac.jsonl, date: 2026-06-20, turn: 24, 25)"
+      },
+      {
+        "claim": "Handled 404s and unauthenticated gh by falling back to source/mirrors",
+        "citation": "(file: 2026-06-20_agent-ac.jsonl, date: 2026-06-20, turn: 27, 29, 31, 35, 39, 42)"
+      },
+      {
+        "claim": "Delivered final cited report with parameter table and stable bring-up recipe",
+        "citation": "(file: 2026-06-20_agent-ac.jsonl, date: 2026-06-20, turn: 43)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_agent-ad.jsonl",
+    "date": "2026-06-20",
+    "motive": "The user wanted a complete, line-citable inventory of every documented claim about the OAK-D-LITE camera, depth pipeline, USB power, and network offload, so the claims could be reconciled against live hardware. They specifically wanted claims presented as settled that could be contradicted by evidence that USB2 also disconnects and that under-voltage is not always flagged.",
+    "outcome": "reached",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Evidence FOR the thesis. The agent performed a non-trivial static audit of a ROS 2 robotics repo via closed-loop read-grep-synthesize iteration: it ingested 8 docs and several greps, produced a correct line-cited inventory, and crucially caught an internal contradiction the human only suspected (USB2 documented as stable/0 X_LINK_ERROR vs ros2-over-nuwave.md:86 and CLAUDE.md:76 recording recurring X_LINK_ERROR and a USB2-mode stall) and reasoned correctly about the under-voltage proof gap (turns 1, 26). This is pure over-the-text software-engineering work, the half the thesis predicts AI is strong at. It exercises none of the embodied runtime control the thesis predicts AI is weak at, so it supports the SE half and is silent on embodiment.",
+    "automation_level": "high",
+    "user_input_count": 1,
+    "tasks_done_n": 6,
+    "tasks_failed_n": 0,
+    "key_evidence": [
+      {
+        "claim": "Single human task asked for a full doc inventory plus two specific contradiction flags",
+        "citation": "(file: 2026-06-20_agent-ad.jsonl, date: 2026-06-20, turn 1)"
+      },
+      {
+        "claim": "Agent autonomously enumerated docs and git history via Bash find/git log",
+        "citation": "(file: 2026-06-20_agent-ad.jsonl, date: 2026-06-20, turn 3)"
+      },
+      {
+        "claim": "Agent read camera, power, mapping, and network docs across the session",
+        "citation": "(file: 2026-06-20_agent-ad.jsonl, date: 2026-06-20, turn 5)"
+      },
+      {
+        "claim": "Agent ran a line-numbered grep across aws-iot and network docs for camera/streaming terms",
+        "citation": "(file: 2026-06-20_agent-ad.jsonl, date: 2026-06-20, turn 22)"
+      },
+      {
+        "claim": "Final deliverable tabulates all 7 claim families with file:line citations and confidence-as-stated, and flagged the USB2-stable claim as contradicted by ros2-over-nuwave.md:86 and the under-voltage proof as logically incomplete",
+        "citation": "(file: 2026-06-20_agent-ad.jsonl, date: 2026-06-20, turn 26)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_agent-ae.md",
+    "date": "2026-06-20",
+    "motive": "A single human instruction asked Claude (in agent mode) to perform a read-only static audit of all camera/depth-related ROS 2 code in the cs7980-guide-mate repo, characterizing how it detects and handles camera/depth failure and enumerating concrete hardening gaps with file:line references.",
+    "outcome": "reached",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Evidence FOR the thesis. This is a pure software-engineering code-comprehension/audit task (reading ROS 2 Python and C++ nodes, launch files, configs) and the agent performed strongly: complete coverage, grep-verified claims, exact line references, and an accurate diagnosis (turns 36-43). It never touched the runtime embodied brain (no live camera, no sensorimotor control, no spatial reasoning over real sensor data, no on-robot recovery execution); it only reasoned ABOUT how embodied failure modes are handled in code (turns 1, 43). So it supports the \"strong at the software-engineering side\" half and does not test the \"weak embodied brain\" half.",
+    "automation_level": "high",
+    "user_input_count": 19,
+    "tasks_done_n": 4,
+    "tasks_failed_n": 0,
+    "key_evidence": [
+      {
+        "claim": "Single human prompt requested a read-only audit of camera/depth failure handling and hardening gaps with file:line references",
+        "citation": "(2026-06-20_agent-ae.jsonl, 2026-06-20, turn 1)"
+      },
+      {
+        "claim": "Agent autonomously enumerated the source tree with a find over code/config extensions",
+        "citation": "(2026-06-20_agent-ae.jsonl, 2026-06-20, turn 3)"
+      },
+      {
+        "claim": "Agent read the Python fusion node, C++ fusion/container nodes, six launch files, and oakd_mapping.yaml",
+        "citation": "(2026-06-20_agent-ae.jsonl, 2026-06-20, turn 5,12,14,21-33)"
+      },
+      {
+        "claim": "Agent grepped for watchdog/respawn/heartbeat/recover/usb to verify absence of recovery code, then narrowed to depth files",
+        "citation": "(2026-06-20_agent-ae.jsonl, 2026-06-20, turn 36,38,41)"
+      },
+      {
+        "claim": "Grep confirmed the only staleness mechanism: max_depth_age default 0.4 at depth_lidar_fusion_node.cpp:174 and the abs(age)>max check at :626",
+        "citation": "(2026-06-20_agent-ae.jsonl, 2026-06-20, turn 42)"
+      },
+      {
+        "claim": "Final report concluded no camera-health monitoring, no recovery/respawn, no notification anywhere; only passive degradation to raw lidar, with a silent fallback transition",
+        "citation": "(2026-06-20_agent-ae.jsonl, 2026-06-20, turn 43)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_agent-af.md",
+    "date": "2026-06-20",
+    "motive": "A documentation audit task: assess one ROS2 TurtleBot 4 networking doc (docs/network/ros2-over-nuwave.md) for importance and factual accuracy, spot-check its claims against the on-disk code/config inventory, and return a structured verdict.",
+    "outcome": "reached",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Mild evidence FOR the software-engineering half of the thesis and silent on the embodiment half. The agent competently performed static read-and-verify analysis over a ROS2 codebase: read the doc, read siblings, grepped for shared identifiers, and synthesized an accurate verdict with no hallucinated drift (turns 3, 5, 8, 10, 13, 15, 17, 20). It does NOT test the embodied runtime brain at all (no sensorimotor control, spatial reasoning, multi-robot coordination, or hardware error recovery appear), so it supports 'strong at the software-engineering side' and provides no counter-evidence on embodiment because embodiment was out of scope.",
+    "automation_level": "high",
+    "user_input_count": 8,
+    "tasks_done_n": 5,
+    "tasks_failed_n": 0,
+    "key_evidence": [
+      {
+        "claim": "Single human instruction defines a doc-audit task with explicit ground-truth code inventory and importance rubric",
+        "citation": "(file: 2026-06-20_agent-af.jsonl, date: 2026-06-20, turn: 1)"
+      },
+      {
+        "claim": "Agent reads the target doc",
+        "citation": "(file: 2026-06-20_agent-af.jsonl, date: 2026-06-20, turn: 3)"
+      },
+      {
+        "claim": "Agent lists docs tree via Bash and reads three sibling/context docs to assess redundancy",
+        "citation": "(file: 2026-06-20_agent-af.jsonl, date: 2026-06-20, turns: 5, 8, 10, 13)"
+      },
+      {
+        "claim": "Agent greps repo for shared identifiers (discovery-server IP, env vars, subnet prefixes) to verify consistency",
+        "citation": "(file: 2026-06-20_agent-af.jsonl, date: 2026-06-20, turn: 15)"
+      },
+      {
+        "claim": "Agent concludes doc is pure networking/ops with no code claims, so no src/ drift to check, and lists verified consistent facts",
+        "citation": "(file: 2026-06-20_agent-af.jsonl, date: 2026-06-20, turn: 17)"
+      },
+      {
+        "claim": "Final verdict: keep/critical, no code drift, irreplaceable debugging-trail content, flagged hardcoded DHCP IP risk",
+        "citation": "(file: 2026-06-20_agent-af.jsonl, date: 2026-06-20, turns: 18, 20)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_cf939755.jsonl",
+    "date": "2026-06-20",
+    "motive": "This is an empty stub session. The only user action is a /clear command to reset the conversation context; no robotics or software task was requested.",
+    "outcome": "not-reached",
+    "thesis_category": "non-technical",
+    "thesis_alignment": "Neither FOR nor AGAINST the thesis. No robotics code was written, run, or debugged and the assistant produced no output, so the session offers no evidence about AI strength at robotics software engineering or weakness at embodiment (file: 2026-06-20_cf939755.jsonl, date: 2026-06-20, turn: 1-2).",
+    "automation_level": "not-determinable",
+    "user_input_count": 2,
+    "tasks_done_n": 0,
+    "tasks_failed_n": 0,
+    "key_evidence": [
+      {
+        "claim": "Turn 1 is an auto-generated local-command caveat carrying no user request.",
+        "citation": "(file: 2026-06-20_cf939755.jsonl, date: 2026-06-20, turn: 1)"
+      },
+      {
+        "claim": "Turn 2 is the /clear slash command, the only user action in the session.",
+        "citation": "(file: 2026-06-20_cf939755.jsonl, date: 2026-06-20, turn: 2)"
+      },
+      {
+        "claim": "Digest header records user_turns: 2, assistant_turns: 0, tool_calls: 0, confirming an empty session.",
+        "citation": "(file: 2026-06-20_cf939755.jsonl, date: 2026-06-20, turn: 1-2)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-20_dd2a7605.jsonl",
+    "date": "2026-06-20",
+    "motive": "The user had created an AWS IoT Secure Tunnel and wanted to connect to it using already-downloaded tokens, then broadened the session into learning AWS IoT Core and its features, and finally into documenting everything into docs, memory, and pushing it to the repo.",
+    "outcome": "partial",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "Evidence FOR the thesis. The AI was strong on the software-engineering side: accurate IoT Core explanations tied to real files (turns 28, 31, 34), correct root-cause diagnosis that localproxy was missing (turns 9, 21), disciplined secret-safe git work with verification before push (turns 79, 84, 88), and autonomous recovery from its own tool errors (turns 64, 74). The session never exercised the embodied runtime brain (no low-level control, spatial reasoning, or multi-robot coordination), so it offers no counter-evidence on the weak side. The one place it stopped short of acting (running localproxy to bring up the tunnel on two physical machines) is consistent with the thesis boundary: it could plan and explain the connectivity but handed physical device bring-up back to the human (turn 25).",
+    "automation_level": "medium",
+    "user_input_count": 9,
+    "tasks_done_n": 7,
+    "tasks_failed_n": 3,
+    "key_evidence": [
+      {
+        "claim": "Separated secure tunneling (localproxy) from the MQTT device SDK and gave exact source/destination commands",
+        "citation": "(file: 2026-06-20_dd2a7605.jsonl, date: 2026-06-20, turn 9)"
+      },
+      {
+        "claim": "Inspected real policy and tokens, concluded MQTT delivery unnecessary and blocked by the sdk/test/* policy",
+        "citation": "(file: 2026-06-20_dd2a7605.jsonl, date: 2026-06-20, turn 21)"
+      },
+      {
+        "claim": "Identified localproxy not installed and checked build tooling for an ARM64 build-from-source plan",
+        "citation": "(file: 2026-06-20_dd2a7605.jsonl, date: 2026-06-20, turn 22)"
+      },
+      {
+        "claim": "Delivered file-grounded explanations of IoT Core building blocks, Rules Engine, and EC2 access",
+        "citation": "(file: 2026-06-20_dd2a7605.jsonl, date: 2026-06-20, turn 28)"
+      },
+      {
+        "claim": "Verified no secrets staged, branched, committed selectively, and pushed",
+        "citation": "(file: 2026-06-20_dd2a7605.jsonl, date: 2026-06-20, turn 84)"
+      },
+      {
+        "claim": "Flagged the GitHub PAT embedded in the git remote URL as a security follow-up",
+        "citation": "(file: 2026-06-20_dd2a7605.jsonl, date: 2026-06-20, turn 89)"
+      },
+      {
+        "claim": "Self-recovered from two file-not-read Edit errors by reading first",
+        "citation": "(file: 2026-06-20_dd2a7605.jsonl, date: 2026-06-20, turn 64)"
+      },
+      {
+        "claim": "The tunnel connection itself was never established; session ended as docs plus instructions",
+        "citation": "(file: 2026-06-20_dd2a7605.jsonl, date: 2026-06-20, turn 25)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-22_6014c160.jsonl",
+    "date": "2026-06-22",
+    "motive": "The user issued a /goal directive to run the project's collect-claude-conversations skill: identify all conversation folders on the device, capture every chat into the repo, and push them. This is a meta/tooling housekeeping task about archiving Claude Code transcripts, not a robotics engineering task.",
+    "outcome": "partial",
+    "thesis_category": "non-technical",
+    "thesis_alignment": "Largely NEUTRAL toward the thesis. The session is meta/tooling work (archiving Claude conversation transcripts), exercising neither the robotics-software nor the embodiment half. The only mildly supportive signal for the software-engineering half is a genuine debugging-style task on a Python script: the assistant read cwd_matches, identified the basename-vs-full-path matching gap, and fixed the config via a closed-loop investigate-diagnose-validate pattern with dry-runs (turns 29, 31, 37). It provides no evidence about embodied runtime control because no robot, sensor, or controller is involved.",
+    "automation_level": "high",
+    "user_input_count": 17,
+    "tasks_done_n": 5,
+    "tasks_failed_n": 3,
+    "key_evidence": [
+      {
+        "claim": "Only genuine user prompt is the /goal directive to run the skill, identify folders, capture all chats, and push",
+        "citation": "(file: 2026-06-22_6014c160.jsonl, date: 2026-06-22, turn: 1)"
+      },
+      {
+        "claim": "Three distinct cwds enumerated: cs7980-guide-mate (4672), src (200), /home/ubuntu (527)",
+        "citation": "(file: 2026-06-22_6014c160.jsonl, date: 2026-06-22, turn: 23)"
+      },
+      {
+        "claim": "Diagnosed that basename matching misses src and ubuntu folders, requiring broadened includes",
+        "citation": "(file: 2026-06-22_6014c160.jsonl, date: 2026-06-22, turn: 31)"
+      },
+      {
+        "claim": "Updated collect.config.json to include all three paths",
+        "citation": "(file: 2026-06-22_6014c160.jsonl, date: 2026-06-22, turn: 38)"
+      },
+      {
+        "claim": "Dry-run captured 84 sessions with Security gate: PASS (no known secrets)",
+        "citation": "(file: 2026-06-22_6014c160.jsonl, date: 2026-06-22, turns: 35, 37)"
+      },
+      {
+        "claim": "Real collection run blocked by the auto-mode permission classifier as a potential exfiltration/credential-leak pattern",
+        "citation": "(file: 2026-06-22_6014c160.jsonl, date: 2026-06-22, turn: 41)"
+      },
+      {
+        "claim": "Stop hook reasserted the directive, overriding the assistant's pause and forcing a retry of the blocked write",
+        "citation": "(file: 2026-06-22_6014c160.jsonl, date: 2026-06-22, turns: 44, 46, 47)"
+      }
+    ]
+  },
+  {
+    "file": "2026-06-22_610e67b0.jsonl",
+    "date": "2026-06-22",
+    "motive": "The user wanted a reusable, cross-laptop tool to collect Claude Code session transcripts for the GuideMate repo, strip internal metadata from the JSONL, store the result in git, and push it. The request grew into building a configurable, tested, documented script (with secret redaction) plus a repo-wide Claude skill wrapping the workflow.",
+    "outcome": "partial",
+    "thesis_category": "software-engineering",
+    "thesis_alignment": "FOR the thesis on the software-engineering axis, neutral on embodiment. This is a pure SE task (Python tooling, unittest suites, regex secret redaction, git hooks, verification gates, commit/push) with no robot, ROS runtime, or sensorimotor element despite the surrounding TurtleBot 4 repo. The AI showed exactly the closed-loop write-run-read-error-fix competence the thesis credits: repairing its own test failure (turn 71-72), iterating to 31 passing tests (turn 140), and exercising real security judgment (turn 81, 116). It provides no evidence on the embodied/runtime-brain half because nothing here touches low-level control, spatial reasoning, multi-robot coordination, or on-robot error recovery.",
+    "automation_level": "high",
+    "user_input_count": 8,
+    "tasks_done_n": 8,
+    "tasks_failed_n": 2,
+    "key_evidence": [
+      {
+        "claim": "User asked for a reusable cross-laptop plan to collect, strip, store, and push transcripts",
+        "citation": "(file: 2026-06-22_610e67b0.jsonl, date: 2026-06-22, turn 1)"
+      },
+      {
+        "claim": "Agent solved cross-laptop portability by matching sessions on the cwd recorded inside each JSONL rather than the encoded folder name",
+        "citation": "(file: 2026-06-22_610e67b0.jsonl, date: 2026-06-22, turn 29)"
+      },
+      {
+        "claim": "Agent self-diagnosed a test break caused by its own new config file outranking the env var and patched the tests to be hermetic",
+        "citation": "(file: 2026-06-22_610e67b0.jsonl, date: 2026-06-22, turn 71)"
+      },
+      {
+        "claim": "Proactive secret scan found a live AWS access key ID and a real password; agent refused to push",
+        "citation": "(file: 2026-06-22_610e67b0.jsonl, date: 2026-06-22, turn 81)"
+      },
+      {
+        "claim": "31 tests pass including a credential corpus and end-to-end gate",
+        "citation": "(file: 2026-06-22_610e67b0.jsonl, date: 2026-06-22, turn 140)"
+      },
+      {
+        "claim": "Independent grep confirms zero instances of the real secrets remain",
+        "citation": "(file: 2026-06-22_610e67b0.jsonl, date: 2026-06-22, turn 148)"
+      },
+      {
+        "claim": "Push confirmed exit 0, remote advanced to b38415c; skill later pushed b38415c..f03c8a0",
+        "citation": "(file: 2026-06-22_610e67b0.jsonl, date: 2026-06-22, turn 194, 206)"
+      },
+      {
+        "claim": "Final turn-208 follow-up only begun in the transcript with no shown completion",
+        "citation": "(file: 2026-06-22_610e67b0.jsonl, date: 2026-06-22, turn 211, 212)"
+      }
+    ]
+  }
+]

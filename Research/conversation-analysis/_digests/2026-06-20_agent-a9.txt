@@ -1,0 +1,113 @@
+# Digest: 2026-06-20_agent-a9.jsonl
+
+- raw_source: claude-conversations/sessions/2026-06-20_agent-a9.jsonl
+- date: 2026-06-20
+- raw_bytes: 47145
+- user_turns: 6
+- assistant_turns: 10
+- tool_calls: 5
+- images: 0
+- top_tools: 3xRead, 1xBash, 1xStructuredOutput
+
+Citation format for analysis: (file: 2026-06-20_agent-a9.jsonl, date: 2026-06-20, turn: N).
+
+---
+### Turn 1 [user] (2026-06-20)
+You are auditing ONE documentation file in a ROS2 robotics project (TurtleBot 4 autonomous "guide robot").
+Read these files: /home/ubuntu/cs7980-guide-mate/docs/network/nuwave-connection.md (the target), and /home/ubuntu/cs7980-guide-mate/CLAUDE.md (project context). If the doc makes claims about code/launch/config, spot-check against the real files under /home/ubuntu/cs7980-guide-mate/src/.
+Topic hint: NUwave wifi connection.
+
+ACTUAL CODE/CONFIG ON DISK (ground truth as of this audit):
+ROS2 package src/guide_mate_explorer/:
+  nodes: bfs_explorer.py, glass_guard.py, depth_lidar_fusion.py, combined_node.py(UNTRACKED/new)
+  launch: autonomous_mapping.launch.py, depth_lidar_fusion.launch.py, depth_perception.launch.py, explore.launch.py, combined.launch.py(UNTRACKED/new)
+  config: nav2_glass.yaml, oakd_mapping.yaml, slam_fused.yaml(UNTRACKED-ish/new)
+NEW untracked C++ package src/guide_mate_perception/:
+  src/depth_lidar_fusion_node.cpp, CMakeLists.txt, package.xml, launch/depth_lidar_fusion_cpp.launch.py
+rviz/: launch_rviz.sh, turtlebot468_mapping.rviz (tracked)
+Root: README.md, CLAUDE.md, .gitignore (tracked); start.sh (gitignored)
+Vendored third-party clone (gitignored, untracked, on-disk only): aws-iot-device-sdk-python-v2/ (full AWS SDK repo with its own .git, ~20 markdowns)
+On-disk credentials (gitignored, never committed): Turtlebot-468.cert.pem, Turtlebot-468.private.key, Turtlebot-468.public.key, Turtlebot-468-Policy, root-CA.crt, c9109663-*AccessToken.txt, connect_device_package.zip
+
+Assess the target doc honestly and critically. importance: 'critical'=needed to operate/understand the robot or repo; 'useful'=helpful reference; 'marginal'=nice-to-have/thin; 'obsolete'=stale/superseded/empty-stub. Many tiny section-index README.md files may be 'marginal' boilerplate. Flag any factual drift from the actual code inventory. Be specific in uniqueValue about what is irreplaceably documented here (real hardware findings, IPs, gotchas) vs. generic restatement.
+
+### Turn 2 [assistant] (2026-06-20)
+I'll start by reading the target documentation file and the project context.
+
+### Turn 3 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/network/nuwave-connection.md"}]
+
+### Turn 4 [user] (2026-06-20)
+[tool_result: 5955 chars] 1	# Connecting a TurtleBot 4 (Raspberry Pi) to NUwave
+2	
+3	How we got the TurtleBot 4's Raspberry Pi onto Northeastern's **NUwave** (WPA2-Enterprise, PEAP/MSCHAPv2) network — including the non-obvious blocker that cost u
+...[clipped 5735 chars]
+
+### Turn 5 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/CLAUDE.md"}]
+
+### Turn 6 [user] (2026-06-20)
+[tool_result: 9534 chars] 1	# CLAUDE.md
+2	
+3	Guidance for working in the **cs7980-guide-mate** repo.
+4	
+5	## What this is
+6	CS7980 project: a **TurtleBot 4 "guide robot"** that autonomously maps and navigates an
+7	indoor space. This repo holds **
+...[clipped 9314 chars]
+
+### Turn 7 [assistant] (2026-06-20)
+This is a network/wifi doc, not a code doc. Let me check the network docs directory to understand cross-references and whether `ros2-over-nuwave.md` and the README exist.
+
+### Turn 8 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "ls -la /home/ubuntu/cs7980-guide-mate/docs/network/ 2>/dev/null; echo \"---DOCS TREE---\"; ls -la /home/ubuntu/cs7980-guide-mate/docs/", "description": "List network docs and docs tree"}]
+
+### Turn 9 [user] (2026-06-20)
+[tool_result: 734 chars] total 28
+drwxrwxr-x 2 ubuntu ubuntu 4096 Jun 12 18:21 .
+drwxrwxr-x 7 ubuntu ubuntu 4096 Jun 20 00:16 ..
+-rw-rw-r-- 1 ubuntu ubuntu 3518 Jun 12 18:20 README.md
+-rw-rw-r-- 1 ubuntu ubuntu 5667 Jun 12 18:19 nuwave-connectio
+...[clipped 514 chars]
+
+### Turn 10 [assistant] (2026-06-20)
+Both cross-referenced files exist (`README.md`, `ros2-over-nuwave.md`). Let me verify the network README references this doc and check consistency on the IP/cross-links.
+
+### Turn 11 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/network/README.md"}]
+
+### Turn 12 [user] (2026-06-20)
+[tool_result: 3668 chars] 1	# Network Overview
+2	
+3	This section documents the network setup for the cs7980 TurtleBot 4 robots.
+4	
+5	## Documents
+6	- [Connecting a TurtleBot 4 to NUwave](nuwave-connection.md)
+7	- [ROS 2 over NUwave — what works a
+...[clipped 3448 chars]
+
+### Turn 13 [assistant] (2026-06-20)
+I now have full context. The doc is internally consistent with the network README (matching IP `10.247.204.21/19`, the Create 3 cannot join NUwave, Discovery Server model, cross-links to `ros2-over-nuwave.md`). 
+
+This is a network/operations doc, not a code/launch/config doc, so there are no claims to spot-check against `src/`. The CLAUDE.md gotcha #3 confirms the Create 3 webserver at `192.168.186.2` / Pi at `.3` over usb0, which aligns with the README's USB-C subnet. The doc itself makes no false claims about the ROS package inventory.
+
+Let me note the few details worth flagging: the IP `10.247.204.21/19` is DHCP (the README itself flags it as "will change"), and the doc references `ASUS_98` as fallback and a robot password — all hardware/site-specific findings that aren't derivable from code.
+
+### Turn 14 [assistant] (2026-06-20)
+[tool_use: StructuredOutput {"path": "/home/ubuntu/cs7980-guide-mate/docs/network/nuwave-connection.md", "purpose": "Step-by-step runbook for getting the TurtleBot 4's Raspberry Pi onto Northeastern's NUwave (WPA2-Enterprise PEAP/MSCHAPv2) WiFi, ce
+...[clipped 2861 chars]]
+
+### Turn 15 [user] (2026-06-20)
+[tool_result: 39 chars] Structured output provided successfully
+
+### Turn 16 [assistant] (2026-06-20)
+I have completed the audit of `/home/ubuntu/cs7980-guide-mate/docs/network/nuwave-connection.md`.
+
+Summary of findings:
+
+- This is a network/operations runbook, not a code doc, so there are no claims to spot-check against `src/` — and it makes none. No factual drift from the actual code/launch/config inventory.
+- It is internally consistent with its sibling `docs/network/README.md`: same Pi NUwave IP (`10.247.204.21/19`), same "Create 3 cannot join NUwave / Discovery Server" rationale, and both cross-referenced files (`README.md`, `ros2-over-nuwave.md`) exist on disk. Also aligns with CLAUDE.md gotcha #3.
+- Rated **critical** because its core content is irreplaceable hardware/site-specific knowledge: the unset-regulatory-domain (`ieee80211_regdom=00`) gotcha that silently disables 5 GHz and makes NUwave invisible to the robot, the exact diagnostics and permanent fix, the working WPA2-Enterprise `nmcli` profile, and the single-radio lockout + 120s auto-revert safety pattern.
+- Recommendation: **keep**. Only minor cosmetic note — the literal DHCP IP in the Result section will drift on reconnect (the doc and README already flag IPs as DHCP).
+
+Credential handling is correct: the doc uses placeholders and explicitly warns against committing real NUwave credentials, consistent with the repo's no-credentials convention.

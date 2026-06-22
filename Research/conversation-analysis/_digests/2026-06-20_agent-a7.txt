@@ -1,0 +1,308 @@
+# Digest: 2026-06-20_agent-a7.jsonl
+
+- raw_source: claude-conversations/sessions/2026-06-20_agent-a7.jsonl
+- date: 2026-06-20
+- raw_bytes: 104740
+- user_turns: 24
+- assistant_turns: 33
+- tool_calls: 23
+- images: 0
+- top_tools: 13xWebFetch, 9xWebSearch, 1xToolSearch
+
+Citation format for analysis: (file: 2026-06-20_agent-a7.jsonl, date: 2026-06-20, turn: N).
+
+---
+### Turn 1 [user] (2026-06-20)
+Research depthai XLink errors and firmware/boot behavior for an OAK-D-LITE on Raspberry Pi 4 / ROS 2 Humble.
+
+Use WebSearch and WebFetch (load via ToolSearch "select:WebSearch,WebFetch"). Search depthai-core and depthai-ros GitHub issues, Luxonis docs/discuss forum.
+
+Investigate:
+1. "X_LINK_ERROR", "Communication exception", "sys_logger_queue", "No data on logger queue!" — what each means, what triggers them, and which are fatal vs recoverable.
+2. XLink watchdog: the default watchdog timeout, what resets it, what happens on timeout (does the device reboot to bootloader 2485?). Env vars DEPTHAI_WATCHDOG, DEPTHAI_WATCHDOG_INITIAL_DELAY, and any others.
+3. usbfs memory: usbcore.usbfs_memory_mb — recommended value for depthai (the famous "set to 256/1000") and why; symptoms when too low.
+4. udev rules: the Movidius/Luxonis udev rule (80-movidius.rules, SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"), why it matters, symptoms when missing.
+5. depthai-core reconnection / device.reboot() / auto-recovery behavior, and DEPTHAI_LEVEL/logging to capture failure detail.
+
+Return a detailed markdown section with concrete fixes, exact env var / sysctl / udev values, and citations (URLs).
+
+### Turn 2 [assistant] (2026-06-20)
+I'll research depthai XLink errors and firmware/boot behavior. Let me load the web tools first.
+
+### Turn 3 [assistant] (2026-06-20)
+[tool_use: ToolSearch {"query": "select:WebSearch,WebFetch", "max_results": 5}]
+
+### Turn 4 [user] (2026-06-20)
+[tool_result: 0 chars] 
+
+### Turn 5 [assistant] (2026-06-20)
+Let me start with parallel searches on the key topics.
+
+### Turn 6 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "depthai X_LINK_ERROR Communication exception \"No data on logger queue\" sys_logger_queue"}]
+
+### Turn 7 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "depthai DEPTHAI_WATCHDOG DEPTHAI_WATCHDOG_INITIAL_DELAY timeout device reboot bootloader"}]
+
+### Turn 8 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "depthai usbcore.usbfs_memory_mb 256 1000 Raspberry Pi OAK-D USB error"}]
+
+### Turn 9 [user] (2026-06-20)
+[tool_result: 2032 chars] Web search results for query: "depthai X_LINK_ERROR Communication exception "No data on logger queue" sys_logger_queue"
+
+Links: [{"title":"luxonis/depthai-ros","url":"https://github.com/luxonis/depthai-ros/issues/575"},{
+...[clipped 1812 chars]
+
+### Turn 10 [user] (2026-06-20)
+[tool_result: 2280 chars] Web search results for query: "depthai usbcore.usbfs_memory_mb 256 1000 Raspberry Pi OAK-D USB error"
+
+Links: [{"title":"RPI 4 Crashing when connecting Oak D-Lite Camera to USB 3.0 - Raspberry Pi Forums","url":"https://f
+...[clipped 2060 chars]
+
+### Turn 11 [user] (2026-06-20)
+[tool_result: 2706 chars] Web search results for query: "depthai DEPTHAI_WATCHDOG DEPTHAI_WATCHDOG_INITIAL_DELAY timeout device reboot bootloader"
+
+Links: [{"title":"Device","url":"https://docs.luxonis.com/software-v3/depthai/depthai-components/d
+...[clipped 2486 chars]
+
+### Turn 12 [assistant] (2026-06-20)
+Let me fetch the key source documents and search for the remaining topics.
+
+### Turn 13 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.luxonis.com/projects/api/en/latest/components/device/", "prompt": "Extract everything about the XLink watchdog: default watchdog timeout for USB and ETH devices, DEPTHAI_WATCHDOG, DEPTHAI_WATCHDOG_I
+...[clipped 277 chars]]
+
+### Turn 14 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/luxonis/depthai-ros/issues/575", "prompt": "Extract the full details of this issue: the exact error messages (X_LINK_ERROR, sys_logger_queue, No data on logger queue, Communication exception),
+...[clipped 163 chars]]
+
+### Turn 15 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "depthai udev rules 80-movidius.rules ATTRS idVendor 03e7 MODE 0666 device not found"}]
+
+### Turn 16 [user] (2026-06-20)
+[tool_result: 1034 chars] I've reviewed the provided web page content, which is from Luxonis's Software documentation page covering OAK apps, DepthAI API, and getting started guides.
+
+**Finding:** The content does not contain any information abou
+...[clipped 814 chars]
+
+### Turn 17 [user] (2026-06-20)
+[tool_result: 1171 chars] # OAK-D-PRO-POE Device Shutdown Issue #575
+
+## Error Messages
+The device exhibited these exact errors before shutting down:
+
+- **Monitor warning**: "ping was missed, closing the device connection"
+- **Primary error**: "N
+...[clipped 951 chars]
+
+### Turn 18 [user] (2026-06-20)
+[tool_result: 2973 chars] Web search results for query: "depthai udev rules 80-movidius.rules ATTRS idVendor 03e7 MODE 0666 device not found"
+
+Links: [{"title":"[BUG] RuntimeError: Failed to find device (ma2480), error message: X_LINK_DEVICE_NOT_
+...[clipped 2753 chars]
+
+### Turn 19 [assistant] (2026-06-20)
+Good progress. The v3 device page didn't have the watchdog content; let me fetch the older API device doc and the troubleshooting page, plus search for the bootloader 2485 reboot behavior and reconnection.
+
+### Turn 20 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.luxonis.com/projects/api/en/latest/tutorials/low-latency/", "prompt": "Extract any mention of DEPTHAI_WATCHDOG, watchdog timeout, usbfs, or XLink configuration. If not present, say so."}]
+
+### Turn 21 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.luxonis.com/en/latest/pages/troubleshooting/", "prompt": "Extract everything about: usbfs_memory_mb / usbcore.usbfs_memory_mb recommended value and why; udev rules 80-movidius.rules; X_LINK errors (
+...[clipped 228 chars]]
+
+### Turn 22 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "depthai watchdog timeout 4000ms device reboots bootloader USB X_LINK reconnect"}]
+
+### Turn 23 [user] (2026-06-20)
+[tool_result: 417 chars] # Search Results for Watchdog and Configuration Terms
+
+Based on my review of the provided documentation page about "Optimizing FPS & Latency," I found **no mentions** of:
+
+- DEPTHAI_WATCHDOG
+- Watchdog timeout
+- usbfs
+- 
+...[clipped 197 chars]
+
+### Turn 24 [user] (2026-06-20)
+[tool_result: 895 chars] # Unable to Extract Requested Information
+
+The provided web page content is only a **navigation/header section** of the Luxonis Documentation site. It contains menu links and section titles but does not include the techn
+...[clipped 675 chars]
+
+### Turn 25 [user] (2026-06-20)
+[tool_result: 2904 chars] Web search results for query: "depthai watchdog timeout 4000ms device reboots bootloader USB X_LINK reconnect"
+
+Links: [{"title":"[BUG] Watchdog is not disabled in bootloader · Issue #794 · luxonis/depthai-core","url":"h
+...[clipped 2684 chars]
+
+### Turn 26 [assistant] (2026-06-20)
+The docs.luxonis.com latest pages return only navigation. Let me fetch the actual content from the GitHub-hosted troubleshooting RST and the device docs source, plus the watchdog bootloader issue and the X_LINK reconnection issue.
+
+### Turn 27 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://raw.githubusercontent.com/luxonis/depthai-docs-website/master/source/pages/troubleshooting.rst", "prompt": "Extract everything verbatim about: usbcore.usbfs_memory_mb recommended value and the symptoms i
+...[clipped 266 chars]]
+
+### Turn 28 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/luxonis/depthai-core/issues/794", "prompt": "Extract details: what is the default watchdog timeout, what resets it, what happens on watchdog timeout (does the device reboot to USB bootloader /
+...[clipped 152 chars]]
+
+### Turn 29 [user] (2026-06-20)
+[tool_result: 215 chars] The server returned HTTP 404 Not Found.
+
+The response body was not retrieved. If this URL requires authentication, use an authenticated tool (e.g. `gh` for GitHub, or an MCP-provided fetch tool) instead of WebFetch.
+
+### Turn 30 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "depthai 03e7:2485 bootloader USB device \"Movidius MyriadX\" reset enumerate OAK reconnect"}]
+
+### Turn 31 [user] (2026-06-20)
+[tool_result: 1287 chars] # Watchdog Timeout Analysis from Issue #794
+
+Based on the GitHub issue content provided, here's what can be extracted:
+
+## Default Watchdog Timeout
+The issue does not explicitly state the default watchdog timeout value.
+
+...[clipped 1067 chars]
+
+### Turn 32 [user] (2026-06-20)
+[tool_result: 2755 chars] Web search results for query: "depthai 03e7:2485 bootloader USB device "Movidius MyriadX" reset enumerate OAK reconnect"
+
+Links: [{"title":"OAK USB Deployment Guide","url":"https://docs.luxonis.com/hardware/platform/depl
+...[clipped 2535 chars]
+
+### Turn 33 [assistant] (2026-06-20)
+This confirms the key VID:PID enumeration behavior (03e7:2485 = unbooted/booted MyriadX, 03e7:f63c = Luxonis bootloader). Let me fetch the docs-old troubleshooting page (which has the full content) and the USB deployment guide, plus search for the depthai-ros XLink stall recovery and DEPTHAI_LEVEL.
+
+### Turn 34 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs-old.luxonis.com/en/latest/pages/troubleshooting/", "prompt": "Extract verbatim the recommended value and command for usbcore.usbfs_memory_mb (the famous fix) and what symptom it solves; the full 80-
+...[clipped 256 chars]]
+
+### Turn 35 [user] (2026-06-20)
+[tool_result: 12 chars] ECONNREFUSED
+
+### Turn 36 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.luxonis.com/hardware/platform/deploy/usb-deployment-guide", "prompt": "Extract everything about: usbcore.usbfs_memory_mb recommended value and why depthai needs it; udev rules for vendor 03e7; USB2 
+...[clipped 152 chars]]
+
+### Turn 37 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "depthai-ros camera_node depth stops publishing X_LINK_ERROR restart_on_diagnostics_error reconnect Humble"}]
+
+### Turn 38 [user] (2026-06-20)
+[tool_result: 1612 chars] # OAK USB Deployment: Key Technical Details
+
+## usbcore.usbfs_memory_mb
+The provided documentation does not mention `usbcore.usbfs_memory_mb` or its recommended values.
+
+## udev Rules for Vendor 03e7
+Linux systems requir
+...[clipped 1392 chars]
+
+### Turn 39 [user] (2026-06-20)
+[tool_result: 2970 chars] Web search results for query: "depthai-ros camera_node depth stops publishing X_LINK_ERROR restart_on_diagnostics_error reconnect Humble"
+
+Links: [{"title":"[BUG] Drop in pointcloud rate after running for a couple of hou
+...[clipped 2750 chars]
+
+### Turn 40 [assistant] (2026-06-20)
+Excellent - `i_restart_on_diagnostics_error` is the key depthai-ros auto-recovery parameter, directly relevant to the OAK depth stall gotcha in CLAUDE.md. Let me fetch the depthai-ros issue #591 (the multi-hour drop/stop) and #560 (X_LINK_DEVICE_NOT_FOUND), plus the readme for the recovery params.
+
+### Turn 41 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/luxonis/depthai-ros/issues/591", "prompt": "Extract details: what happens (driver stops publishing after hours), the exact errors (X_LINK, No data on logger queue, ping was missed), what maint
+...[clipped 146 chars]]
+
+### Turn 42 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/luxonis/depthai-ros/blob/humble/README.md", "prompt": "Extract all parameters related to error recovery and reconnection: i_restart_on_diagnostics_error, i_max_q_size, i_enable_diagnostics, i_
+...[clipped 198 chars]]
+
+### Turn 43 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "DEPTHAI_LEVEL trace debug warn environment variable depthai logging X_LINK debug"}]
+
+### Turn 44 [user] (2026-06-20)
+[tool_result: 894 chars] # Analysis Result
+
+Based on the provided web page content, **no parameters related to error recovery and reconnection could be extracted**.
+
+The page displays only a minimal README.md file from the depthai-ros GitHub rep
+...[clipped 674 chars]
+
+### Turn 45 [user] (2026-06-20)
+[tool_result: 2476 chars] Web search results for query: "DEPTHAI_LEVEL trace debug warn environment variable depthai logging X_LINK debug"
+
+Links: [{"title":"depthai: Logging.cpp Source File","url":"http://docs.ros.org/en/noetic/api/depthai/html/
+...[clipped 2256 chars]
+
+### Turn 46 [user] (2026-06-20)
+[tool_result: 1351 chars] # Issue Summary: DepthAI Pointcloud Rate Drop
+
+## What Happens
+After running two OAK D S2 cameras for approximately one hour, the pointcloud publishing rate drops from 27-30 Hz to 1 Hz or less, while RGB and depth images
+...[clipped 1131 chars]
+
+### Turn 47 [assistant] (2026-06-20)
+I have strong coverage. Let me fetch the debugging tutorial (for DEPTHAI_LEVEL and XLINK_LEVEL specifics) and confirm the usbfs_memory_mb recommended value and the watchdog default for USB from the device API source.
+
+### Turn 48 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.oakchina.cn/projects/api/tutorials/debugging.html", "prompt": "Extract verbatim: the DEPTHAI_LEVEL environment variable and its levels (trace/debug/info/warn/err/critical/off), the XLINK_LEVEL envir
+...[clipped 173 chars]]
+
+### Turn 49 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://depthai-docs-website.readthedocs.io/en/latest/pages/troubleshooting/", "prompt": "Extract verbatim: the recommended usbcore.usbfs_memory_mb value (e.g. echo 1000 or sudo command), what symptom it fixes f
+...[clipped 181 chars]]
+
+### Turn 50 [user] (2026-06-20)
+[tool_result: 38 chars] unable to verify the first certificate
+
+### Turn 51 [user] (2026-06-20)
+[tool_result: 1104 chars] # DepthAI Troubleshooting Reference
+
+## usbcore.usbfs_memory_mb Value
+**Not found in document.** The provided content does not mention this parameter or recommended values.
+
+## 80-movidius.rules udev Command
+```bash
+echo
+...[clipped 884 chars]
+
+### Turn 52 [assistant] (2026-06-20)
+I have enough verified material. Let me do two final targeted searches to nail down the exact usbfs_memory_mb recommended value/command from a reliable depthai source and confirm the USB watchdog default timeout.
+
+### Turn 53 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "\"usbfs_memory_mb\" depthai \"echo\" cmdline.txt 1000 OR 256 OAK camera fix command"}]
+
+### Turn 54 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://forums.raspberrypi.com/viewtopic.php?t=364587", "prompt": "Extract: the recommended usbfs_memory_mb value users set to fix OAK-D-Lite crashes/USB errors on RPi4, the exact command or cmdline.txt change, 
+...[clipped 83 chars]]
+
+### Turn 55 [user] (2026-06-20)
+[tool_result: 2846 chars] Web search results for query: ""usbfs_memory_mb" depthai "echo" cmdline.txt 1000 OR 256 OAK camera fix command"
+
+Links: [{"title":"Configuring USB-FS for USB3 Vision Camera | by Taka Wang | Medium","url":"https://takawan
+...[clipped 2626 chars]
+
+### Turn 56 [user] (2026-06-20)
+[tool_result: 1071 chars] # Analysis of OAK-D-Lite Crash Issue on RPi4
+
+Based on the forum post provided, **no specific usbfs_memory_mb value, cmdline.txt modification, or X_LINK error mention is present**.
+
+## Key Information Found:
+
+**Power-Dra
+...[clipped 851 chars]
+
+### Turn 57 [assistant] (2026-06-20)
+I now have all the information needed, well-corroborated across Luxonis docs, GitHub issues, and the RPi forum. Here is the research deliverable.
+
+---
+
+# DepthAI / OAK-D-LITE XLink Errors & Boot Behavior on Raspberry Pi 4 + ROS 2 Humble
+
+**TL;DR.** On the Pi-4 the OAK-D-LITE stalls (the "X_LINK / sys_logger_queue" gotcha #8 in CLAUDE.md) almost always trace to one of three host-side causes: (a) the `usbfs` ring buffer is too small for the high-bandwidth depth stream → set `usbcore.usbfs_memory_mb=256` (or higher); (b) USB power/cable marginality on USB3 → you already force USB2 (`i_usb_speed:=HIGH`), which is correct; (c) the XLink **watchdog** (default **4 s** on USB) firing when the host stalls (GIL/CPU saturation on the Pi), which makes the device **reboot back to the USB bootloader** and detach/re-attach — exactly the "alive but 0 Hz" symptom. The errors `No data on logger queue!` / `Couldn't read data from stream: 'sys_logger_queue' (X_LINK_ERROR)` / `Communication exception` are all the **same fatal event** (XLink link dropped); recovery requires reconnecting to the device, not just waiting. In depthai-ros, enable `i_restart_on_diagnostics_error: true` to auto-reconnect. Capture detail with `DEPTHAI_LEVEL=debug` (or `trace`) and the XLink log level.
+
+---
+
+## 1. The error family: X_LINK_ERROR / Communication exception / sys_logger_queue / "No data on logger queue!"
+
+These are not independent bugs — they are the **same XLink communication failure** reported by different layers when the host↔device pipe goes down (USB drop, device reboot, or watchdog fire). Observed sequ
+...[clipped 13990 chars]

@@ -1,0 +1,139 @@
+# Digest: 2026-06-20_agent-a0.jsonl
+
+- raw_source: claude-conversations/sessions/2026-06-20_agent-a0.jsonl
+- date: 2026-06-20
+- raw_bytes: 38346
+- user_turns: 7
+- assistant_turns: 10
+- tool_calls: 6
+- images: 0
+- top_tools: 3xRead, 2xBash, 1xStructuredOutput
+
+Citation format for analysis: (file: 2026-06-20_agent-a0.jsonl, date: 2026-06-20, turn: N).
+
+---
+### Turn 1 [user] (2026-06-20)
+You are auditing ONE documentation file in a ROS2 robotics project (TurtleBot 4 autonomous "guide robot").
+Read these files: /home/ubuntu/cs7980-guide-mate/docs/aws-iot/iot-core-overview.md (the target), and /home/ubuntu/cs7980-guide-mate/CLAUDE.md (project context). If the doc makes claims about code/launch/config, spot-check against the real files under /home/ubuntu/cs7980-guide-mate/src/.
+Topic hint: IoT Core thing/policy/endpoint.
+
+ACTUAL CODE/CONFIG ON DISK (ground truth as of this audit):
+ROS2 package src/guide_mate_explorer/:
+  nodes: bfs_explorer.py, glass_guard.py, depth_lidar_fusion.py, combined_node.py(UNTRACKED/new)
+  launch: autonomous_mapping.launch.py, depth_lidar_fusion.launch.py, depth_perception.launch.py, explore.launch.py, combined.launch.py(UNTRACKED/new)
+  config: nav2_glass.yaml, oakd_mapping.yaml, slam_fused.yaml(UNTRACKED-ish/new)
+NEW untracked C++ package src/guide_mate_perception/:
+  src/depth_lidar_fusion_node.cpp, CMakeLists.txt, package.xml, launch/depth_lidar_fusion_cpp.launch.py
+rviz/: launch_rviz.sh, turtlebot468_mapping.rviz (tracked)
+Root: README.md, CLAUDE.md, .gitignore (tracked); start.sh (gitignored)
+Vendored third-party clone (gitignored, untracked, on-disk only): aws-iot-device-sdk-python-v2/ (full AWS SDK repo with its own .git, ~20 markdowns)
+On-disk credentials (gitignored, never committed): Turtlebot-468.cert.pem, Turtlebot-468.private.key, Turtlebot-468.public.key, Turtlebot-468-Policy, root-CA.crt, c9109663-*AccessToken.txt, connect_device_package.zip
+
+Assess the target doc honestly and critically. importance: 'critical'=needed to operate/understand the robot or repo; 'useful'=helpful reference; 'marginal'=nice-to-have/thin; 'obsolete'=stale/superseded/empty-stub. Many tiny section-index README.md files may be 'marginal' boilerplate. Flag any factual drift from the actual code inventory. Be specific in uniqueValue about what is irreplaceably documented here (real hardware findings, IPs, gotchas) vs. generic restatement.
+
+### Turn 2 [assistant] (2026-06-20)
+I'll read the target documentation file and project context, then spot-check claims against the actual code.
+
+### Turn 3 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/aws-iot/iot-core-overview.md"}]
+
+### Turn 4 [user] (2026-06-20)
+[tool_result: 3868 chars] 1	# What AWS IoT Core Is — Building Blocks
+2	
+3	A managed cloud service that lets **devices** (our TurtleBots) and the **cloud** exchange
+4	messages securely, mostly over **MQTT** (a lightweight publish/subscribe protoco
+...[clipped 3648 chars]
+
+### Turn 5 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "ls -la /home/ubuntu/cs7980-guide-mate/docs/aws-iot/ 2>/dev/null; echo \"---ROOT IOT FILES---\"; ls -la /home/ubuntu/cs7980-guide-mate/ | grep -iE 'turtlebot|root-CA|AccessToken|connect_device|Policy' 2>/dev/
+...[clipped 71 chars]]
+
+### Turn 6 [user] (2026-06-20)
+[tool_result: 947 chars] total 32
+drwxrwxr-x 2 ubuntu ubuntu 4096 Jun 20 00:16 .
+drwxrwxr-x 7 ubuntu ubuntu 4096 Jun 20 00:16 ..
+-rw-rw-r-- 1 ubuntu ubuntu 2717 Jun 20 00:15 README.md
+-rw-rw-r-- 1 ubuntu ubuntu 3670 Jun 20 00:15 iot-core-overvie
+...[clipped 727 chars]
+
+### Turn 7 [assistant] (2026-06-20)
+Let me verify the claims against the actual policy file and the related docs, plus check the start.sh referenced.
+
+### Turn 8 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/Turtlebot-468-Policy"}]
+
+### Turn 9 [user] (2026-06-20)
+[tool_result: 1164 chars] 1	{
+2	  "Version": "2012-10-17",
+3	  "Statement": [
+4	    {
+5	      "Effect": "Allow",
+6	      "Action": [
+7	        "iot:Publish",
+8	        "iot:Receive",
+9	        "iot:PublishRetain"
+10	      ],
+11	      "Resource": 
+...[clipped 944 chars]
+
+### Turn 10 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/aws-iot/README.md"}]
+
+### Turn 11 [user] (2026-06-20)
+[tool_result: 2817 chars] 1	# AWS IoT Core — Overview
+2	
+3	How AWS IoT Core fits the cs7980 guide-robot project, and what we set up on robot **468**.
+4	
+5	> ⚠️ **Security:** none of the device credentials live in this repo. The certificate,
+6	> p
+...[clipped 2597 chars]
+
+### Turn 12 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "ls -la /home/ubuntu/cs7980-guide-mate/start.sh 2>/dev/null && echo \"---START.SH---\" && cat /home/ubuntu/cs7980-guide-mate/start.sh 2>/dev/null | head -60; echo \"=== AccessToken sample (first line lengths 
+...[clipped 157 chars]]
+
+### Turn 13 [user] (2026-06-20)
+[tool_result: 1663 chars] -rwxrwxr-x 1 ubuntu ubuntu 1347 Jun 20  2026 /home/ubuntu/cs7980-guide-mate/start.sh
+---START.SH---
+#!/usr/bin/env bash
+# stop script on error
+set -e
+
+# Check for python 3
+if ! python3 --version &> /dev/null; then
+  prin
+...[clipped 1443 chars]
+
+### Turn 14 [assistant] (2026-06-20)
+All claims verified. Let me cross-check the specific factual claims in the target doc against ground truth:
+
+- Policy claims `sdk/test/{python,java,js}` topics and a few client IDs → matches policy file exactly (java/python/js topics; clients `sdk-java`, `basicPubSub`, `sdk-nodejs-*`).
+- Account ID `852373397000`, region `us-west-2`, endpoint `aqc6y1ij55nsq-ats.iot.us-west-2.amazonaws.com` → correctly abstracted to placeholders in the doc (security note holds).
+- `start.sh` runs pub/sub MQTT sample on `sdk/test/python` with client_id `basicPubSub` → matches.
+- File-to-concept mapping table → all files exist on disk as claimed.
+- QoS 2 not supported by IoT Core → correct.
+
+The doc makes no claims about the ROS2 package code (bfs_explorer, depth_lidar_fusion, etc.), so there's no drift against the `src/` inventory. It is purely conceptual AWS IoT documentation with an accurate file-mapping table.
+
+### Turn 15 [assistant] (2026-06-20)
+[tool_use: StructuredOutput {"path": "/home/ubuntu/cs7980-guide-mate/docs/aws-iot/iot-core-overview.md", "purpose": "Conceptual primer on AWS IoT Core building blocks (things, certs/policies, MQTT broker, shadows, rules, jobs, Greengrass) and how t
+...[clipped 2276 chars]]
+
+### Turn 16 [user] (2026-06-20)
+[tool_result: 39 chars] Structured output provided successfully
+
+### Turn 17 [assistant] (2026-06-20)
+Audit complete. Summary of findings for `/home/ubuntu/cs7980-guide-mate/docs/aws-iot/iot-core-overview.md`:
+
+**Verdict: keep, importance=useful, freshness=accurate, no contradictions.**
+
+Spot-checks against ground truth all passed:
+- The policy-scope claim (line 18-20: "only `sdk/test/{python,java,js}` topics and a few client IDs") matches `/home/ubuntu/cs7980-guide-mate/Turtlebot-468-Policy` exactly — Publish/Receive/Subscribe limited to `sdk/test/java|python|js`, Connect limited to clients `sdk-java`, `basicPubSub`, `sdk-nodejs-*`.
+- The file-to-concept mapping table (lines 60-68) lists `Turtlebot-468.cert.pem`, `.private.key`, `root-CA.crt`, `Turtlebot-468-Policy`, `aws-iot-device-sdk-python-v2/`, `start.sh`, `*AccessToken.txt` — all present on disk.
+- The `start.sh` claim ("runs the pub/sub MQTT sample → `sdk/test/python`") matches the actual script, which invokes `mqtt5_x509.py ... --client_id basicPubSub --topic sdk/test/python`.
+- Security boundary holds: real account ID (`852373397000`), region (`us-west-2`), and endpoint (`aqc6y1ij55nsq-ats...`) live in the gitignored files; the doc correctly uses `<account-id>`/`<region>`/`<your-ats-endpoint>` placeholders.
+
+No drift against the `src/` code inventory because the doc makes zero claims about the ROS2 package (it is pure AWS conceptual material). 
+
+Irreplaceable content: the project-specific file-to-IoT-concept mapping table and the explicit note that the policy is quick-start-scoped so telemetry/tunnel/shadow use would require widening it. Everything else (broker, shadows, rules, jobs, fleet provisioning, Greengrass
+...[clipped 104 chars]

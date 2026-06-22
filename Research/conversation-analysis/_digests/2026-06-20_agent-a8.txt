@@ -1,0 +1,144 @@
+# Digest: 2026-06-20_agent-a8.jsonl
+
+- raw_source: claude-conversations/sessions/2026-06-20_agent-a8.jsonl
+- date: 2026-06-20
+- raw_bytes: 36049
+- user_turns: 7
+- assistant_turns: 11
+- tool_calls: 6
+- images: 0
+- top_tools: 4xBash, 1xRead, 1xStructuredOutput
+
+Citation format for analysis: (file: 2026-06-20_agent-a8.jsonl, date: 2026-06-20, turn: N).
+
+---
+### Turn 1 [user] (2026-06-20)
+You are auditing ONE documentation file in a ROS2 robotics project (TurtleBot 4 autonomous "guide robot").
+Read these files: /home/ubuntu/cs7980-guide-mate/docs/aws-iot/README.md (the target), and /home/ubuntu/cs7980-guide-mate/CLAUDE.md (project context). If the doc makes claims about code/launch/config, spot-check against the real files under /home/ubuntu/cs7980-guide-mate/src/.
+Topic hint: aws-iot section index.
+
+ACTUAL CODE/CONFIG ON DISK (ground truth as of this audit):
+ROS2 package src/guide_mate_explorer/:
+  nodes: bfs_explorer.py, glass_guard.py, depth_lidar_fusion.py, combined_node.py(UNTRACKED/new)
+  launch: autonomous_mapping.launch.py, depth_lidar_fusion.launch.py, depth_perception.launch.py, explore.launch.py, combined.launch.py(UNTRACKED/new)
+  config: nav2_glass.yaml, oakd_mapping.yaml, slam_fused.yaml(UNTRACKED-ish/new)
+NEW untracked C++ package src/guide_mate_perception/:
+  src/depth_lidar_fusion_node.cpp, CMakeLists.txt, package.xml, launch/depth_lidar_fusion_cpp.launch.py
+rviz/: launch_rviz.sh, turtlebot468_mapping.rviz (tracked)
+Root: README.md, CLAUDE.md, .gitignore (tracked); start.sh (gitignored)
+Vendored third-party clone (gitignored, untracked, on-disk only): aws-iot-device-sdk-python-v2/ (full AWS SDK repo with its own .git, ~20 markdowns)
+On-disk credentials (gitignored, never committed): Turtlebot-468.cert.pem, Turtlebot-468.private.key, Turtlebot-468.public.key, Turtlebot-468-Policy, root-CA.crt, c9109663-*AccessToken.txt, connect_device_package.zip
+
+Assess the target doc honestly and critically. importance: 'critical'=needed to operate/understand the robot or repo; 'useful'=helpful reference; 'marginal'=nice-to-have/thin; 'obsolete'=stale/superseded/empty-stub. Many tiny section-index README.md files may be 'marginal' boilerplate. Flag any factual drift from the actual code inventory. Be specific in uniqueValue about what is irreplaceably documented here (real hardware findings, IPs, gotchas) vs. generic restatement.
+
+### Turn 2 [assistant] (2026-06-20)
+I'll start by reading the target doc and project context.
+
+### Turn 3 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/aws-iot/README.md"}]
+
+### Turn 4 [user] (2026-06-20)
+[tool_result: 2817 chars] 1	# AWS IoT Core — Overview
+2	
+3	How AWS IoT Core fits the cs7980 guide-robot project, and what we set up on robot **468**.
+4	
+5	> ⚠️ **Security:** none of the device credentials live in this repo. The certificate,
+6	> p
+...[clipped 2597 chars]
+
+### Turn 5 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "ls -la /home/ubuntu/cs7980-guide-mate/docs/aws-iot/ 2>/dev/null; echo \"---DOCS ROOT---\"; ls -la /home/ubuntu/cs7980-guide-mate/docs/ 2>/dev/null", "description": "List aws-iot docs dir and docs root"}]
+
+### Turn 6 [user] (2026-06-20)
+[tool_result: 802 chars] total 32
+drwxrwxr-x 2 ubuntu ubuntu 4096 Jun 20 00:16 .
+drwxrwxr-x 7 ubuntu ubuntu 4096 Jun 20 00:16 ..
+-rw-rw-r-- 1 ubuntu ubuntu 2717 Jun 20 00:15 README.md
+-rw-rw-r-- 1 ubuntu ubuntu 3670 Jun 20 00:15 iot-core-overvie
+...[clipped 582 chars]
+
+### Turn 7 [assistant] (2026-06-20)
+This is a section-index README for the aws-iot docs. Let me verify the claims it makes, particularly about `start.sh`, the `.gitignore`, and the sibling docs it links to.
+
+### Turn 8 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "echo \"=== start.sh exists? ===\"; ls -la /home/ubuntu/cs7980-guide-mate/start.sh 2>/dev/null || echo \"NOT FOUND\"; echo; echo \"=== start.sh content ===\"; cat /home/ubuntu/cs7980-guide-mate/start.sh 2>/de
+...[clipped 74 chars]]
+
+### Turn 9 [user] (2026-06-20)
+[tool_result: 1483 chars] === start.sh exists? ===
+-rwxrwxr-x 1 ubuntu ubuntu 1347 Jun 20  2026 /home/ubuntu/cs7980-guide-mate/start.sh
+
+=== start.sh content ===
+#!/usr/bin/env bash
+# stop script on error
+set -e
+
+# Check for python 3
+if ! python3
+...[clipped 1263 chars]
+
+### Turn 10 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "echo \"=== .gitignore relevant entries ===\"; grep -iE 'cert|key|token|connect_device|aws-iot-device|Policy|root-CA|start.sh|\\.zip' /home/ubuntu/cs7980-guide-mate/.gitignore 2>/dev/null || echo \"no matches
+...[clipped 234 chars]]
+
+### Turn 11 [user] (2026-06-20)
+[tool_result: 267 chars] === .gitignore relevant entries ===
+*.key
+*-Policy
+*AccessToken*
+connect_device_package.zip
+/aws-iot-device-sdk-python-v2/
+start.sh
+
+=== sibling network doc exists? ===
+-rw-rw-r-- 1 ubuntu ubuntu 3518 Jun 12 18:20 /home/
+...[clipped 47 chars]
+
+### Turn 12 [assistant] (2026-06-20)
+The doc's claims check out well. Let me verify a couple more specifics: the `.gitignore` coverage of the cert/CA files (the doc claims cert, root CA are gitignored), and confirm the topic claim `sdk/test/python` matches start.sh (it does). Let me also check the region claim against what start.sh reveals.
+
+### Turn 13 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "echo \"=== full .gitignore ===\"; cat /home/ubuntu/cs7980-guide-mate/.gitignore 2>/dev/null; echo; echo \"=== are cert/CA files actually git-ignored? ===\"; git check-ignore Turtlebot-468.cert.pem root-CA.cr
+...[clipped 201 chars]]
+
+### Turn 14 [user] (2026-06-20)
+[tool_result: 521 chars] === full .gitignore ===
+# colcon / ROS 2 workspace build artifacts
+/build/
+/install/
+/log/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Saved maps (regenerable output, keep out of source)
+*.pgm
+
+# AWS IoT credential
+...[clipped 301 chars]
+
+### Turn 15 [assistant] (2026-06-20)
+All credential files are confirmed gitignored. The doc's security claims are accurate:
+- `*.pem` covers `Turtlebot-468.cert.pem` (cert) and `root-CA.crt`... actually `root-CA.crt` is covered by `*.crt`. Cert is `.pem`. Public key is `.key`. Policy `*-Policy`. AccessToken `*AccessToken*`. SDK clone and start.sh — all ignored. 
+
+The doc accurately reflects:
+- `start.sh` exists and runs the MQTT pub/sub sample publishing to `sdk/test/python` (matches exactly).
+- Endpoint in start.sh is `us-west-2` — doc uses placeholder `<region>` (correctly redacted).
+- Sibling docs (iot-core-overview.md, service-integration.md, secure-tunneling.md) all exist.
+- network/README.md link target exists.
+- `localproxy` not installed claim is consistent with the on-disk inventory (no localproxy binary mentioned; aws-iot-device-sdk clone present).
+
+This is a section-index README — boilerplate-ish, but it carries real project-specific value (the "what we set up on 468" table, the IoT-policy scope, the localproxy-pending state). Let me write the assessment.
+
+### Turn 16 [assistant] (2026-06-20)
+[tool_use: StructuredOutput {"path": "/home/ubuntu/cs7980-guide-mate/docs/aws-iot/README.md", "purpose": "Section-index/overview for the AWS IoT Core docs: what IoT Core is, what was set up on robot 468, and where it could help the project.", "impo
+...[clipped 3525 chars]]
+
+### Turn 17 [user] (2026-06-20)
+[tool_result: 39 chars] Structured output provided successfully
+
+### Turn 18 [assistant] (2026-06-20)
+Audit complete. The target doc `/home/ubuntu/cs7980-guide-mate/docs/aws-iot/README.md` is an accurate, well-maintained section-index README. All verifiable claims check out against on-disk ground truth (start.sh publishing to `sdk/test/python`, the three sibling docs existing, the `../network/README.md` link resolving, and every credential file confirmed gitignored via `git check-ignore`). No factual drift found. Recommendation: keep. Its irreplaceable content is the robot-468 setup-state table (Thing name, quick-start policy scope, opened-but-unusable Secure Tunnel pending localproxy) plus the credential-redaction policy; the rest is index-level restatement of its child docs.

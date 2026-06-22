@@ -1,0 +1,539 @@
+[
+  {
+    "file": "2026-06-03_d29ce515.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-03_d29ce515.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-03_d29ce515.txt",
+    "date": "2026-06-03",
+    "raw_bytes": 1893067,
+    "user_turns": 249,
+    "assistant_turns": 380,
+    "tool_calls": 169,
+    "images": 4,
+    "top_tools": {
+      "Bash": 103,
+      "PowerShell": 27,
+      "Edit": 11,
+      "Read": 8,
+      "TaskCreate": 8,
+      "AskUserQuestion": 5,
+      "Write": 5,
+      "ToolSearch": 1,
+      "TaskUpdate": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-12_284d799e.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-12_284d799e.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-12_284d799e.txt",
+    "date": "2026-06-12",
+    "raw_bytes": 942825,
+    "user_turns": 145,
+    "assistant_turns": 292,
+    "tool_calls": 112,
+    "images": 0,
+    "top_tools": {
+      "Bash": 69,
+      "Read": 19,
+      "Edit": 14,
+      "Write": 6,
+      "AskUserQuestion": 2,
+      "ToolSearch": 1,
+      "Monitor": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-12_dd0bc487.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-12_dd0bc487.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-12_dd0bc487.txt",
+    "date": "2026-06-12",
+    "raw_bytes": 840246,
+    "user_turns": 47,
+    "assistant_turns": 77,
+    "tool_calls": 27,
+    "images": 1,
+    "top_tools": {
+      "PowerShell": 13,
+      "Read": 8,
+      "Write": 4,
+      "AskUserQuestion": 1,
+      "Grep": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-13_67626b7d.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-13_67626b7d.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-13_67626b7d.txt",
+    "date": "2026-06-13",
+    "raw_bytes": 1070,
+    "user_turns": 3,
+    "assistant_turns": 0,
+    "tool_calls": 0,
+    "images": 0,
+    "top_tools": {},
+    "empty": false
+  },
+  {
+    "file": "2026-06-15_40f8e5f3.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-15_40f8e5f3.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-15_40f8e5f3.txt",
+    "date": "2026-06-15",
+    "raw_bytes": 1126777,
+    "user_turns": 52,
+    "assistant_turns": 106,
+    "tool_calls": 42,
+    "images": 1,
+    "top_tools": {
+      "Bash": 13,
+      "Write": 7,
+      "PowerShell": 7,
+      "Read": 6,
+      "Edit": 6,
+      "Agent": 2,
+      "Skill": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-19_69022496.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-19_69022496.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-19_69022496.txt",
+    "date": "2026-06-19",
+    "raw_bytes": 4969738,
+    "user_turns": 457,
+    "assistant_turns": 1025,
+    "tool_calls": 379,
+    "images": 0,
+    "top_tools": {
+      "Bash": 189,
+      "Read": 85,
+      "Edit": 71,
+      "Write": 24,
+      "AskUserQuestion": 4,
+      "TaskStop": 4,
+      "ToolSearch": 2
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-19_fa008639.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-19_fa008639.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-19_fa008639.txt",
+    "date": "2026-06-19",
+    "raw_bytes": 127193,
+    "user_turns": 21,
+    "assistant_turns": 40,
+    "tool_calls": 14,
+    "images": 0,
+    "top_tools": {
+      "Bash": 13,
+      "Write": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_29aff2bd.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_29aff2bd.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_29aff2bd.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 5344732,
+    "user_turns": 535,
+    "assistant_turns": 1112,
+    "tool_calls": 401,
+    "images": 0,
+    "top_tools": {
+      "Bash": 233,
+      "Edit": 77,
+      "Read": 37,
+      "Write": 24,
+      "TaskUpdate": 8,
+      "ToolSearch": 5,
+      "Workflow": 5,
+      "TaskCreate": 4,
+      "WebSearch": 3,
+      "AskUserQuestion": 3,
+      "Agent": 2
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_6fb45153.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_6fb45153.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_6fb45153.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 41062,
+    "user_turns": 16,
+    "assistant_turns": 15,
+    "tool_calls": 7,
+    "images": 0,
+    "top_tools": {
+      "Bash": 7
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_7382bfa4.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_7382bfa4.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_7382bfa4.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 722487,
+    "user_turns": 65,
+    "assistant_turns": 130,
+    "tool_calls": 58,
+    "images": 0,
+    "top_tools": {
+      "Bash": 27,
+      "Read": 20,
+      "Edit": 7,
+      "Workflow": 2,
+      "AskUserQuestion": 2
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_7833e513.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_7833e513.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_7833e513.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 2648887,
+    "user_turns": 234,
+    "assistant_turns": 505,
+    "tool_calls": 204,
+    "images": 0,
+    "top_tools": {
+      "Bash": 100,
+      "Edit": 24,
+      "Read": 19,
+      "Write": 18,
+      "TaskUpdate": 13,
+      "Monitor": 11,
+      "TaskCreate": 7,
+      "TaskStop": 7,
+      "ToolSearch": 2,
+      "AskUserQuestion": 2,
+      "Workflow": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_agent-a0.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_agent-a0.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_agent-a0.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 38346,
+    "user_turns": 7,
+    "assistant_turns": 10,
+    "tool_calls": 6,
+    "images": 0,
+    "top_tools": {
+      "Read": 3,
+      "Bash": 2,
+      "StructuredOutput": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_agent-a1.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_agent-a1.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_agent-a1.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 103405,
+    "user_turns": 28,
+    "assistant_turns": 38,
+    "tool_calls": 27,
+    "images": 0,
+    "top_tools": {
+      "WebFetch": 18,
+      "WebSearch": 6,
+      "Bash": 2,
+      "ToolSearch": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_agent-a2.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_agent-a2.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_agent-a2.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 149043,
+    "user_turns": 4,
+    "assistant_turns": 5,
+    "tool_calls": 3,
+    "images": 0,
+    "top_tools": {
+      "Bash": 3
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_agent-a3.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_agent-a3.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_agent-a3.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 54662,
+    "user_turns": 9,
+    "assistant_turns": 15,
+    "tool_calls": 8,
+    "images": 0,
+    "top_tools": {
+      "Edit": 7,
+      "Read": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_agent-a4.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_agent-a4.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_agent-a4.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 105065,
+    "user_turns": 9,
+    "assistant_turns": 16,
+    "tool_calls": 8,
+    "images": 0,
+    "top_tools": {
+      "Bash": 5,
+      "Read": 2,
+      "StructuredOutput": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_agent-a5.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_agent-a5.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_agent-a5.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 92037,
+    "user_turns": 18,
+    "assistant_turns": 24,
+    "tool_calls": 17,
+    "images": 0,
+    "top_tools": {
+      "WebSearch": 9,
+      "WebFetch": 7,
+      "ToolSearch": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_agent-a6.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_agent-a6.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_agent-a6.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 113661,
+    "user_turns": 25,
+    "assistant_turns": 33,
+    "tool_calls": 24,
+    "images": 0,
+    "top_tools": {
+      "WebFetch": 13,
+      "WebSearch": 10,
+      "ToolSearch": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_agent-a7.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_agent-a7.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_agent-a7.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 104740,
+    "user_turns": 24,
+    "assistant_turns": 33,
+    "tool_calls": 23,
+    "images": 0,
+    "top_tools": {
+      "WebFetch": 13,
+      "WebSearch": 9,
+      "ToolSearch": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_agent-a8.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_agent-a8.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_agent-a8.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 36049,
+    "user_turns": 7,
+    "assistant_turns": 11,
+    "tool_calls": 6,
+    "images": 0,
+    "top_tools": {
+      "Bash": 4,
+      "Read": 1,
+      "StructuredOutput": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_agent-a9.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_agent-a9.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_agent-a9.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 47145,
+    "user_turns": 6,
+    "assistant_turns": 10,
+    "tool_calls": 5,
+    "images": 0,
+    "top_tools": {
+      "Read": 3,
+      "Bash": 1,
+      "StructuredOutput": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_agent-aa.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_agent-aa.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_agent-aa.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 45455,
+    "user_turns": 7,
+    "assistant_turns": 11,
+    "tool_calls": 6,
+    "images": 0,
+    "top_tools": {
+      "Bash": 3,
+      "Read": 2,
+      "StructuredOutput": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_agent-ac.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_agent-ac.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_agent-ac.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 92375,
+    "user_turns": 17,
+    "assistant_turns": 26,
+    "tool_calls": 16,
+    "images": 0,
+    "top_tools": {
+      "WebFetch": 11,
+      "WebSearch": 2,
+      "Bash": 2,
+      "ToolSearch": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_agent-ad.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_agent-ad.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_agent-ad.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 121723,
+    "user_turns": 12,
+    "assistant_turns": 14,
+    "tool_calls": 11,
+    "images": 0,
+    "top_tools": {
+      "Read": 8,
+      "Bash": 3
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_agent-ae.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_agent-ae.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_agent-ae.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 140849,
+    "user_turns": 19,
+    "assistant_turns": 24,
+    "tool_calls": 18,
+    "images": 0,
+    "top_tools": {
+      "Read": 14,
+      "Bash": 4
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_agent-af.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_agent-af.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_agent-af.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 66725,
+    "user_turns": 8,
+    "assistant_turns": 12,
+    "tool_calls": 7,
+    "images": 0,
+    "top_tools": {
+      "Read": 4,
+      "Bash": 2,
+      "StructuredOutput": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_cf939755.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_cf939755.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_cf939755.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 870,
+    "user_turns": 2,
+    "assistant_turns": 0,
+    "tool_calls": 0,
+    "images": 0,
+    "top_tools": {},
+    "empty": false
+  },
+  {
+    "file": "2026-06-20_dd2a7605.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-20_dd2a7605.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-20_dd2a7605.txt",
+    "date": "2026-06-20",
+    "raw_bytes": 234220,
+    "user_turns": 39,
+    "assistant_turns": 57,
+    "tool_calls": 22,
+    "images": 0,
+    "top_tools": {
+      "Bash": 8,
+      "Write": 5,
+      "Edit": 5,
+      "Read": 4
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-22_6014c160.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-22_6014c160.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-22_6014c160.txt",
+    "date": "2026-06-22",
+    "raw_bytes": 137986,
+    "user_turns": 17,
+    "assistant_turns": 30,
+    "tool_calls": 14,
+    "images": 0,
+    "top_tools": {
+      "Bash": 10,
+      "Read": 3,
+      "Write": 1
+    },
+    "empty": false
+  },
+  {
+    "file": "2026-06-22_610e67b0.jsonl",
+    "raw_source": "claude-conversations/sessions/2026-06-22_610e67b0.jsonl",
+    "digest": "Research/conversation-analysis/_digests/2026-06-22_610e67b0.txt",
+    "date": "2026-06-22",
+    "raw_bytes": 695817,
+    "user_turns": 71,
+    "assistant_turns": 141,
+    "tool_calls": 63,
+    "images": 0,
+    "top_tools": {
+      "Bash": 32,
+      "Edit": 21,
+      "Write": 8,
+      "Skill": 1,
+      "AskUserQuestion": 1
+    },
+    "empty": false
+  }
+]

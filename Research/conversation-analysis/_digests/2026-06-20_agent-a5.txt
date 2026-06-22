@@ -1,0 +1,282 @@
+# Digest: 2026-06-20_agent-a5.jsonl
+
+- raw_source: claude-conversations/sessions/2026-06-20_agent-a5.jsonl
+- date: 2026-06-20
+- raw_bytes: 92037
+- user_turns: 18
+- assistant_turns: 24
+- tool_calls: 17
+- images: 0
+- top_tools: 9xWebSearch, 7xWebFetch, 1xToolSearch
+
+Citation format for analysis: (file: 2026-06-20_agent-a5.jsonl, date: 2026-06-20, turn: N).
+
+---
+### Turn 1 [user] (2026-06-20)
+Research Linux/Raspberry Pi 4 USB-level techniques to (a) PREVENT and (b) RECOVER an OAK-D-LITE that disconnects or wedges, without physically replugging.
+
+Use WebSearch and WebFetch (load via ToolSearch "select:WebSearch,WebFetch").
+
+Investigate concrete, copy-pasteable techniques:
+1. Programmatic USB reset: 'usbreset' (the usbutils C program / ioctl USBDEVFS_RESET), uhubctl (per-port power cycling on Pi4 — which ports support it, hub 1d6b:0002/0003), unbind/bind via /sys/bus/usb/drivers/usb, authorized=0/1 toggling.
+2. xhci / Pi4 quirks: usbcore.autosuspend=-1 (disable USB autosuspend), usbcore.usbfs_memory_mb, dwc_otg vs xhci, "xhci_hcd ... xHCI host controller not responding" recovery, dtoverlay options.
+3. config.txt: max_usb_current=1, and whether it helps Pi4 (note Pi4 USB-A is fed differently than Pi3).
+4. A robust watchdog pattern: a systemd service or shell loop that detects the OAK in bootloader/0Hz state and auto-resets+relaunches the ROS node. Give a concrete script skeleton.
+
+Return detailed markdown with exact commands, kernel params, and a recovery-script skeleton. Cite URLs.
+
+### Turn 2 [assistant] (2026-06-20)
+I'll research USB-level techniques to prevent and recover an OAK-D-LITE on a Raspberry Pi 4. Let me start by loading the web tools.
+
+### Turn 3 [assistant] (2026-06-20)
+[tool_use: ToolSearch {"query": "select:WebSearch,WebFetch", "max_results": 5}]
+
+### Turn 4 [user] (2026-06-20)
+[tool_result: 0 chars] 
+
+### Turn 5 [assistant] (2026-06-20)
+Let me run several searches in parallel to cover the main topics.
+
+### Turn 6 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "usbreset usbutils ioctl USBDEVFS_RESET reset USB device Linux without unplugging"}]
+
+### Turn 7 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "uhubctl Raspberry Pi 4 which USB ports support power switching hub 1d6b"}]
+
+### Turn 8 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "Linux unbind bind USB device /sys/bus/usb/drivers/usb authorized reset"}]
+
+### Turn 9 [user] (2026-06-20)
+[tool_result: 2710 chars] Web search results for query: "usbreset usbutils ioctl USBDEVFS_RESET reset USB device Linux without unplugging"
+
+Links: [{"title":"Reset a USB device on Linux · SegFault","url":"https://thalhammer.it/blog/reset-a-usb-de
+...[clipped 2490 chars]
+
+### Turn 10 [user] (2026-06-20)
+[tool_result: 2817 chars] Web search results for query: "Linux unbind bind USB device /sys/bus/usb/drivers/usb authorized reset"
+
+Links: [{"title":"How to Reset a USB Device From the CLI | Baeldung on Linux","url":"https://www.baeldung.com/linux/
+...[clipped 2597 chars]
+
+### Turn 11 [user] (2026-06-20)
+[tool_result: 2620 chars] Web search results for query: "uhubctl Raspberry Pi 4 which USB ports support power switching hub 1d6b"
+
+Links: [{"title":"Raspberry Pi 4 - USB power ON/OFF by uhubctl · GitHub","url":"https://gist.github.com/takeshiyako
+...[clipped 2400 chars]
+
+### Turn 12 [assistant] (2026-06-20)
+Let me search for the xhci/Pi4 quirks, autosuspend, config.txt, and OAK-D/DepthAI specific issues.
+
+### Turn 13 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "Raspberry Pi 4 xhci_hcd xHCI host controller not responding USB reset dwc_otg dtoverlay"}]
+
+### Turn 14 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "usbcore.autosuspend=-1 disable USB autosuspend kernel parameter Raspberry Pi cmdline.txt"}]
+
+### Turn 15 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "OAK-D DepthAI USB device reset X_LINK_ERROR boot loop bootloader recover usbreset Raspberry Pi"}]
+
+### Turn 16 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "Raspberry Pi 4 config.txt max_usb_current usb_max_current_enable USB power difference Pi3 Pi4"}]
+
+### Turn 17 [user] (2026-06-20)
+[tool_result: 2706 chars] Web search results for query: "Raspberry Pi 4 xhci_hcd xHCI host controller not responding USB reset dwc_otg dtoverlay"
+
+Links: [{"title":"Arch Linux ARM • View topic - Raspberry Pi4 : USB \"xHCI host controller not resp
+...[clipped 2486 chars]
+
+### Turn 18 [user] (2026-06-20)
+[tool_result: 2938 chars] Web search results for query: "usbcore.autosuspend=-1 disable USB autosuspend kernel parameter Raspberry Pi cmdline.txt"
+
+Links: [{"title":"Disable USB Autosuspend Completely in CachyOS · GitHub","url":"https://gist.gith
+...[clipped 2718 chars]
+
+### Turn 19 [user] (2026-06-20)
+[tool_result: 2474 chars] Web search results for query: "Raspberry Pi 4 config.txt max_usb_current usb_max_current_enable USB power difference Pi3 Pi4"
+
+Links: [{"title":"Boost USB Current on the Raspberry Pi","url":"https://thepihut.com/blogs/ra
+...[clipped 2254 chars]
+
+### Turn 20 [user] (2026-06-20)
+[tool_result: 2986 chars] Web search results for query: "OAK-D DepthAI USB device reset X_LINK_ERROR boot loop bootloader recover usbreset Raspberry Pi"
+
+Links: [{"title":"OAK-D POE 3.5 Fails to Boot as Network Device · Issue #609 · luxonis/depth
+...[clipped 2766 chars]
+
+### Turn 21 [assistant] (2026-06-20)
+I have solid coverage. Let me fetch the most concrete sources to get exact commands and details: the usbreset blog, uhubctl README, the wesleyac unbind/bind guide, and the TechOverflow xHCI fix. Let me also search for usbfs_memory_mb and a DepthAI watchdog/systemd pattern.
+
+### Turn 22 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/mvp/uhubctl", "prompt": "Extract exact commands for using uhubctl on Raspberry Pi 4: how to list hubs, which hubs/ports support power switching on the Pi 4 (mention hub 1-1, location, 1d6b:000
+...[clipped 209 chars]]
+
+### Turn 23 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://blog.wesleyac.com/posts/linux-reset-usb", "prompt": "Extract the exact shell commands for resetting USB on Linux at the device level and host controller level: the unbind/bind echo commands writing the b
+...[clipped 221 chars]]
+
+### Turn 24 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://techoverflow.net/2021/09/16/how-i-fixed-xhci-host-controller-not-responding-assume-dead/", "prompt": "Extract the exact fix for \"xHCI host controller not responding, assume dead\" on Raspberry Pi 4: any
+...[clipped 141 chars]]
+
+### Turn 25 [user] (2026-06-20)
+[tool_result: 671 chars] # xHCI Fix from Article
+
+Based on the provided content, the article does **not** contain any Raspberry Pi 4-specific fixes. The solution presented is a generic Linux approach:
+
+**The fix shown:**
+```
+echo -n "0000:04:00.
+...[clipped 451 chars]
+
+### Turn 26 [user] (2026-06-20)
+[tool_result: 895 chars] Based on the provided content, here are the USB reset commands discussed:
+
+**xHCI Host Controller Reset (Primary Method):**
+
+The article specifies: `"echo 0000:00:14.0 | sudo tee /sys/bus/pci/drivers/xhci_hcd/unbind"` to
+...[clipped 675 chars]
+
+### Turn 27 [user] (2026-06-20)
+[tool_result: 1596 chars] # uhubctl on Raspberry Pi 4
+
+## Listing Hubs
+
+Run this command to see connected hubs:
+
+```bash
+uhubctl
+```
+
+Or with verbose USB information:
+
+```bash
+sudo lsusb -v
+```
+
+## Raspberry Pi 4B Hub Configuration
+
+The Pi 4B has
+...[clipped 1376 chars]
+
+### Turn 28 [assistant] (2026-06-20)
+Note: on Pi 4 the xHCI controller is on the PCIe bus (VL805), so the PCI-driver unbind/bind technique does apply (unlike Pi 3). Let me fetch the usbreset blog for exact source, the kernel power-management doc for per-device autosuspend control, and search for a DepthAI watchdog/systemd pattern plus usbfs_memory_mb.
+
+### Turn 29 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://thalhammer.it/blog/reset-a-usb-device-on-linux/", "prompt": "Extract the exact usbreset.c source or how to obtain it (from usbutils), the exact compile command, and exact usage examples (by vendor:produc
+...[clipped 129 chars]]
+
+### Turn 30 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://www.01signal.com/other/usb-device-stuck-reset/", "prompt": "Extract exact commands for: resetting a USB device via USBDEVFS_RESET ioctl, controlling per-device USB power/autosuspend via /sys/bus/usb/devi
+...[clipped 148 chars]]
+
+### Turn 31 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "depthai ros2 watchdog systemd Restart=always camera node 0 Hz auto restart relaunch script"}]
+
+### Turn 32 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "usbcore.usbfs_memory_mb increase depthai OAK usb buffer Failed to allocate Raspberry Pi"}]
+
+### Turn 33 [user] (2026-06-20)
+[tool_result: 1380 chars] # USB Device Reset on Linux
+
+## Source Code
+The exact usbreset.c program provided in the article is:
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <linux/usbdevice_fs.h>
+
+...[clipped 1160 chars]
+
+### Turn 34 [user] (2026-06-20)
+[tool_result: 1065 chars] # USB Device Reset Methods on Linux
+
+Based on the provided content, here are the documented commands:
+
+## Method 1: USBDEVFS_RESET ioctl
+
+**Command:**
+```bash
+gcc -O3 -Wall -g usbreset.c -o usbreset
+sudo ./usbreset 001/0
+...[clipped 845 chars]
+
+### Turn 35 [user] (2026-06-20)
+[tool_result: 2616 chars] Web search results for query: "depthai ros2 watchdog systemd Restart=always camera node 0 Hz auto restart relaunch script"
+
+Links: [{"title":"Camera failing to initialize with ROS2 container · Issue #38 · luxonis/rae-ros
+...[clipped 2396 chars]
+
+### Turn 36 [user] (2026-06-20)
+[tool_result: 2500 chars] Web search results for query: "usbcore.usbfs_memory_mb increase depthai OAK usb buffer Failed to allocate Raspberry Pi"
+
+Links: [{"title":"Raspberry Pi 4 Benchmarks - APIs - ximea support","url":"https://www.ximea.com/su
+...[clipped 2280 chars]
+
+### Turn 37 [assistant] (2026-06-20)
+I have enough to write a comprehensive report. Let me do two final targeted fetches: the Luxonis USB deployment/udev rules page (for the standard OAK udev rule and reset behavior), and confirm the per-device power/control autosuspend sysfs paths from the kernel doc.
+
+### Turn 38 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.luxonis.com/hardware/platform/deploy/usb-deployment-guide", "prompt": "Extract the exact udev rule for OAK/Movidius (the SUBSYSTEM==\"usb\", ATTRS{idVendor}==\"03e7\", MODE=\"0666\" rule and the ins
+...[clipped 246 chars]]
+
+### Turn 39 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://www.kernel.org/doc/Documentation/usb/power-management.txt", "prompt": "Extract the exact sysfs paths and values for controlling per-device USB power management/autosuspend: /sys/bus/usb/devices/.../power
+...[clipped 199 chars]]
+
+### Turn 40 [user] (2026-06-20)
+[tool_result: 1405 chars] # OAK USB Deployment: Key Technical Details
+
+## udev Rule & Installation
+The Linux udev configuration command is:
+```
+echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"' | sudo tee /etc/udev/rules.d/80-movidius
+...[clipped 1185 chars]
+
+### Turn 41 [user] (2026-06-20)
+[tool_result: 1347 chars] # USB Power Management Control Paths
+
+## Per-Device Autosuspend Control
+
+The primary sysfs interface for individual USB devices is located at:
+```
+/sys/bus/usb/devices/.../power/
+```
+
+### power/control
+
+This file contain
+...[clipped 1127 chars]
+
+### Turn 42 [assistant] (2026-06-20)
+I now have everything needed to write the comprehensive report.
+
+# Recovering & Preventing a Wedged OAK-D-LITE on Raspberry Pi 4 (USB-level, no replug)
+
+Practical, copy-pasteable techniques to keep robot 468's OAK-D-LITE alive and to recover it from the "camera_node alive but 0 Hz / X_LINK stall" state described in your CLAUDE.md gotcha #8, without anyone walking over to physically replug it.
+
+## Key fact you must know first: the OAK changes its USB VID/PID between states
+
+The OAK enumerates as a **different USB device** depending on whether it has booted firmware. This matters for every script below — you cannot hard-code one ID.
+
+| State | VID:PID | Notes |
+|---|---|---|
+| Bootloader / unbooted (MyriadX) | `03e7:2485` | what you see right after a reset, before depthai uploads the pipeline |
+| Booted app (Myriad VPU) | `03e7:f63b` | what you see while `camera_node` is streaming; **only this enumerates as USB3** |
+
+So match on **vendor `03e7`** (Movidius/Luxonis), not a fixed PID. (Source: Luxonis USB deployment guide.)
+
+A 0 Hz stall usually means it's stuck booted-but-wedged (`03e7:f63b` present, X_LINK dead) or it silently dropped to the bootloader (`03e7:2485`). Either way the cure is a USB-level reset followed by relaunch.
+
+---
+
+## (a) PREVENT — make the link not drop in the first place
+
+### 1. Disable USB autosuspend (most important single fix)
+
+Autosuspend putting the OAK to sleep is a classic "device goes 0 Hz and never comes back" cause.
+
+**Global, permanent (boot param).** On Ubuntu 22.04 on a Pi the cmdline file is `/boot/firmware/cmdline.txt` (single line — appen
+...[clipped 15862 chars]

@@ -1,0 +1,848 @@
+# Digest: 2026-06-15_40f8e5f3.jsonl
+
+- raw_source: claude-conversations/sessions/2026-06-15_40f8e5f3.jsonl
+- date: 2026-06-15
+- raw_bytes: 1126777
+- user_turns: 52
+- assistant_turns: 106
+- tool_calls: 42
+- images: 1
+- top_tools: 13xBash, 7xWrite, 7xPowerShell, 6xRead, 6xEdit, 2xAgent, 1xSkill
+
+Citation format for analysis: (file: 2026-06-15_40f8e5f3.jsonl, date: 2026-06-15, turn: N).
+
+---
+### Turn 1 [user] (2026-06-15)
+Meeting Title: Accessibility and robot deployment — Wednesday presentation prep with Shivam
+Date: Jun 15
+Meeting participants: Unknown
+
+Transcript:
+ 
+Them: Hi guys, how's it going?  
+Me: Hi, guys. How's it going? 8. Hello? Good morning. By the way. Who is taking lead for the presentation this Wednesday?  
+Them: I was thinking we could all kind of contribute a little bit in terms of.  
+Me: I was thinking we could all kind of contribute a little bit in terms of.  
+Them: The areas that we're focusing on.  
+Me: Like, areas that we're focusing on.  
+Them: Right?  
+Me: Right. That will work, too. Okay, perfect.  
+Them: Great. Yeah.  
+Me: Right. Yeah. We will be making the presentation, though.  
+Them: I think we can all put together our points and then consolidate it in like I can create like.  
+Me: I think we can all. Put together our point and then consolidate it in, like, I can create, like, Google slides.  
+Them: A Google slides.  
+Me: Let me do one thing. So this call is being transcribed. So we can just talk out what we did and what we want to put in the updates. And it will give me a. Rough, like notes that I can just put into generate PPT.  
+Them: Okay, sure.  
+Me: Okay, sure. Yeah. Who wants to start?  
+Them: I can go first.  
+Me: I can go first. Okay. Because my daughter is chilling. I don't know when she'll have a breakdown.  
+Them: Because my daughter is chilling. I don't know when she'll have a breakdown. So essentially my weak focus or like my areas like we've talked about policy regulation, making sure the robot is.  
+Me: So essentially, my weak focus or, like, my areas, like we've talked about policy regulation, making sure the robot is.  
+Them: You know, ethical accessible stuff like that. So essentially was focusing on a lot of different areas.  
+Me: You know, ethical accessible and stuff like that. So essentially was focusing on a lot of different areas.  
+Them: And then the focus after our conversation with Jack, I kind of focused in on accessibility. So how can we make the, because there's a lot of case studies out there where robots in a similar scenario, one of the main problems that they have not.  
+Me: And then the focus after our conversation with Jack, I kind of focused in on accessibility. So how can we make the. Because there's a lot of case studies out there where robots in a similar scenario, one of the main problems that they have not.  
+Them: Like everything else is a little easier to do, but making it accessible is something that is.  
+Me: Like, everything else is a little easier to do, but making it accessible is something that is.  
+Them: People don't usually keep it in mind. So essentially, for example, like if it's a person who can't speak, like they should have access to like being able to communicate with the robot with like a chat.  
+Me: People don't usually keep it in mind. So essentially, for example, like, if it's a person who can't speak, like, they should have access to, like, being able to communicate with the robot with, like, a chat.  
+Them: Or, I mean, these are all like things that we're going to try again. None of this is something that we need to accomplish.  
+Me: Or, I mean, these are all, like, things that we're gonna try again. None of this is something that we need to accomplish. And then, for example, things that we want to make it in, like, we want it to be.  
+Them: And then for example things that we want to make it in like we want it to be. You know, like.  
+Me: You know, like.  
+Them: If we wanted to understand other languages, how do we make it multilingual without it being.  
+Me: If we wanted to understand other languages, how do we make it multilingual without it being.  
+Them: You know, not accessible to some people because.  
+Me: You know, not accessible to some people? Because.  
+Them: I'm like blabbering, but also the one of the main thing is also that we should always have like an access point, a person point person, sorry.  
+Me: I'm, like, blabbering, but also th
+...[clipped 15397 chars]
+
+### Turn 2 [assistant] (2026-06-15)
+[thinking omitted]
+
+### Turn 3 [assistant] (2026-06-15)
+I'll create both files for you. Let me first look at the project structure to place them sensibly.
+
+### Turn 4 [assistant] (2026-06-15)
+[tool_use: Bash {"command": "ls -la \"P:/CS7980/Project-code\" 2>/dev/null; echo \"---SUBDIRS---\"; find \"P:/CS7980/Project-code\" -maxdepth 2 -type d 2>/dev/null | head -50", "description": "List project directory contents and subdire
+...[clipped 9 chars]]
+
+### Turn 5 [user] (2026-06-15)
+[tool_result: 626 chars] total 280
+drwxr-xr-x 1 kalha 197611      0 Jun 13 16:59 .
+drwxr-xr-x 1 kalha 197611      0 Jun 14 23:18 ..
+-rw-r--r-- 1 kalha 197611 252353 Jun  3 14:14 GuideMate_Connectivity_Architecture.md.pdf
+drwxr-xr-x 1 kalha 19761
+...[clipped 406 chars]
+
+### Turn 6 [assistant] (2026-06-15)
+[thinking omitted]
+
+### Turn 7 [assistant] (2026-06-15)
+The project is **GuideMate**. Let me read existing context to get names and details right.
+
+### Turn 8 [assistant] (2026-06-15)
+[tool_use: Read {"file_path": "P:/CS7980/Project-code/kalhar_individual_sprint2.md"}]
+
+### Turn 9 [user] (2026-06-15)
+[tool_result: 5065 chars] 1	# Individual Contribution Report: Sprint 2
+2	
+3	**Name:** Kalhar Kinjal Pandya  **Course:** CS7980 Capstone
+4	
+5	## What I worked on this sprint
+6	My focus was the **connectivity workstream**: getting a TurtleBot 4 ont
+...[clipped 4845 chars]
+
+### Turn 10 [assistant] (2026-06-15)
+[tool_use: Bash {"command": "find \"P:/CS7980/Project-code/cs7980-guide-mate\" -type f -not -path \"*/.git/*\" 2>/dev/null | head -60", "description": "List files in the guide-mate repo excluding git internals"}]
+
+### Turn 11 [user] (2026-06-15)
+[tool_result: 319 chars] P:/CS7980/Project-code/cs7980-guide-mate/docs/network/nuwave-connection.md
+P:/CS7980/Project-code/cs7980-guide-mate/docs/network/README.md
+P:/CS7980/Project-code/cs7980-guide-mate/docs/network/ros2-over-nuwave.md
+P:/CS79
+...[clipped 99 chars]
+
+### Turn 12 [assistant] (2026-06-15)
+[thinking omitted]
+
+### Turn 13 [assistant] (2026-06-15)
+[tool_use: Read {"file_path": "P:/CS7980/Project-code/cs7980-guide-mate/README.md"}]
+
+### Turn 14 [user] (2026-06-15)
+[tool_result: 561 chars] 1	# cs7980-guide-mate
+2	
+3	CS7980 project — TurtleBot 4 guide robot.
+4	
+5	## Documentation
+6	
+7	See [docs/README.md](docs/README.md) for the full index. Highlights:
+8	
+9	- [Network overview](docs/network/README.md) — two
+...[clipped 341 chars]
+
+### Turn 15 [assistant] (2026-06-15)
+[tool_use: Read {"file_path": "P:/CS7980/Project-code/cs7980-guide-mate/docs/README.md"}]
+
+### Turn 16 [user] (2026-06-15)
+[tool_result: 1436 chars] 1	# cs7980 Guide-Mate — Documentation
+2	
+3	Working documentation for the cs7980 TurtleBot 4 project.
+4	
+5	## Index
+6	
+7	### Network
+8	- [Network overview](network/README.md) — how the robots are connected, addressing, di
+...[clipped 1216 chars]
+
+### Turn 17 [assistant] (2026-06-15)
+[thinking omitted]
+
+### Turn 18 [assistant] (2026-06-15)
+I have all the context I need. GuideMate is a TurtleBot 4 guide-robot capstone; the transcript's "anyweb" is **NUwave** (Northeastern's WiFi), "clot pebbles" are **Claude Code agents**, and "kazibo" is **Gazebo**. Writing both files now.
+
+### Turn 19 [assistant] (2026-06-15)
+[tool_use: Write {"file_path": "P:/CS7980/Project-code/presentation-notes-2026-06-17.md", "content": "# GuideMate — Weekly Update Presentation Notes\n\n**Presentation date:** Wednesday, June 17, 2026\n**Prepared from:** Team sync, June 1
+...[clipped 8467 chars]]
+
+### Turn 20 [user] (2026-06-15)
+[tool_result: 151 chars] File created successfully at: P:/CS7980/Project-code/presentation-notes-2026-06-17.md (file state is current in your context — no need to Read it back)
+
+### Turn 21 [assistant] (2026-06-15)
+Now the team tracker:
+
+### Turn 22 [assistant] (2026-06-15)
+[tool_use: Write {"file_path": "P:/CS7980/Project-code/TEAM.md", "content": "# GuideMate — Team & Meeting Tracker\n\n**Project:** GuideMate — an AI-assisted **TurtleBot 4** guide robot\n**Course:** CS7980 Capstone (Northeastern Universit
+...[clipped 4882 chars]]
+
+### Turn 23 [user] (2026-06-15)
+[tool_result: 126 chars] File created successfully at: P:/CS7980/Project-code/TEAM.md (file state is current in your context — no need to Read it back)
+
+### Turn 24 [assistant] (2026-06-15)
+[thinking omitted]
+
+### Turn 25 [assistant] (2026-06-15)
+Done. Both files are in `P:\CS7980\Project-code`:
+
+**[presentation-notes-2026-06-17.md](presentation-notes-2026-06-17.md)** — 14 slides, each with on-slide bullets + speaker notes, structured exactly as the team discussed (drop into Google Slides → edit → export PPT). Flow:
+- Title → Agenda → Project recap → **The bottleneck** ("robot OR internet, not both")
+- **Kalhar:** NUwave campus-wide breakthrough, 3 Claude Code agents coordinating, remote access via NU VPN, AWS IoT Core validated
+- **Shibo:** Gazebo API → AWS bridge, Nav2
+- **Fazheng:** 3 security pillars (zero-trust model I/O guardrails first)
+- **Sibgha:** accessibility as deployment gate + mobile app/UX
+- Decisions → Roadmap (owner table) → References → Q&A, plus a pre-Wednesday checklist.
+
+**[TEAM.md](TEAM.md)** — team roster + workstreams, advisors (Jack; Hao & Lino), tools/infra, cadence, and a meeting log with the June 15 sync fully captured (updates, decisions, action items, open questions). It has a commented template at the bottom for logging future meetings.
+
+Three things I want to flag, since the source was a rough auto-transcript:
+
+1. **Owner mapping is inferred.** "Me" = you (Kalhar) is certain. The other three — Sibgha→accessibility, Shibo→Gazebo (the "Shivam" you addressed), Fazheng→security — are my best read of the transcript. I marked this with a ⚠️ in both files; please correct any name before Wednesday.
+2. **I corrected transcription artifacts** against your repo: "anyweb/any wave" → **NUwave**, "clot pebbles" → **Claude Code agents**, "kazibo" → **Gazebo**, "footprint navigator" → **Nav2**.
+3. *
+...[clipped 276 chars]
+
+### Turn 26 [user] (2026-06-17)
+updated:
+ 
+- Focus narrowed to **accessibility** — case studies show robots in similar settings repeatedly **fail on accessibility**, even when everything else works.
+- Maximize accessibility for **all potential users**, e.g.:
+  - **Chat-based interaction** for users who can't speak.
+  - **If someone is on a wheelchair and cannot access a certain area, robot should assist accordingly.
+  - A human **point person** users can reach if they get stuck mid-route. Determining and setting those points.
+- Treated as a **Northeastern requirement** for real deployment.
+- **User stories** to be defined in the coming weeks so can create specific parameters of accessibility. 
+
+
+generate a ppt
+
+### Turn 27 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 28 [assistant] (2026-06-17)
+I'll generate the PowerPoint. Since this involves creating a `.pptx` file, let me load the pptx skill first, and I'll fold in your updated accessibility content.
+
+### Turn 29 [assistant] (2026-06-17)
+[tool_use: Skill {"skill": "anthropic-skills:pptx"}]
+
+### Turn 30 [user] (2026-06-17)
+[tool_result: 38 chars] Launching skill: anthropic-skills:pptx
+
+### Turn 31 [user] (2026-06-17)
+Base directory for this skill: C:\Users\kalha\AppData\Roaming\Claude\local-agent-mode-sessions\skills-plugin\ca9f67f4-97d3-49d2-ac5c-9728f0c33cd6\40331b09-94fb-414f-970c-2bd68a538950\skills\pptx
+
+# PPTX Skill
+
+## Quick Reference
+
+| Task | Guide |
+|------|-------|
+| Read/analyze content | `python -m markitdown presentation.pptx` |
+| Edit or create from template | Read [editing.md](editing.md) |
+| Create from scratch | Read [pptxgenjs.md](pptxgenjs.md) |
+
+---
+
+## Reading Content
+
+```bash
+# Text extraction
+python -m markitdown presentation.pptx
+
+# Visual overview
+python scripts/thumbnail.py presentation.pptx
+
+# Raw XML
+python scripts/office/unpack.py presentation.pptx unpacked/
+```
+
+---
+
+## Editing Workflow
+
+**Read [editing.md](editing.md) for full details.**
+
+1. Analyze template with `thumbnail.py`
+2. Unpack → manipulate slides → edit content → clean → pack
+
+---
+
+## Creating from Scratch
+
+**Read [pptxgenjs.md](pptxgenjs.md) for full details.**
+
+Use when no template or reference presentation is available.
+
+---
+
+## Design Ideas
+
+**Don't create boring slides.** Plain bullets on a white background won't impress anyone. Consider ideas from this list for each slide.
+
+### Before Starting
+
+- **Pick a bold, content-informed color palette**: The palette should feel designed for THIS topic. If swapping your colors into a completely different presentation would still "work," you haven't made specific enough choices.
+- **Dominance over equality**: One color should dominate (60-70% visual weight), with 1-2 supporting tones and one sharp accent. Never give all colors equal weight.
+- **Dark/light contrast**: Dark backgrounds for title + conclusion slides, light for content ("sandwich" structure). Or commit to dark throughout for a premium feel.
+- **Commit to a visual motif**: Pick ONE distinctive element and repeat it — rounded image frames, icons in colored circles, thick single-side borders. Carry it across every slide.
+
+### Color Palettes
+
+Choose colors that match your topic — don't default to generic blue. Use these palettes as inspiration:
+
+| Theme | Primary | Secondary | Accent |
+|-------|---------|-----------|--------|
+| **Midnight Executive** | `1E2761` (navy) | `CADCFC` (ice blue) | `FFFFFF` (white) |
+| **Forest & Moss** | `2C5F2D` (forest) | `97BC62` (moss) | `F5F5F5` (cream) |
+| **Coral Energy** | `F96167` (coral) | `F9E795` (gold) | `2F3C7E` (navy) |
+| **Warm Terracotta** | `B85042` (terracotta) | `E7E8D1` (sand) | `A7BEAE` (sage) |
+| **Ocean Gradient** | `065A82` (deep blue) | `1C7293` (teal) | `21295C` (midnight) |
+| **Charcoal Minimal** | `36454F` (charcoal) | `F2F2F2` (off-white) | `212121` (black) |
+| **Teal Trust** | `028090` (teal) | `00A896` (seafoam) | `02C39A` (mint) |
+| **Berry & Cream** | `6D2E46` (berry) | `A26769` (dusty rose) | `ECE2D0` (cream) |
+| **Sage Calm** | `84B59F` (sage) | `69A297` (eucalyptus) | `50808E` (slate) |
+| **Cherry Bold** | `990011` (cherry) | `FCF6F5` (off-white) | `2F3C7E` (navy) |
+
+### For Each Slide
+
+**Every slide needs a visual element** — image, chart, icon, or shape. Text-only slides are forgettable.
+
+**Layout options:**
+- Two-column (text left, illustration on right)
+- Icon + text rows (icon in colored circle, bold header, description below)
+- 2x2 or 2x3 grid (image on one side, grid of content blocks on other)
+- Half-bleed image (full left or right side) with content overlay
+
+**Data display:**
+- Large stat callouts (big numbers 60-72pt with small labels below)
+- Comparison columns (before/after, pros/cons, side-by-side options)
+- Timeline or process flow (numbered steps, arrows)
+
+**Visual polish:**
+- Icons in small colored circles next to section headers
+- Italic accent text for key stats or taglines
+
+### Typography
+
+**Choose an interesting font pairing** — don't default to Arial. Pick a header font with personality and pair it with a clean body font.
+
+| Header Font | Body Font |
+|-------------|-----------|
+| Georgia | Calibri |
+| Arial Black | Arial |
+| Calibri | Calibri Light |
+| Cambria
+...[clipped 4935 chars]
+
+### Turn 32 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 33 [assistant] (2026-06-17)
+Let me read the creation guide and update the notes with your new accessibility content in parallel.
+
+### Turn 34 [assistant] (2026-06-17)
+[tool_use: Read {"file_path": "C:\\Users\\kalha\\AppData\\Roaming\\Claude\\local-agent-mode-sessions\\skills-plugin\\ca9f67f4-97d3-49d2-ac5c-9728f0c33cd6\\40331b09-94fb-414f-970c-2bd68a538950\\skills\\pptx\\pptxgenjs.md"}]
+
+### Turn 35 [user] (2026-06-17)
+[tool_result: 14350 chars] 1	# PptxGenJS Tutorial
+2	
+3	## Setup & Basic Structure
+4	
+5	```javascript
+6	const pptxgen = require("pptxgenjs");
+7	
+8	let pres = new pptxgen();
+9	pres.layout = 'LAYOUT_16x9';  // or 'LAYOUT_16x10', 'LAYOUT_4x3', 'LAYOUT
+...[clipped 14130 chars]
+
+### Turn 36 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 37 [assistant] (2026-06-17)
+Let me update the notes with your new accessibility content and check the build environment in parallel.
+
+### Turn 38 [assistant] (2026-06-17)
+[tool_use: Edit {"replace_all": false, "file_path": "P:/CS7980/Project-code/presentation-notes-2026-06-17.md", "old_string": "- Focus narrowed (after Jack) to **accessibility** — case studies show robots in similar settings repeatedly *
+...[clipped 1491 chars]]
+
+### Turn 39 [user] (2026-06-17)
+[tool_result: 161 chars] The file P:/CS7980/Project-code/presentation-notes-2026-06-17.md has been updated successfully. (file state is current in your context — no need to Read it back)
+
+### Turn 40 [assistant] (2026-06-17)
+[tool_use: Edit {"replace_all": false, "file_path": "P:/CS7980/Project-code/TEAM.md", "old_string": "- **Accessibility (Sibgha):** Narrowed focus to **accessibility** (after Jack) — a common failure mode for deployed robots and a Northe
+...[clipped 787 chars]]
+
+### Turn 41 [user] (2026-06-17)
+[tool_result: 136 chars] The file P:/CS7980/Project-code/TEAM.md has been updated successfully. (file state is current in your context — no need to Read it back)
+
+### Turn 42 [assistant] (2026-06-17)
+[tool_use: Bash {"command": "echo \"node:\"; node --version 2>&1; echo \"npm:\"; npm --version 2>&1; echo \"pptxgenjs global:\"; npm ls -g pptxgenjs 2>&1 | head -5", "description": "Check node, npm, and pptxgenjs availability"}]
+
+### Turn 43 [user] (2026-06-17)
+[tool_result: 79 chars] node:
+v22.21.1
+npm:
+10.9.4
+pptxgenjs global:
+C:\nvm4w\nodejs -> .\
+`-- (empty)
+
+### Turn 44 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 45 [assistant] (2026-06-17)
+pptxgenjs isn't installed yet. Let me set up a build folder and install it (plus icon tooling).
+
+### Turn 46 [assistant] (2026-06-17)
+[tool_use: Bash {"command": "mkdir -p \"P:/CS7980/Project-code/.ppt-build\" && cd \"P:/CS7980/Project-code/.ppt-build\" && npm init -y >/dev/null 2>&1 && echo \"installing...\" && npm install pptxgenjs react-icons react react-dom sharp 
+...[clipped 105 chars]]
+
+### Turn 47 [user] (2026-06-17)
+[tool_result: 11 chars] Exit code 1
+
+### Turn 48 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 49 [assistant] (2026-06-17)
+[tool_use: Bash {"command": "cd \"P:/CS7980/Project-code/.ppt-build\" && npm install pptxgenjs 2>&1 | tail -25", "description": "Install pptxgenjs and show full output", "timeout": 300000}]
+
+### Turn 50 [user] (2026-06-17)
+[tool_result: 23 chars] added 19 packages in 3s
+
+### Turn 51 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 52 [assistant] (2026-06-17)
+pptxgenjs is in. Now the icon tooling — let me install those (sharp is native, may be the culprit):
+
+### Turn 53 [assistant] (2026-06-17)
+[tool_use: Bash {"command": "cd \"P:/CS7980/Project-code/.ppt-build\" && npm install react-icons react react-dom 2>&1 | tail -5; echo \"---SHARP---\"; npm install sharp 2>&1 | tail -20", "description": "Install react-icons stack, then s
+...[clipped 36 chars]]
+
+### Turn 54 [user] (2026-06-17)
+[tool_result: 224 chars] added 4 packages, and audited 24 packages in 28s
+
+found 0 vulnerabilities
+---SHARP---
+
+added 8 packages, and audited 32 packages in 3s
+
+2 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabili
+...[clipped 4 chars]
+
+### Turn 55 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 56 [assistant] (2026-06-17)
+All dependencies installed. Let me verify sharp can rasterize an SVG icon before building the full deck:
+
+### Turn 57 [assistant] (2026-06-17)
+[tool_use: Bash {"command": "cd \"P:/CS7980/Project-code/.ppt-build\" && cat > test-icon.js <<'EOF'\nconst React = require(\"react\");\nconst ReactDOMServer = require(\"react-dom/server\");\nconst sharp = require(\"sharp\");\nconst { Fa
+...[clipped 484 chars]]
+
+### Turn 58 [user] (2026-06-17)
+[tool_result: 29 chars] OK svg len 743 png bytes 5162
+
+### Turn 59 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 60 [assistant] (2026-06-17)
+Sharp works. Now I'll write the full deck generator. This is a designed 12-slide deck (dark title/closing, light content, consistent icon-circle + accent-bar motif, midnight-navy/mint/amber palette).
+
+### Turn 61 [assistant] (2026-06-17)
+[tool_use: Write {"file_path": "P:/CS7980/Project-code/.ppt-build/build-deck.js", "content": "const pptxgen = require(\"pptxgenjs\");\nconst React = require(\"react\");\nconst ReactDOMServer = require(\"react-dom/server\");\nconst sharp 
+...[clipped 33123 chars]]
+
+### Turn 62 [user] (2026-06-17)
+[tool_result: 143 chars] File created successfully at: P:/CS7980/Project-code/.ppt-build/build-deck.js (file state is current in your context — no need to Read it back)
+
+### Turn 63 [assistant] (2026-06-17)
+[tool_use: Bash {"command": "cd \"P:/CS7980/Project-code/.ppt-build\" && node build-deck.js 2>&1 | tail -20", "description": "Run the deck generation script", "timeout": 180000}]
+
+### Turn 64 [user] (2026-06-17)
+[tool_result: 61 chars] WROTE P:/CS7980/Project-code/GuideMate-Update-2026-06-17.pptx
+
+### Turn 65 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 66 [assistant] (2026-06-17)
+Deck generated. Now QA — let me convert to images for visual inspection. Checking available tooling:
+
+### Turn 67 [assistant] (2026-06-17)
+[tool_use: Bash {"command": "echo \"python:\"; python --version 2>&1; echo \"soffice (PATH):\"; command -v soffice 2>&1; command -v soffice.com 2>&1; echo \"libreoffice dirs:\"; ls -d \"/c/Program Files/LibreOffice\" \"/c/Program Files 
+...[clipped 200 chars]]
+
+### Turn 68 [user] (2026-06-17)
+[tool_result: 156 chars] Exit code 1
+python:
+Python 3.13.11
+soffice (PATH):
+libreoffice dirs:
+pdftoppm:
+/c/Users/kalha/AppData/Local/Programs/MiKTeX/miktex/bin/x64/pdftoppm
+magick:
+
+### Turn 69 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 70 [assistant] (2026-06-17)
+Python and pdftoppm exist, but no LibreOffice. Let me look for LibreOffice elsewhere and check for PowerPoint (COM export is a good Windows fallback):
+
+### Turn 71 [assistant] (2026-06-17)
+[tool_use: PowerShell {"command": "$soffice = Get-ChildItem -Path \"C:\\Program Files\",\"C:\\Program Files (x86)\" -Filter soffice.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName; \"soffice: $soff
+...[clipped 518 chars]]
+
+### Turn 72 [user] (2026-06-17)
+[tool_result: 160 chars] soffice: 
+powerpnt: C:\Program Files\Microsoft Office\Root\Office16\POWERPNT.EXE
+powerpnt search: C:\Program Files\Microsoft Office\root\Office16\POWERPNT.EXE
+
+### Turn 73 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 74 [assistant] (2026-06-17)
+PowerPoint is installed — I'll use its COM engine to export slides to PNG (best fidelity). Let me render them:
+
+### Turn 75 [assistant] (2026-06-17)
+[tool_use: PowerShell {"command": "$src = \"P:\\CS7980\\Project-code\\GuideMate-Update-2026-06-17.pptx\"\n$out = \"P:\\CS7980\\Project-code\\.ppt-build\\qa\"\nif (Test-Path $out) { Remove-Item \"$out\\*\" -Force -ErrorAction SilentlyContinue 
+...[clipped 608 chars]]
+
+### Turn 76 [user] (2026-06-17)
+[tool_result: 84 chars] Remove-Item on system path '$out\*' is blocked. This path is protected from removal.
+
+### Turn 77 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 78 [assistant] (2026-06-17)
+[tool_use: PowerShell {"command": "$src = \"P:\\CS7980\\Project-code\\GuideMate-Update-2026-06-17.pptx\"\n$out = \"P:\\CS7980\\Project-code\\.ppt-build\\qa\"\nNew-Item -ItemType Directory -Path $out -Force | Out-Null\nGet-ChildItem $out -Filt
+...[clipped 572 chars]]
+
+### Turn 79 [user] (2026-06-17)
+[tool_result: 186 chars] Exported 12 slides
+slide-01.png
+slide-02.png
+slide-03.png
+slide-04.png
+slide-05.png
+slide-06.png
+slide-07.png
+slide-08.png
+slide-09.png
+slide-10.png
+slide-11.png
+slide-12.png
+
+### Turn 80 [assistant] (2026-06-17)
+All 12 slides rendered. Now the visual QA — I'll dispatch a subagent with fresh eyes to inspect them critically.
+
+### Turn 81 [assistant] (2026-06-17)
+[tool_use: Agent {"description": "Visual QA of slide images", "prompt": "Visually inspect these PowerPoint slide images. Assume there ARE issues — your job is to find them, not confirm the deck is fine. If you find zero issues, look agai
+...[clipped 3254 chars]]
+
+### Turn 82 [user] (2026-06-17)
+[tool_result: 9487 chars] I've now inspected all 12 slides closely. Here is my per-slide QA report.
+
+## Per-slide findings
+
+### Slide 01 — Title (dark)
+- **Date inconsistency (content bug, not visual):** Header subtitle area date reads "Wednesday
+...[clipped 9267 chars]
+
+### Turn 83 [user] (2026-06-17)
+[Request interrupted by user]
+
+### Turn 84 [user] (2026-06-17)
+[image]
+Now you cannot use any of the fonts and colours you have used. also no em dashes and no componenets like this with one side coloured border. redesign rethink colourpallate and everything
+
+### Turn 85 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 86 [assistant] (2026-06-17)
+Understood. Full redesign: new warm palette (terracotta / sage / ochre / plum on cream, deep aubergine for dark slides), new fonts (Georgia + Segoe UI), no em dashes, and the one-side accent-bar motif is gone entirely, replaced by tinted cards + rounded-square icon badges + full-width bands. I'll also fix the balance issues QA flagged.
+
+### Turn 87 [assistant] (2026-06-17)
+[tool_use: Write {"file_path": "P:/CS7980/Project-code/.ppt-build/build-deck2.js", "content": "const pptxgen = require(\"pptxgenjs\");\nconst React = require(\"react\");\nconst ReactDOMServer = require(\"react-dom/server\");\nconst sharp
+...[clipped 30671 chars]]
+
+### Turn 88 [user] (2026-06-17)
+[tool_result: 144 chars] File created successfully at: P:/CS7980/Project-code/.ppt-build/build-deck2.js (file state is current in your context — no need to Read it back)
+
+### Turn 89 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 90 [assistant] (2026-06-17)
+[tool_use: Bash {"command": "cd \"P:/CS7980/Project-code/.ppt-build\" && node build-deck2.js 2>&1 | tail -20", "description": "Run the redesigned deck generator", "timeout": 180000}]
+
+### Turn 91 [user] (2026-06-17)
+[tool_result: 352 chars] BUILD FAILED: Error: EBUSY: resource busy or locked, open 'P:\CS7980\Project-code\GuideMate-Update-2026-06-17.pptx'
+    at async open (node:internal/fs/promises:641:25)
+    at async writeFile (node:internal/fs/promises:1
+...[clipped 132 chars]
+
+### Turn 92 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 93 [assistant] (2026-06-17)
+The output file is locked, likely by a lingering PowerPoint process from the QA export. Let me check and clear it:
+
+### Turn 94 [assistant] (2026-06-17)
+[tool_use: PowerShell {"command": "$p = Get-Process POWERPNT -ErrorAction SilentlyContinue\nif ($p) { $p | Select-Object Id, MainWindowTitle, StartTime | Format-Table -AutoSize | Out-String | Write-Output; \"Found $($p.Count) POWERPNT process
+...[clipped 110 chars]]
+
+### Turn 95 [user] (2026-06-17)
+[tool_result: 259 chars]    Id MainWindowTitle                               StartTime            
+   -- ---------------                               ---------            
+91508 GuideMate-Update-2026-06-17.pptx - PowerPoint 6/16/2026 10:56:13 P
+...[clipped 33 chars]
+
+### Turn 96 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 97 [assistant] (2026-06-17)
+The user has the original file open in PowerPoint — I won't disturb that. I'll write the redesigned version to a new filename instead.
+
+### Turn 98 [assistant] (2026-06-17)
+[tool_use: Edit {"replace_all": false, "file_path": "P:/CS7980/Project-code/.ppt-build/build-deck2.js", "old_string": " const out = \"P:/CS7980/Project-code/GuideMate-Update-2026-06-17.pptx\";", "new_string": " const out = \"P:/CS7980/P
+...[clipped 52 chars]]
+
+### Turn 99 [user] (2026-06-17)
+[tool_result: 154 chars] The file P:/CS7980/Project-code/.ppt-build/build-deck2.js has been updated successfully. (file state is current in your context — no need to Read it back)
+
+### Turn 100 [assistant] (2026-06-17)
+[tool_use: Bash {"command": "cd \"P:/CS7980/Project-code/.ppt-build\" && node build-deck2.js 2>&1 | tail -20", "description": "Run redesigned deck generator to v2 file", "timeout": 180000}]
+
+### Turn 101 [user] (2026-06-17)
+[tool_result: 64 chars] WROTE P:/CS7980/Project-code/GuideMate-Update-2026-06-17-v2.pptx
+
+### Turn 102 [assistant] (2026-06-17)
+[tool_use: PowerShell {"command": "$src = \"P:\\CS7980\\Project-code\\GuideMate-Update-2026-06-17-v2.pptx\"\n$out = \"P:\\CS7980\\Project-code\\.ppt-build\\qa2\"\nNew-Item -ItemType Directory -Path $out -Force | Out-Null\nGet-ChildItem $out -
+...[clipped 468 chars]]
+
+### Turn 103 [user] (2026-06-17)
+[tool_result: 18 chars] Exported 12 slides
+
+### Turn 104 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 105 [assistant] (2026-06-17)
+Redesigned slides exported. Let me run fresh-eyes visual QA on the new deck, verifying both quality and that the redesign constraints are met:
+
+### Turn 106 [assistant] (2026-06-17)
+[tool_use: Agent {"description": "Visual QA of redesigned deck", "prompt": "Visually inspect these 12 redesigned PowerPoint slide images. Assume there ARE issues, your job is to find them. If you find none, look again more critically.\n\
+...[clipped 3278 chars]]
+
+### Turn 107 [user] (2026-06-17)
+[tool_result: 4923 chars] That confirms two things. On slide 9, the three cards are equal height, but the left and middle cards have noticeably larger empty bottoms (2-line descriptions) while the right card's 3-line description nearly fills it —
+...[clipped 4703 chars]
+
+### Turn 108 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 109 [assistant] (2026-06-17)
+QA confirms the redesign constraints are met (no accent bars, faint watermarks, good contrast). One real fix: on the closing slide the decorative ring grazes the subtitle. Let me reposition the ring to the corner and slightly tighten slide 9's cards.
+
+### Turn 110 [assistant] (2026-06-17)
+[tool_use: Edit {"replace_all": false, "file_path": "P:/CS7980/Project-code/.ppt-build/build-deck2.js", "old_string": " s.addShape(OVAL, { x: 9.0, y: 3.5, w: 4.9, h: 4.9, fill: { color: C.cream, transparency: 100 }, line: { color: C.och
+...[clipped 180 chars]]
+
+### Turn 111 [user] (2026-06-17)
+[tool_result: 154 chars] The file P:/CS7980/Project-code/.ppt-build/build-deck2.js has been updated successfully. (file state is current in your context — no need to Read it back)
+
+### Turn 112 [assistant] (2026-06-17)
+[tool_use: Edit {"replace_all": false, "file_path": "P:/CS7980/Project-code/.ppt-build/build-deck2.js", "old_string": " const cw = 3.78, gap = (CW - 3 * cw) / 2, y = 2.7, h = 2.55;\n for (let i = 0; i < ex.length; i++) {\n const x = M +
+...[clipped 1087 chars]]
+
+### Turn 113 [user] (2026-06-17)
+[tool_result: 154 chars] The file P:/CS7980/Project-code/.ppt-build/build-deck2.js has been updated successfully. (file state is current in your context — no need to Read it back)
+
+### Turn 114 [assistant] (2026-06-17)
+[tool_use: Bash {"command": "cd \"P:/CS7980/Project-code/.ppt-build\" && node build-deck2.js 2>&1 | tail -5", "description": "Rebuild v2 deck with fixes", "timeout": 180000}]
+
+### Turn 115 [user] (2026-06-17)
+[tool_result: 125 chars]   errno: -4082,
+  code: 'EBUSY',
+  syscall: 'open',
+  path: 'P:\\CS7980\\Project-code\\GuideMate-Update-2026-06-17-v2.pptx'
+}
+
+### Turn 116 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 117 [assistant] (2026-06-17)
+The QA export left an orphaned COM PowerPoint instance holding the file (I closed the presentation but not the app). Let me identify and close only that headless instance, leaving the user's open window alone:
+
+### Turn 118 [assistant] (2026-06-17)
+[tool_use: PowerShell {"command": "Get-Process POWERPNT -ErrorAction SilentlyContinue | Select-Object Id, @{n='Title';e={$_.MainWindowTitle}}, @{n='HasWindow';e={$_.MainWindowHandle -ne 0}} | Format-Table -AutoSize", "description": "List Powe
+...[clipped 36 chars]]
+
+### Turn 119 [user] (2026-06-17)
+[tool_result: 196 chars]    Id Title                                            HasWindow
+   -- -----                                            ---------
+91508 GuideMate-Update-2026-06-17-v2.pptx - PowerPoint      True
+
+### Turn 120 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 121 [assistant] (2026-06-17)
+The user has now opened the v2 file in PowerPoint (the window switched to it) — so v2 is locked because they're viewing it. The original filename is now free. I'll write the final corrected deck there.
+
+### Turn 122 [assistant] (2026-06-17)
+[tool_use: Edit {"replace_all": false, "file_path": "P:/CS7980/Project-code/.ppt-build/build-deck2.js", "old_string": " const out = \"P:/CS7980/Project-code/GuideMate-Update-2026-06-17-v2.pptx\";", "new_string": " const out = \"P:/CS798
+...[clipped 52 chars]]
+
+### Turn 123 [user] (2026-06-17)
+[tool_result: 154 chars] The file P:/CS7980/Project-code/.ppt-build/build-deck2.js has been updated successfully. (file state is current in your context — no need to Read it back)
+
+### Turn 124 [assistant] (2026-06-17)
+[tool_use: Bash {"command": "cd \"P:/CS7980/Project-code/.ppt-build\" && node build-deck2.js 2>&1 | tail -8", "description": "Build final corrected deck to original filename", "timeout": 180000}]
+
+### Turn 125 [user] (2026-06-17)
+[tool_result: 61 chars] WROTE P:/CS7980/Project-code/GuideMate-Update-2026-06-17.pptx
+
+### Turn 126 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 127 [assistant] (2026-06-17)
+Final deck written. Now let me verify the two fixes by rendering just slides 9 and 12 — carefully closing only the presentation (never quitting PowerPoint, so the user's open window is preserved):
+
+### Turn 128 [assistant] (2026-06-17)
+[tool_use: PowerShell {"command": "$src = \"P:\\CS7980\\Project-code\\GuideMate-Update-2026-06-17.pptx\"\n$out = \"P:\\CS7980\\Project-code\\.ppt-build\\qa3\"\nNew-Item -ItemType Directory -Path $out -Force | Out-Null\n$pp = New-Object -ComOb
+...[clipped 466 chars]]
+
+### Turn 129 [user] (2026-06-17)
+[tool_result: 4 chars] done
+
+### Turn 130 [assistant] (2026-06-17)
+[tool_use: Read {"file_path": "P:\\CS7980\\Project-code\\.ppt-build\\qa3\\slide-12.png"}]
+
+### Turn 131 [user] (2026-06-17)
+[tool_result: 0 chars] 
+
+### Turn 132 [assistant] (2026-06-17)
+[tool_use: Read {"file_path": "P:\\CS7980\\Project-code\\.ppt-build\\qa3\\slide-09.png"}]
+
+### Turn 133 [user] (2026-06-17)
+[tool_result: 0 chars] 
+
+### Turn 134 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 135 [assistant] (2026-06-17)
+Both fixes verified — the closing-slide ring now sits cleanly in the corner (no longer touching the subtitle), and slide 9 reads correctly with your updated accessibility content. The redesign is done.
+
+## Final deliverable
+**[GuideMate-Update-2026-06-17.pptx](GuideMate-Update-2026-06-17.pptx)** — 12 slides, fully redesigned and QA'd.
+
+### What changed per your constraints
+- **New color palette** (nothing reused): warm **terracotta + sage green + ochre + plum on a cream background**, with **deep aubergine** for the title/closing slides. The old navy/mint/amber scheme is gone entirely.
+- **New fonts** (neither previously used): **Georgia** (serif headings) paired with **Segoe UI** (body). No more Trebuchet MS / Calibri.
+- **The one-side colored border motif is removed** everywhere — both the title's vertical bar and every card's left accent strip. Replaced with **tinted cards + rounded-square icon badges + full-width bands**.
+- **No em dashes** anywhere — rephrased with commas and colons throughout.
+- **Balance fixes** from QA: gave Shibo a second roadmap bullet, added CRITICAL/HIGH/MEDIUM tags to all three security pillars (not just one), aligned the cloud-card descriptions, rebalanced the connectivity slide, and tightened spacing.
+
+### A note on the files
+- You currently have **`...-v2.pptx`** open in PowerPoint. That's an interim render — visually identical to the final except for the two micro-fixes above (corner ring + slide 9 spacing). The **final, corrected version is in the original filename** (`GuideMate-Update-2026-06-17.pptx`). You can close and delete the `-v2` f
+...[clipped 464 chars]
+
+### Turn 136 [user] (2026-06-17)
+Give me a  md about what project is what team is etc etc so I can use that
+
+### Turn 137 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 138 [assistant] (2026-06-17)
+I'll create a standalone project overview doc you can reuse (for a README, a proposal intro, onboarding, or pasting elsewhere). Keeping it em-dash-free and self-contained.
+
+### Turn 139 [assistant] (2026-06-17)
+[tool_use: Write {"file_path": "P:/CS7980/Project-code/PROJECT-OVERVIEW.md", "content": "# GuideMate: Project & Team Overview\n\n**GuideMate** is an AI-assisted guide robot built on the TurtleBot 4 platform. It navigates the Northeastern
+...[clipped 8787 chars]]
+
+### Turn 140 [user] (2026-06-17)
+[tool_result: 138 chars] File created successfully at: P:/CS7980/Project-code/PROJECT-OVERVIEW.md (file state is current in your context — no need to Read it back)
+
+### Turn 141 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 142 [assistant] (2026-06-17)
+Created **[PROJECT-OVERVIEW.md](PROJECT-OVERVIEW.md)** — a self-contained doc you can drop into a README, a proposal intro, onboarding, or paste anywhere. It covers:
+
+- **What GuideMate is** — one-liner + the problem and vision
+- **Goals** — accessible, deployable, secure, cloud-connected (as a table)
+- **The platform** — TurtleBot 4, Pi 4 + Create 3, ROS 2 Humble, NUwave, FastDDS, Gazebo/Nav2, AWS
+- **How it fits together** — the sim → cloud → real-robot bridge pattern (ASCII diagram)
+- **The four workstreams** with descriptions
+- **Team table** + advisors (Jack; Hao & Lino)
+- **Tools & infrastructure**
+- **Current status (June 2026)** — the campus-wide networking win, multi-agent coordination, remote access, AWS validation, etc.
+- **Roadmap**, **scope decisions** (multilingual deprioritized; core-first), a **glossary**, and links to the other docs
+
+A couple of notes:
+- It's drawn from the meeting transcript plus your repo (`README.md` and the Sprint 2 doc), so technical facts like NUwave, FastDDS, and the two robot units are accurate to what's recorded. It's written em-dash-free, consistent with the deck.
+- I kept the same owner-to-workstream mapping as before, with a small "verify" note at the top, since those were inferred from the transcript.
+
+You now have three companion docs: this overview (the static "what/who"), [TEAM.md](TEAM.md) (the running meeting log), and [presentation-notes-2026-06-17.md](presentation-notes-2026-06-17.md) (the deck content). Want me to fold the overview into the repo's `cs7980-guide-mate/README.md`, or keep it standalone?
+
+### Turn 143 [user] (2026-06-17)
+give me content for this ppt, well designed md slide by slide
+
+### Turn 144 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 145 [assistant] (2026-06-17)
+I'll give you a clean, well-structured markdown that mirrors the final 12-slide deck exactly (em-dash-free, with on-slide content + speaker notes). I'll refresh the notes file so it matches the actual PPT slide for slide.
+
+### Turn 146 [assistant] (2026-06-17)
+[tool_use: Write {"file_path": "P:/CS7980/Project-code/presentation-notes-2026-06-17.md", "content": "# GuideMate: Weekly Update, Slide-by-Slide Content\n\n**Presentation date:** Wednesday, June 17, 2026\n**Deck file:** `GuideMate-Update
+...[clipped 8477 chars]]
+
+### Turn 147 [user] (2026-06-17)
+[tool_result: 161 chars] The file P:/CS7980/Project-code/presentation-notes-2026-06-17.md has been updated successfully. (file state is current in your context — no need to Read it back)
+
+### Turn 148 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 149 [assistant] (2026-06-17)
+Done. I refreshed **[presentation-notes-2026-06-17.md](presentation-notes-2026-06-17.md)** so it now mirrors the final 12-slide deck exactly, slide by slide. Each slide has:
+
+- **A layout hint** (italic) so you know how the content is arranged on the actual slide
+- **The on-slide content** (titles, bullets, callouts) matching the PPT word for word
+- **Speaker notes** for what to say when presenting
+
+It's em-dash-free and consistent with the deck's wording (including your updated accessibility content on slide 9). There's a pre-presentation checklist at the bottom for the two reference links still outstanding.
+
+This replaced the earlier 14-slide draft, which was out of sync with the redesigned deck, so the markdown and the `.pptx` are now one canonical set. Your doc set is now:
+- **[presentation-notes-2026-06-17.md](presentation-notes-2026-06-17.md)** — slide-by-slide deck content + speaker notes (matches the PPT)
+- **[PROJECT-OVERVIEW.md](PROJECT-OVERVIEW.md)** — the static "what is the project / who is the team" doc
+- **[TEAM.md](TEAM.md)** — team roster + running meeting log
+
+Want me to add the speaker notes into the actual `.pptx` slide notes panes too, so they travel with the file when you present?
+
+### Turn 150 [user] (2026-06-17)
+Create short and sharp speaking notes, slide by slide for each person
+
+### Turn 151 [user] (2026-06-17)
+[Request interrupted by user]
+
+### Turn 152 [user] (2026-06-17)
+Create short and sharp speaking notes, slide by slide for each person based on slide number and what they will talk about
+
+### Turn 153 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 154 [assistant] (2026-06-17)
+Here are cue-card style speaking notes, organized by person, with a suggested running order. Short fragments meant to glance at, not read aloud.
+
+### Turn 155 [assistant] (2026-06-17)
+[tool_use: Write {"file_path": "P:/CS7980/Project-code/speaking-notes-by-person.md", "content": "# GuideMate: Speaking Notes by Person (Jun 17, 2026)\n\nCue-card style. Short prompts to glance at, not scripts to read. Swap owners if you 
+...[clipped 5023 chars]]
+
+### Turn 156 [user] (2026-06-17)
+[tool_result: 146 chars] File created successfully at: P:/CS7980/Project-code/speaking-notes-by-person.md (file state is current in your context — no need to Read it back)
+
+### Turn 157 [assistant] (2026-06-17)
+[thinking omitted]
+
+### Turn 158 [assistant] (2026-06-17)
+Created **[speaking-notes-by-person.md](speaking-notes-by-person.md)** — cue-card style, organized per person.
+
+**Suggested split** (in a running-order table at the top, easy to swap):
+- **Sibgha** opens (1, 2), then accessibility + decisions + close (9, 10, 12)
+- **Kalhar** carries the milestone block (3, 4, 5, 6)
+- **Shibo** takes simulation (7)
+- **Fazheng** takes security (8)
+- **Slide 11** is a round-robin, one line each
+
+For each person, every slide they own has 3-4 sharp fragments (what to say, not full sentences) plus an explicit **handoff cue** so the baton passes cleanly ("Hand to Shibo: ..."). Each owner also has their one-line roadmap cue for slide 11. I ended with quick timing tips (≈30-45 sec/slide, ~8-10 min total).
+
+Your doc set is now:
+- **[speaking-notes-by-person.md](speaking-notes-by-person.md)** — who says what, per person (this one)
+- **[presentation-notes-2026-06-17.md](presentation-notes-2026-06-17.md)** — full slide-by-slide content + notes
+- **[PROJECT-OVERVIEW.md](PROJECT-OVERVIEW.md)** — project & team overview
+- **[TEAM.md](TEAM.md)** — roster + meeting log
+
+Want me to drop each person's cues into the matching slide's notes pane in the `.pptx` so they show up in Presenter View?

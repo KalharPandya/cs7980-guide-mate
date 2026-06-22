@@ -1,0 +1,103 @@
+# Digest: 2026-06-20_agent-a2.jsonl
+
+- raw_source: claude-conversations/sessions/2026-06-20_agent-a2.jsonl
+- date: 2026-06-20
+- raw_bytes: 149043
+- user_turns: 4
+- assistant_turns: 5
+- tool_calls: 3
+- images: 0
+- top_tools: 3xBash
+
+Citation format for analysis: (file: 2026-06-20_agent-a2.jsonl, date: 2026-06-20, turn: N).
+
+---
+### Turn 1 [user] (2026-06-20)
+You are synthesizing a deep investigation into OAK-D-LITE camera/depth failures on a Raspberry Pi 4 (robot turtlebot468), ROS 2 Humble, depthai_ros_driver 2.29.0.
+
+Here is the WEB/DRIVER research:
+
+### Research source 1 (web:power-root-cause)
+I now have enough corroborated, cited material to synthesize the findings. Here is the research section.
+
+---
+
+# OAK-D-LITE Random USB Disconnects on Raspberry Pi 4 — Root-Cause Analysis
+
+## TL;DR
+
+Your signature — a device cycling `03e7:2485 (bootloader/pre-boot) ↔ 03e7:f63b (booted firmware)`, disconnecting after anywhere from <1 s to ~6 min, on **both** USB3 and USB2, **with no Pi under-voltage flag** (`vcgencmd get_throttled` stays `0x0`) and **no over-current dmesg event** — is the classic fingerprint of cause **(c): an OAK on-board 5 V brownout that does not trip the Pi's under-voltage detector**, very likely compounded by **(d): the XLink watchdog** finishing the kill once the link glitches. It is **not** (a) main-rail under-voltage (the flag would latch), and **not** (b) a host-port over-current trip (dmesg would print `over-current condition`). USB2-forcing reduces but does **not** eliminate it, exactly as you've observed, because the brownout is on the OAK's own rail, not on the USB negotiated power class. The fix is to **inject power into the camera independently** of the Pi USB port (Y-adapter + 5 V supply, powered USB3 hub, or barrel-jack power).
+
+This matches the most directly comparable documented case: a TurtleBot/Create-3 user running depthai-ros depth on an SBC measured the OAK-D-Lite at **9.5 W avg / 9.8 W peaks**, saw the host crash **without** the under-voltage detector ever firing, and **fixed it completely by adding a separate 5.1 V 2 A supply** to the OAK adapter ([create3_docs #543](https://github.com/iRobotEducation/create3_docs/discussions/543)).
+
+---
+
+## 1. What actually causes the disconnects — and how to tell them apart from logs
+
+| # | Cause | On-device signature | Does it match YOUR case? |
+|---|-------|---------------------|--------------------------|
+| (a) | **Pi main-rail under-voltage** (bad PSU/cable to the Pi) | `vcgencmd get_throttled` latches a non-zero value: bit 0 = under-voltage now, bit 16 = under-voltage *has occurred*; rainbow icon / `Under-voltage detected` in dmesg ([RPi forum](https://forums.raspberrypi.com/viewtopic.php?t=257569), [peppe8o](https://peppe8o.com/raspberry-pi-undervoltage-detected/)) | **No** — your flag stays `0x0`. Ruled out. |
+| (b) | **Per-port / total USB current-limit (over-current trip)** — Pi4 caps **1.2 A total** across all USB ports ([techsparx](https://techsparx.com/linux-sbc/raspberry-pi/pi4-usb-power-limit.html), [PiHut](https://support.thepihut.com/hc/en-us/articles/360015272218)) | dmesg prints `usb usbN-portM: over-current condition` (and at firmware level `USB3[#] ... over-current`) ([RPi forum #326056](https://forums.raspberrypi.com/viewtopic.php?t=326056)) | **No** — you see no over-current line. Its *absence* specifically means it is **not** a host-side over-current trip. Ruled out. |
+| (c) | **OAK on-board 5 V brownout** — the camera's internal regulator droops during a current spike, MyriadX resets, but the droop is on the *USB-delivered* rail at the camera, recovering fast enough that the Pi's SoC under-voltage comparator never trips | USB device **vanishes and re-enumerates** (you see the `f63b → 2485` revert), `dmesg` shows `usb X-Y: USB disconnect` then re-`device descriptor`; **no** under-voltage flag, **no** over-current. depthai prints `X_LINK_DEVICE_NOT_FOUND` / `X_LINK_COMMUNICATION_NOT_OPEN` / `X_LINK_ERROR` | **YES — primary suspect.** Exactly the [create3_docs #543](https://github.com/iRobotEducation/create3_docs/discussions/543) pattern: under-voltage detector stayed inactive, "voltage drop insufficient to trigger protection but sufficient to cause instability," fixed by a separate 5 V supply. |
+| (d) | **XLink watchdog / comm reset** — the host's monitor thread misses a ping and force-reset
+...[clipped 96361 chars]
+
+### Turn 2 [assistant] (2026-06-20)
+I'll synthesize all this research into a consolidated report. Let me first verify a few key facts against the live repo state to ground the report accurately.
+
+### Turn 3 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "echo \"=== launch file camera node section ===\" && grep -n \"camera_node\\|i_usb_speed\\|i_restart\\|i_enable_diag\\|respawn\\|i_max_q\\|i_device_id\\|i_pipeline\\|TimerAction\\|period=\" src/guide_mate_exp
+...[clipped 132 chars]]
+
+### Turn 4 [user] (2026-06-20)
+[tool_result: 814 chars] === launch file camera node section ===
+11:    OAK-D camera_node  ->  depth_lidar_fusion (scan_fused)  ->  SLAM + Nav2
+13:Start order is staggered with TimerActions so each stage has its inputs ready.
+28:                
+...[clipped 594 chars]
+
+### Turn 5 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "echo \"=== max_depth_age + stale handling python ===\" && grep -n \"max_depth_age\\|_depth_stamp\\|_depth_profile\\|get_logger\\|create_timer\\|encoding\\|w<=0\\|h <= 0\\|return None\" src/guide_mate_explore
+...[clipped 226 chars]]
+
+### Turn 6 [user] (2026-06-20)
+[tool_result: 1017 chars] === max_depth_age + stale handling python ===
+64:        self.declare_parameter('max_depth_age', 0.4)
+118:        self.max_depth_age = float(gp('max_depth_age').value)
+161:        self._depth_stamp = None     # ROS time 
+...[clipped 797 chars]
+
+### Turn 7 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "echo \"=== docs/camera.md headings ===\" && grep -n \"^#\\|get_throttled\\|0x50000\\|0x0\\|stable\\|USB2\\|USB3\" docs/camera.md 2>/dev/null | head -40", "description": "Inspect camera.md key claims"}]
+
+### Turn 8 [user] (2026-06-20)
+[tool_result: 1904 chars] === docs/camera.md headings ===
+1:# OAK-D-LITE Camera
+5:## Quick facts
+17:  (`-p camera.i_usb_speed:=HIGH`), which is stable but bandwidth-limited (~80 % frame
+28:stable but **bandwidth-limited**, dropping ~80 % of frame
+...[clipped 1684 chars]
+
+### Turn 9 [assistant] (2026-06-20)
+The repo state confirms the audit findings. I now have everything needed to produce the consolidated report.
+
+# OAK-D-LITE Camera/Depth Failure Analysis & On-Robot Test Plan — robot turtlebot468
+
+**Platform:** Raspberry Pi 4 (Ubuntu 22.04, ROS 2 Humble) + Create 3, `depthai_ros_driver` ~2.29.0, OAK-D-LITE bus-powered off the Create 3 battery via USB-C.
+
+**Ground-truth live evidence (treated as authoritative; research reconciled against it):**
+- Device currently sits in **bootloader `03e7:2485`** on USB2 (480M); `oakd_container` process alive but device NOT booted, no dmesg activity for ~76 min → **container silently gave up**.
+- dmesg history: **~20 disconnect cycles**. Boots to firmware (`f63b`) on **BOTH** USB3 SuperSpeed AND USB2 high-speed, then disconnects after **<1s, 8s, 9s, 12s, 63s, 100s, up to ~6 min**. USB2 lasts longer but is NOT immune.
+- **`vcgencmd get_throttled = 0x0` for this entire boot** — no under-voltage/throttle latched despite all the cycling. No USB over-current dmesg event.
+- An **earlier bench test** reported `0x50000` (under-voltage + throttle had occurred). So under-voltage happens *sometimes* but did **not** co-occur with this boot's cycling.
+
+This last point is the crux: **the repo's "root cause is power, proven by the under-voltage flag" claim (`docs/camera.md:122`) is contradicted by a full disconnect-cycle boot with a clean `0x0` flag.** The report below reconciles this.
+
+---
+
+## 1. Failure taxonomy
+
+Six distinct failure modes. Each is a *different* event with a *different* log signature — conflating them is what has cost debugging time.
+
+| 
+...[clipped 25575 chars]

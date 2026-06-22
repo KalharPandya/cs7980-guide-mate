@@ -1,0 +1,337 @@
+# Digest: 2026-06-20_agent-a1.jsonl
+
+- raw_source: claude-conversations/sessions/2026-06-20_agent-a1.jsonl
+- date: 2026-06-20
+- raw_bytes: 103405
+- user_turns: 28
+- assistant_turns: 38
+- tool_calls: 27
+- images: 0
+- top_tools: 18xWebFetch, 6xWebSearch, 2xBash, 1xToolSearch
+
+Citation format for analysis: (file: 2026-06-20_agent-a1.jsonl, date: 2026-06-20, turn: N).
+
+---
+### Turn 1 [user] (2026-06-20)
+Find KNOWN, DOCUMENTED issues (and their resolutions) of OAK-D / OAK-D-LITE randomly disconnecting on Raspberry Pi 4 / ARM / low-power hosts under depthai or depthai_ros_driver.
+
+Use WebSearch and WebFetch (load via ToolSearch "select:WebSearch,WebFetch"). Prioritize: github.com/luxonis/depthai-ros issues, github.com/luxonis/depthai-core issues, github.com/luxonis/depthai-python issues, discuss.luxonis.com, ROS Answers/Robotics StackExchange, RPi forums.
+
+For each relevant issue found, capture: the symptom, the host (esp. Pi4/ARM), the diagnosed cause, and the FIX that worked (cable, powered hub, usbfs_memory_mb, udev, usb_speed, watchdog, firmware/version). Note any that match our signature: 2485<->f63b cycling, disconnect WITHOUT under-voltage, longer-but-not-immune on USB2, MyriadX thermal.
+
+Also: is there a known depthai-core/ros version where this is better/worse? Any firmware update path for the OAK bootloader?
+
+Return a markdown list of issues (symptom -> cause -> fix, with URL), then a short "which of these most likely match our case" ranking.
+
+### Turn 2 [assistant] (2026-06-20)
+I'll research known OAK-D disconnect issues on Pi 4 / ARM hosts. Let me load the web tools first.
+
+### Turn 3 [assistant] (2026-06-20)
+[tool_use: ToolSearch {"query": "select:WebSearch,WebFetch", "max_results": 5}]
+
+### Turn 4 [user] (2026-06-20)
+[tool_result: 0 chars] 
+
+### Turn 5 [assistant] (2026-06-20)
+Let me run several searches in parallel to find documented issues.
+
+### Turn 6 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "OAK-D-LITE disconnects Raspberry Pi 4 depthai X_LINK device disconnected usb"}]
+
+### Turn 7 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "depthai OAK-D random disconnect 2485 f63b VID PID cycling reconnect"}]
+
+### Turn 8 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "depthai usbfs_memory_mb Raspberry Pi OAK-D camera disconnect fix"}]
+
+### Turn 9 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "depthai_ros_driver camera_node stops publishing X_LINK_ERROR watchdog Raspberry Pi"}]
+
+### Turn 10 [user] (2026-06-20)
+[tool_result: 3012 chars] Web search results for query: "OAK-D-LITE disconnects Raspberry Pi 4 depthai X_LINK device disconnected usb"
+
+Links: [{"title":"RPI 4 Crashing when connecting Oak D-Lite Camera to USB 3.0 - Raspberry Pi Forums","url":"ht
+...[clipped 2792 chars]
+
+### Turn 11 [user] (2026-06-20)
+[tool_result: 2428 chars] Web search results for query: "depthai_ros_driver camera_node stops publishing X_LINK_ERROR watchdog Raspberry Pi"
+
+Links: [{"title":"[ERROR] [launch_ros.actions.load_composable_nodes]: Failed to load node 'oak' of type 
+...[clipped 2208 chars]
+
+### Turn 12 [user] (2026-06-20)
+[tool_result: 2889 chars] Web search results for query: "depthai usbfs_memory_mb Raspberry Pi OAK-D camera disconnect fix"
+
+Links: [{"title":"RPI 4 Crashing when connecting Oak D-Lite Camera to USB 3.0 - Raspberry Pi Forums","url":"https://forums
+...[clipped 2669 chars]
+
+### Turn 13 [user] (2026-06-20)
+[tool_result: 2984 chars] Web search results for query: "depthai OAK-D random disconnect 2485 f63b VID PID cycling reconnect"
+
+Links: [{"title":"[BUG] Oak-D-POE fails to reconnect after disconnection · Issue #420 · luxonis/depthai-core","url":"ht
+...[clipped 2764 chars]
+
+### Turn 14 [assistant] (2026-06-20)
+Good leads. Let me fetch the most relevant primary sources to extract concrete symptom/cause/fix details.
+
+### Turn 15 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.luxonis.com/en/latest/pages/troubleshooting/", "prompt": "Extract everything about OAK camera USB disconnects, X_LINK errors, X_LINK_DEVICE_NOT_FOUND, forcing USB2, usbfs_memory_mb, DEPTHAI_WATCHDOG
+...[clipped 138 chars]]
+
+### Turn 16 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/luxonis/depthai-ros/issues/657", "prompt": "Summarize the symptom, host hardware (especially Raspberry Pi/ARM), diagnosed cause, depthai-ros version, and any fix or workaround for camera_node 
+...[clipped 125 chars]]
+
+### Turn 17 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://forums.raspberrypi.com/viewtopic.php?t=364587", "prompt": "Summarize the OAK-D-Lite USB 3.0 crash issue on RPi4: symptom, diagnosed cause (power/current draw), and the fix/workaround that worked (USB2, p
+...[clipped 89 chars]]
+
+### Turn 18 [user] (2026-06-20)
+[tool_result: 657 chars] Based on the web page content provided, I cannot find any information about OAK camera USB disconnects, X_LINK errors, X_LINK_DEVICE_NOT_FOUND, USB2 forcing, usbfs_memory_mb, DEPTHAI_WATCHDOG, power supply issues, cable 
+...[clipped 437 chars]
+
+### Turn 19 [user] (2026-06-20)
+[tool_result: 1111 chars] # Summary of GitHub Issue #657
+
+**Symptom:** After ~23 hours of operation, the Oak-D-Lite camera driver consumed 100% CPU and ceased publishing image data, though the service remained running.
+
+**Hardware:** Turtlebot4 L
+...[clipped 891 chars]
+
+### Turn 20 [user] (2026-06-20)
+[tool_result: 1082 chars] # OAK-D-Lite USB 3.0 Crash on RPi4: Summary
+
+**Symptom:**
+The Raspberry Pi 4B crashes and was "bricked" when connecting an OAK D-Lite camera via USB 3.2 Type-C cable to the USB 3.0 port, regardless of running Roboflow AP
+...[clipped 862 chars]
+
+### Turn 21 [assistant] (2026-06-20)
+Let me fetch the canonical troubleshooting source (the docs landing page didn't have detail) and the key forum/issue threads about regular disconnects and reconnect failures.
+
+### Turn 22 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/luxonis/depthai-docs-website/blob/master/source/pages/troubleshooting.rst", "prompt": "Extract everything about: forcing USB2 communication, X_LINK_ERROR / X_LINK_COMMUNICATION_NOT_OPEN / X_LI
+...[clipped 250 chars]]
+
+### Turn 23 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://discuss.luxonis.com/d/131-oak-d-regularly-disconnects-reboots", "prompt": "Summarize this thread: the symptom (regular disconnect/reboot), host hardware, diagnosed cause, and the fix that worked. Capture
+...[clipped 120 chars]]
+
+### Turn 24 [user] (2026-06-20)
+[tool_result: 215 chars] The server returned HTTP 404 Not Found.
+
+The response body was not retrieved. If this URL requires authentication, use an authenticated tool (e.g. `gh` for GitHub, or an MCP-provided fetch tool) instead of WebFetch.
+
+### Turn 25 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/luxonis/depthai-ros/issues/560", "prompt": "Summarize: symptom, host hardware (Raspberry Pi/ARM?), diagnosed cause, depthai-ros version, and the fix/workaround for X_LINK_DEVICE_NOT_FOUND afte
+...[clipped 84 chars]]
+
+### Turn 26 [user] (2026-06-20)
+[tool_result: 473 chars] I cannot summarize the thread as requested because the web page content provided only shows an error message. The page failed to load properly, displaying: "Something went wrong while trying to load the full version of t
+...[clipped 253 chars]
+
+### Turn 27 [user] (2026-06-20)
+[tool_result: 1034 chars] # Summary of GitHub Issue #560
+
+**Symptom:** The ROS2 depthai driver fails to initialize with the error "X_LINK_DEVICE_NOT_FOUND" after device boot, despite Python utilities successfully accessing the same camera.
+
+**Hos
+...[clipped 814 chars]
+
+### Turn 28 [assistant] (2026-06-20)
+Let me get the troubleshooting docs via the raw GitHub URL and use gh CLI for the depthai-ros issues to get reliable content. Let me also search for the watchdog and thermal specifics.
+
+### Turn 29 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "gh issue view 657 --repo luxonis/depthai-ros --json title,body,comments 2>/dev/null | head -c 6000; echo \"----DONE657----\"", "description": "Fetch depthai-ros issue 657 via gh"}]
+
+### Turn 30 [user] (2026-06-20)
+[tool_result: 15 chars] ----DONE657----
+
+### Turn 31 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://raw.githubusercontent.com/luxonis/depthai-docs-website/master/source/pages/troubleshooting.rst", "prompt": "Extract everything about: forcing USB2 communication, X_LINK_ERROR / X_LINK_COMMUNICATION_NOT_O
+...[clipped 279 chars]]
+
+### Turn 32 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "depthai DEPTHAI_WATCHDOG_INITIAL_DELAY OAK device watchdog disconnect environment variable default 4000ms"}]
+
+### Turn 33 [user] (2026-06-20)
+[tool_result: 215 chars] The server returned HTTP 404 Not Found.
+
+The response body was not retrieved. If this URL requires authentication, use an authenticated tool (e.g. `gh` for GitHub, or an MCP-provided fetch tool) instead of WebFetch.
+
+### Turn 34 [user] (2026-06-20)
+[tool_result: 2521 chars] Web search results for query: "depthai DEPTHAI_WATCHDOG_INITIAL_DELAY OAK device watchdog disconnect environment variable default 4000ms"
+
+Links: [{"title":"Device","url":"https://docs.luxonis.com/software-v3/depthai/dep
+...[clipped 2301 chars]
+
+### Turn 35 [assistant] (2026-06-20)
+The gh issue command returned empty (likely auth/format). Let me retry with explicit error capture, fetch the troubleshooting doc through the rendered site, and pull the watchdog/restart fragility issue #291 plus the Luxonis device docs.
+
+### Turn 36 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "echo \"=== 657 ===\"; gh issue view 657 --repo luxonis/depthai-ros 2>&1 | head -c 4000; echo; echo \"=== 560 ===\"; gh issue view 560 --repo luxonis/depthai-ros 2>&1 | head -c 3000", "description": "Fetch de
+...[clipped 48 chars]]
+
+### Turn 37 [user] (2026-06-20)
+[tool_result: 106 chars] === 657 ===
+/bin/bash: line 1: gh: command not found
+
+=== 560 ===
+/bin/bash: line 1: gh: command not found
+
+### Turn 38 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.luxonis.com/en/latest/pages/troubleshooting/index.html", "prompt": "Extract everything about forcing USB2 communication, X_LINK errors, usbfs_memory_mb, DEPTHAI_WATCHDOG, powered USB hub, bad/long c
+...[clipped 89 chars]]
+
+### Turn 39 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/luxonis/depthai-core/issues/291", "prompt": "Summarize: symptom (device not found / startup failures tied to watchdog/restart timing), host hardware, diagnosed cause, and any fix/workaround or
+...[clipped 84 chars]]
+
+### Turn 40 [user] (2026-06-20)
+[tool_result: 875 chars] I've reviewed the web page content you provided, but it only shows the Luxonis Documentation homepage with navigation links and section headers (Overview, Hardware, Software, Cloud). 
+
+The page doesn't contain any specif
+...[clipped 655 chars]
+
+### Turn 41 [user] (2026-06-20)
+[tool_result: 1191 chars] # Issue Summary: depthai-core Device Detection Fragility
+
+**Symptom:**
+Intermittent "No available devices" errors and startup failures when devices restart. The issue manifests as test timeouts and exceptions during repe
+...[clipped 971 chars]
+
+### Turn 42 [assistant] (2026-06-20)
+gh isn't installed. Let me fetch the depthai-ros issues directly via WebFetch (which works for public GitHub issue pages), grab the Luxonis device docs for watchdog details, and the older troubleshooting page that had concrete commands.
+
+### Turn 43 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://nifty-bartik-6a9295.netlify.app/troubleshooting/", "prompt": "Extract everything about: forcing USB2 communication (OpenVINO/device code), X_LINK_ERROR / X_LINK_COMMUNICATION_NOT_OPEN / X_LINK_DEVICE_NOT
+...[clipped 276 chars]]
+
+### Turn 44 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.luxonis.com/software-v3/depthai/depthai-components/device/", "prompt": "Extract everything about the device watchdog: DEPTHAI_WATCHDOG, DEPTHAI_WATCHDOG_INITIAL_DELAY, DEPTHAI_BOOTUP_TIMEOUT environ
+...[clipped 190 chars]]
+
+### Turn 45 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/luxonis/depthai-ros/issues/657", "prompt": "List every comment's content: any diagnosed cause, mention of Raspberry Pi, watchdog, USB, memory leak, and any fix or workaround the maintainers or
+...[clipped 79 chars]]
+
+### Turn 46 [user] (2026-06-20)
+[tool_result: 1232 chars] # DepthAI Troubleshooting: USB & Connectivity Issues
+
+Based on the provided documentation, here's what's available:
+
+## Forcing USB2 Communication
+
+The page includes explicit commands for USB2 fallback:
+
+```bash
+python3 
+...[clipped 1012 chars]
+
+### Turn 47 [user] (2026-06-20)
+[tool_result: 1646 chars] # Device Watchdog Configuration Guide
+
+## Overview
+The watchdog mechanism in DepthAI is critical for PoE devices. When the device disconnects, the watchdog initiates a reset followed by a system reboot, making the camera
+...[clipped 1426 chars]
+
+### Turn 48 [user] (2026-06-20)
+[tool_result: 1383 chars] # GitHub Issue #657 Analysis: depthai-ros Oak-D-Lite CPU Issue
+
+## Issue Summary
+A user reported that their Oak-D-Lite camera driver on a Raspberry Pi 5 consumed 100% CPU after approximately 23 hours of continuous operat
+...[clipped 1163 chars]
+
+### Turn 49 [assistant] (2026-06-20)
+I have strong coverage now. Let me get a couple more specific primary sources: the Luxonis Pi guide (which has the usbfs_memory_mb + udev specifics) and one more forum thread on random connection breaks / thermal, plus confirm the official depthai-ros README troubleshooting (DEPTHAI_DEBUG, usb speed).
+
+### Turn 50 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.luxonis.com/projects/hardware/en/latest/pages/guides/raspberrypi.html", "prompt": "Extract the Raspberry Pi specific setup/stability instructions for OAK cameras: exact usbfs_memory_mb command and f
+...[clipped 160 chars]]
+
+### Turn 51 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://discuss.luxonis.com/d/951-connection-gets-broken-randomly", "prompt": "Summarize: symptom (random connection break), host hardware, diagnosed cause, and the fix that worked. Capture any mention of USB ca
+...[clipped 120 chars]]
+
+### Turn 52 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "OAK-D MyriadX overheating thermal disconnect throttle temperature depthai high CPU load"}]
+
+### Turn 53 [user] (2026-06-20)
+[tool_result: 731 chars] I've reviewed the provided web page content, but it does not contain the specific Raspberry Pi setup instructions you're requesting.
+
+The page shows a hardware documentation index with links to various sections, includin
+...[clipped 511 chars]
+
+### Turn 54 [user] (2026-06-20)
+[tool_result: 538 chars] # Unable to Summarize
+
+The webpage content provided only shows an error message: "Something went wrong while trying to load the full version of this site." No technical discussion content, troubleshooting details, or sol
+...[clipped 318 chars]
+
+### Turn 55 [user] (2026-06-20)
+[tool_result: 2821 chars] Web search results for query: "OAK-D MyriadX overheating thermal disconnect throttle temperature depthai high CPU load"
+
+Links: [{"title":"OAK Thermal","url":"https://docs.luxonis.com/hardware/products/OAK%20Thermal"},{"
+...[clipped 2601 chars]
+
+### Turn 56 [assistant] (2026-06-20)
+I have the thermal threshold (105C auto-shutdown) confirmed. Let me grab the Pi deployment guide (the actual content page) and the overheat forum thread to nail down the thermal-disconnect fix, plus confirm the usbfs_memory_mb/udev specifics from the install page.
+
+### Turn 57 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.luxonis.com/hardware/platform/deploy/to-rpi/", "prompt": "Extract the Raspberry Pi specific setup/stability instructions for OAK cameras: exact usbfs_memory_mb command/file, udev rules command, USB 
+...[clipped 111 chars]]
+
+### Turn 58 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.luxonis.com/hardware/platform/deploy/usb-deployment-guide", "prompt": "Extract: exact usbfs_memory_mb command, udev rules command, forcing USB2 (usb2Mode / maxUsbSpeed), powered USB hub / external p
+...[clipped 118 chars]]
+
+### Turn 59 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://discuss.luxonis.com/d/603-overheaterror-temperature-above-105c", "prompt": "Summarize: symptom (OverheatError / temperature above 105C), host, diagnosed cause, and the fix/workaround (cooling, lower FPS,
+...[clipped 150 chars]]
+
+### Turn 60 [user] (2026-06-20)
+[tool_result: 1257 chars] # Raspberry Pi OAK Camera Setup & Stability Instructions
+
+Based on the provided documentation, here are the specific stability recommendations:
+
+## Power Supply Recommendations
+
+The document states that "Raspberry Pi 2 o
+...[clipped 1037 chars]
+
+### Turn 61 [user] (2026-06-20)
+[tool_result: 760 chars] # OverheatError Summary
+
+Based on the provided content, I cannot generate a complete summary with the requested details. The webpage failed to load properly, displaying only an error message: "Something went wrong while 
+...[clipped 540 chars]
+
+### Turn 62 [user] (2026-06-20)
+[tool_result: 1297 chars] # OAK USB Deployment: Key Commands & Guidance
+
+## udev Rules Command
+```bash
+echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"' | sudo tee /etc/udev/rules.d/80-movidius.rules
+sudo udevadm control --reload-rule
+...[clipped 1077 chars]
+
+### Turn 63 [assistant] (2026-06-20)
+I have enough authoritative detail. Let me get the usbfs_memory_mb exact command from the install page (the one canonical source for it) to round out the fixes.
+
+### Turn 64 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.luxonis.com/projects/api/en/latest/install/", "prompt": "Extract the exact usbfs_memory_mb / usbcore.usbfs_memory_mb command or instruction for Raspberry Pi / Linux, the udev rules command, and any 
+...[clipped 115 chars]]
+
+### Turn 65 [user] (2026-06-20)
+[tool_result: 950 chars] Based on the provided documentation, I cannot find any mention of `usbfs_memory_mb` or `usbcore.usbfs_memory_mb` commands, USB buffer memory adjustments, or specific instructions for increasing memory to fix dropped fram
+...[clipped 730 chars]
+
+### Turn 66 [assistant] (2026-06-20)
+I have comprehensive, well-sourced findings. Compiling the final report.
+
+# Known/documented OAK-D / OAK-D-LITE disconnect issues on Pi 4 / ARM / low-power hosts
+
+## Issues (symptom → cause → fix)
+
+- **RPi4 crash / brown-out / "bricked" when OAK-D-LITE on USB3** — *Symptom:* Pi 4B locks up or crashes the moment the OAK-D-LITE is plugged into the blue USB3 port via the USB-C cable, independent of software (Roboflow / DepthAI / viewer). *Host:* Raspberry Pi 4B. *Cause:* power delivery insufficiency — the OAK draws ~1 A continuous and **peak current spikes exceed what the Pi can supply (~1.2 A per port), browning out the camera**; "max export current is 1.2A for RPI4." *Fix that worked:* plug the USB-C cable into a **USB2 port** (lower demand), use a **powered USB hub**, or externally power the OAK (Y-adapter / barrel jack). — https://forums.raspberrypi.com/viewtopic.php?t=364587 and https://docs.luxonis.com/hardware/platform/deploy/to-rpi/
+
+- **OAK browns-out / locks up under complex pipeline on Pi (power spikes)** — *Symptom:* random lockups / OAK crash during heavy pipelines (encode + NN + stereo). *Host:* Raspberry Pi (USB-powered). *Cause:* "peak power (current) spikes from OAK can go over what the Pi can handle, causing OAK to **brown-out**," made worse by encoding/AI load and (Pro) the IR laser's extra 0.25 A. *Fix:* "**Using a powered hub can prevent this, or powering fewer other things off of the Pi over USB**"; external power via barrel jack / Y-adapter. — https://docs.luxonis.com/hardware/platform/deploy/to-rpi/ and https://docs.luxonis.com/hardware/platform/deploy/
+...[clipped 8916 chars]

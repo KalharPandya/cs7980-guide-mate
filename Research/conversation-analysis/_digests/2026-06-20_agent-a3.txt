@@ -1,0 +1,137 @@
+# Digest: 2026-06-20_agent-a3.jsonl
+
+- raw_source: claude-conversations/sessions/2026-06-20_agent-a3.jsonl
+- date: 2026-06-20
+- raw_bytes: 54662
+- user_turns: 9
+- assistant_turns: 15
+- tool_calls: 8
+- images: 0
+- top_tools: 7xEdit, 1xRead
+
+Citation format for analysis: (file: 2026-06-20_agent-a3.jsonl, date: 2026-06-20, turn: N).
+
+---
+### Turn 1 [user] (2026-06-20)
+UPDATE /home/ubuntu/cs7980-guide-mate/docs/mapping/README.md in place (Read then Edit). This doc has DRIFTED from the code. Fixes:
+  1. The ASCII stack diagram + the "depth pipeline" and "nav2_glass.yaml" table rows describe depth as a SEPARATE 2nd costmap source (oakd/scan). Rewrite to the [scan_fused] reality: depth_lidar_fusion folds depth INTO the lidar scan -> scan_fused -> the SINGLE fused source consumed by BOTH Nav2 costmaps AND SLAM (slam_fused.yaml). The separate oakd/scan pipeline is now legacy.
+  2. "How to run": per [autonomous_mapping.launch.py] it self-starts camera->fusion->SLAM->Nav2->glass_guard->explorer. Remove the "step 2: run depth_perception first" framing (now vestigial/optional); show the single autonomous_mapping command (+ start_camera:=false note). Drop the "tail -f /tmp/explore.log" line unless you can confirm it exists (you can't — remove it).
+  3. Add table rows / notes for: the combined single-process runner (guide_mate_bringup), and the C++ fusion node (guide_mate_perception, ~10x cheaper, run Python OR C++).
+  4. Status/roadmap: move "point SLAM + Nav2 at scan_fused" to DONE (it's wired in the configs); KEEP "on-robot SLAM-map localization sanity check + full run" as PENDING. Mark fusion hardware-validated.
+
+VERIFIED GROUND TRUTH — use these facts; do NOT invent or alter numbers beyond what's stated.
+
+[scan_fused] The depth-into-lidar fusion (depth_lidar_fusion) publishes `scan_fused`, now the SINGLE fused obstacle source for BOTH Nav2 and SLAM:
+  - nav2_glass.yaml: both local & global costmaps use observation_sources: scan -> topic: scan_fused (the OLD separate "oakd/scan as a 2nd costmap source" design is RETIRED).
+  - slam_fused.yaml: scan_topic: scan_fused (SLAM maps on the fused scan, so glass enters the SLAM map, not just the runtime costmap). Revert to 'scan' for raw-lidar-only.
+  - The old pointcloud->height-filtered oakd/scan pipeline (depth_perception.launch.py) is now the LEGACY/alternative path, not the active one.
+
+[autonomous_mapping.launch.py] Self-starts the FULL producer chain, staggered by TimerActions:
+  OAK-D camera_node -> depth_lidar_fusion (publishes scan_fused) -> SLAM (slam_fused.yaml) + Nav2 (nav2_glass.yaml) -> glass_guard -> bfs_explorer.
+  So you do NOT manually run depth_perception first. Arg start_camera:=false if the camera is already up (e.g. the manual USB2 bring-up). Speed capped to 0.15 m/s (FollowPath max_vel_x/max_speed_xy).
+
+[two packages] src/ now holds TWO colcon packages:
+  - guide_mate_explorer (Python): bfs_explorer, glass_guard, depth_lidar_fusion nodes.
+  - guide_mate_perception (C++): a faithful rclcpp PORT of depth_lidar_fusion -> ~10x cheaper TF/image handling on the Pi-4, mirrors the Python numerics, same node behavior/output topic (scan_fused). Launch: depth_lidar_fusion_cpp.launch.py. Run the Python OR the C++ fusion node, NOT both. This is the answer to Pi-4 compute saturation.
+
+[combined runner] guide_mate_explorer also has combined_node.py -> entry point 'guide_mate_bringup' (and combined.launch.py): runs glass_guard + bfs_explorer in ONE process under one executor so the per-node rclpy/DDS overhead is paid once. depth_lidar_fusion is deliberately EXCLUDED (CPU/GIL-bound -> keeps its own core; that's why the C++ port exists). Individual 'ros2 run' entry points still work.
+
+[config] config/ now: nav2_glass.yaml, oakd_mapping.yaml, slam_fused.yaml.
+
+[honest status — do NOT over-claim] depth_lidar_fusion is HARDWARE-VALIDATED on robot 468 (facing the glass wall: depth saw the base on 205 beams 0.37-1.63 m where the lidar was blind/saw through; fusion injected 195). scan_fused is now WIRED into SLAM + Nav2 configs (this part = DONE). STILL PENDING on robot: the SLAM-map localization sanity check (map stays crisp, no double-walls) and a full autonomous mapping run. Keep that pending caveat.
+
+[camera naming] The camera is an OAK-D-LITE (Luxonis). Standardize the MODEL NAME to "OAK-D-LITE" on first mention ("OAK-D" acceptable as shorthand after).
+...[clipped 610 chars]
+
+### Turn 2 [assistant] (2026-06-20)
+I'll read the target file first, then make the edits.
+
+### Turn 3 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/mapping/README.md"}]
+
+### Turn 4 [user] (2026-06-20)
+[tool_result: 6724 chars] 1	# Autonomous mapping — overview
+2	
+3	How robot **468** maps an indoor space on its own, and how we handle obstacles the 2D
+4	lidar can't see (glass). Code lives in [`src/guide_mate_explorer`](../../src/guide_mate_explo
+...[clipped 6504 chars]
+
+### Turn 5 [assistant] (2026-06-20)
+Now I'll rewrite the drifted sections. Let me make the edits.
+
+### Turn 6 [assistant] (2026-06-20)
+[tool_use: Edit {"replace_all": false, "file_path": "/home/ubuntu/cs7980-guide-mate/docs/mapping/README.md", "old_string": "**TL;DR:** A custom **BFS frontier explorer** drives the robot to unexplored areas while\n`slam_toolbox` builds 
+...[clipped 757 chars]]
+
+### Turn 7 [user] (2026-06-20)
+[tool_result: 159 chars] The file /home/ubuntu/cs7980-guide-mate/docs/mapping/README.md has been updated successfully. (file state is current in your context — no need to Read it back)
+
+### Turn 8 [assistant] (2026-06-20)
+[tool_use: Edit {"replace_all": false, "file_path": "/home/ubuntu/cs7980-guide-mate/docs/mapping/README.md", "old_string": "```\n ┌────────────── sensors ──────────────┐\n RPLIDAR (360°, ~8 Hz) ──► /scan ──┐ OAK-D depth ──► (see depth-p
+...[clipped 1382 chars]]
+
+### Turn 9 [user] (2026-06-20)
+[tool_result: 159 chars] The file /home/ubuntu/cs7980-guide-mate/docs/mapping/README.md has been updated successfully. (file state is current in your context — no need to Read it back)
+
+### Turn 10 [assistant] (2026-06-20)
+Now the components table.
+
+### Turn 11 [assistant] (2026-06-20)
+[tool_use: Edit {"replace_all": false, "file_path": "/home/ubuntu/cs7980-guide-mate/docs/mapping/README.md", "old_string": "## Components (all in `guide_mate_explorer`)\n\n| Piece | What it does |\n|---|---|\n| `bfs_explorer` | BFS from
+...[clipped 4295 chars]]
+
+### Turn 12 [user] (2026-06-20)
+[tool_result: 159 chars] The file /home/ubuntu/cs7980-guide-mate/docs/mapping/README.md has been updated successfully. (file state is current in your context — no need to Read it back)
+
+### Turn 13 [assistant] (2026-06-20)
+Now the "Why glass is the hard part" layered list (item 1 says costmap obstacle, item 3 says pending — update to fused reality).
+
+### Turn 14 [assistant] (2026-06-20)
+[tool_use: Edit {"replace_all": false, "file_path": "/home/ubuntu/cs7980-guide-mate/docs/mapping/README.md", "old_string": "1. **Depth camera** sees the glass doors' **metal base/frame** (below the lidar plane) → costmap obstacle → plan
+...[clipped 1152 chars]]
+
+### Turn 15 [user] (2026-06-20)
+[tool_result: 159 chars] The file /home/ubuntu/cs7980-guide-mate/docs/mapping/README.md has been updated successfully. (file state is current in your context — no need to Read it back)
+
+### Turn 16 [assistant] (2026-06-20)
+Now the "How to run" section.
+
+### Turn 17 [assistant] (2026-06-20)
+[tool_use: Edit {"replace_all": false, "file_path": "/home/ubuntu/cs7980-guide-mate/docs/mapping/README.md", "old_string": "```bash\nsource /opt/ros/humble/setup.bash\nsource ~/cs7980-guide-mate/install/setup.bash\n\n# 1) OAK-D depth on
+...[clipped 2731 chars]]
+
+### Turn 18 [user] (2026-06-20)
+[tool_result: 159 chars] The file /home/ubuntu/cs7980-guide-mate/docs/mapping/README.md has been updated successfully. (file state is current in your context — no need to Read it back)
+
+### Turn 19 [assistant] (2026-06-20)
+Now the constraints section (mentions Pi-4 / fast depth-collapse) and the Status/roadmap.
+
+### Turn 20 [assistant] (2026-06-20)
+[tool_use: Edit {"replace_all": false, "file_path": "/home/ubuntu/cs7980-guide-mate/docs/mapping/README.md", "old_string": "- **Pi 4 is compute-bound** — SLAM ≈ 1 core; running SLAM + full depth pointcloud + Nav2 together saturates it. 
+...[clipped 611 chars]]
+
+### Turn 21 [user] (2026-06-20)
+[tool_result: 159 chars] The file /home/ubuntu/cs7980-guide-mate/docs/mapping/README.md has been updated successfully. (file state is current in your context — no need to Read it back)
+
+### Turn 22 [assistant] (2026-06-20)
+[tool_use: Edit {"replace_all": false, "file_path": "/home/ubuntu/cs7980-guide-mate/docs/mapping/README.md", "old_string": "## Status / roadmap\n- ✅ Explorer, glass_guard, depth pipeline built; depth **validated to detect the glass meta
+...[clipped 1577 chars]]
+
+### Turn 23 [user] (2026-06-20)
+[tool_result: 159 chars] The file /home/ubuntu/cs7980-guide-mate/docs/mapping/README.md has been updated successfully. (file state is current in your context — no need to Read it back)
+
+### Turn 24 [assistant] (2026-06-20)
+All edits complete. Updated `/home/ubuntu/cs7980-guide-mate/docs/mapping/README.md` in place.
+
+Changes made:
+
+1. **ASCII stack diagram + tables** — Rewrote depth from a separate 2nd costmap source (`oakd/scan`) to the `scan_fused` reality: `depth_lidar_fusion` folds depth into a copy of the lidar scan → single `scan_fused` consumed by BOTH Nav2 costmaps (`nav2_glass.yaml`, both local/global `observation_sources: scan` → `topic: scan_fused`) AND SLAM (`slam_fused.yaml`, `scan_topic: scan_fused`). Old `oakd/scan` pipeline marked legacy/retired. TL;DR and "Why glass is hard" list updated to match.
+
+2. **How to run** — Removed the "step 2: run depth_perception first" framing. Now shows the single `autonomous_mapping.launch.py` command (self-starts camera → fusion → SLAM → Nav2 → glass_guard → explorer), plus the `start_camera:=false` note and the manual USB2 bring-up as optional. Dropped the unverifiable `tail -f /tmp/explore.log` line.
+
+3. **New rows/notes added** — `guide_mate_bringup` combined single-process runner (glass_guard + bfs_explorer in one executor; `depth_lidar_fusion` deliberately excluded), and the `guide_mate_perception` C++ fusion port (~10× cheaper, run Python OR C++). Added a config table for `nav2_glass.yaml` / `slam_fused.yaml` / `oakd_mapping.yaml`, and a two-package overview.
+
+4. **Status/roadmap** — Moved "point SLAM + Nav2 at scan_fused" to DONE (wired in configs); marked fusion HARDWARE-VALIDATED on 468 (205 beams 0.37–1.63 m, 195 injected); kept on-robot SLAM-map localization sanity check + full run as PENDING.
+
+Also: standardized the camera to "OAK-
+...[clipped 259 chars]

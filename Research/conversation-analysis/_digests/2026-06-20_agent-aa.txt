@@ -1,0 +1,125 @@
+# Digest: 2026-06-20_agent-aa.jsonl
+
+- raw_source: claude-conversations/sessions/2026-06-20_agent-aa.jsonl
+- date: 2026-06-20
+- raw_bytes: 45455
+- user_turns: 7
+- assistant_turns: 11
+- tool_calls: 6
+- images: 0
+- top_tools: 3xBash, 2xRead, 1xStructuredOutput
+
+Citation format for analysis: (file: 2026-06-20_agent-aa.jsonl, date: 2026-06-20, turn: N).
+
+---
+### Turn 1 [user] (2026-06-20)
+You are auditing ONE documentation file in a ROS2 robotics project (TurtleBot 4 autonomous "guide robot").
+Read these files: /home/ubuntu/cs7980-guide-mate/docs/camera/README.md (the target), and /home/ubuntu/cs7980-guide-mate/CLAUDE.md (project context). If the doc makes claims about code/launch/config, spot-check against the real files under /home/ubuntu/cs7980-guide-mate/src/.
+Topic hint: camera section index.
+
+ACTUAL CODE/CONFIG ON DISK (ground truth as of this audit):
+ROS2 package src/guide_mate_explorer/:
+  nodes: bfs_explorer.py, glass_guard.py, depth_lidar_fusion.py, combined_node.py(UNTRACKED/new)
+  launch: autonomous_mapping.launch.py, depth_lidar_fusion.launch.py, depth_perception.launch.py, explore.launch.py, combined.launch.py(UNTRACKED/new)
+  config: nav2_glass.yaml, oakd_mapping.yaml, slam_fused.yaml(UNTRACKED-ish/new)
+NEW untracked C++ package src/guide_mate_perception/:
+  src/depth_lidar_fusion_node.cpp, CMakeLists.txt, package.xml, launch/depth_lidar_fusion_cpp.launch.py
+rviz/: launch_rviz.sh, turtlebot468_mapping.rviz (tracked)
+Root: README.md, CLAUDE.md, .gitignore (tracked); start.sh (gitignored)
+Vendored third-party clone (gitignored, untracked, on-disk only): aws-iot-device-sdk-python-v2/ (full AWS SDK repo with its own .git, ~20 markdowns)
+On-disk credentials (gitignored, never committed): Turtlebot-468.cert.pem, Turtlebot-468.private.key, Turtlebot-468.public.key, Turtlebot-468-Policy, root-CA.crt, c9109663-*AccessToken.txt, connect_device_package.zip
+
+Assess the target doc honestly and critically. importance: 'critical'=needed to operate/understand the robot or repo; 'useful'=helpful reference; 'marginal'=nice-to-have/thin; 'obsolete'=stale/superseded/empty-stub. Many tiny section-index README.md files may be 'marginal' boilerplate. Flag any factual drift from the actual code inventory. Be specific in uniqueValue about what is irreplaceably documented here (real hardware findings, IPs, gotchas) vs. generic restatement.
+
+### Turn 2 [assistant] (2026-06-20)
+I'll audit the camera documentation file. Let me read the target and context files.
+
+### Turn 3 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/camera/README.md"}]
+
+### Turn 4 [user] (2026-06-20)
+[tool_result: 1060 chars] 1	# Camera
+2	
+3	This section documents the robot's depth/RGB camera (Luxonis **OAK-D-LITE**).
+4	
+5	## Documents
+6	- [OAK-D-LITE camera — test, findings, fixes, pending issues](oak-d-camera-test.md)
+7	
+8	## Quick facts
+9	
+...[clipped 840 chars]
+
+### Turn 5 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "ls -la /home/ubuntu/cs7980-guide-mate/docs/camera/ /home/ubuntu/cs7980-guide-mate/docs/", "description": "List camera docs directory and docs root"}]
+
+### Turn 6 [user] (2026-06-20)
+[tool_result: 737 chars] /home/ubuntu/cs7980-guide-mate/docs/:
+total 32
+drwxrwxr-x  7 ubuntu ubuntu 4096 Jun 20 00:16 .
+drwxrwxr-x 11 ubuntu ubuntu 4096 Jun 20 00:16 ..
+-rw-rw-r--  1 ubuntu ubuntu 3365 Jun 20 00:16 README.md
+drwxrwxr-x  2 ubuntu
+...[clipped 517 chars]
+
+### Turn 7 [assistant] (2026-06-20)
+This is a section-index README. Let me check the referenced sibling doc and spot-check the technical claims against CLAUDE.md and the code, since there are some potential discrepancies (model name, topic names, QoS).
+
+### Turn 8 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/camera/oak-d-camera-test.md"}]
+
+### Turn 9 [user] (2026-06-20)
+[tool_result: 8484 chars] 1	# OAK-D-LITE camera — test, findings, fixes, pending issues
+2	
+3	Bench test of the robot's depth/RGB camera on **robot 468** (`turtlebot-van-468`),
+4	Raspberry Pi 4 Model B Rev 1.5, Ubuntu 22.04 + ROS 2 Humble. Tested 
+...[clipped 8264 chars]
+
+### Turn 10 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "grep -rn -i \"OAK-D-LITE\\|OAK-D LITE\\|oak-d-lite\\|i_usb_speed\\|usb_speed\\|camera/rgb\\|camera/stereo\\|oakd/stereo\\|oakd/rgb\\|i_resolution\\|RGBD\\|i_pipeline_type\" /home/ubuntu/cs7980-guide-mate/src
+...[clipped 96 chars]]
+
+### Turn 11 [user] (2026-06-20)
+[tool_result: 3448 chars] /home/ubuntu/cs7980-guide-mate/src/guide_mate_explorer/guide_mate_explorer/depth_lidar_fusion.py:47:        self.declare_parameter('depth_image_topic', 'oakd/stereo/image_raw')
+/home/ubuntu/cs7980-guide-mate/src/guide_ma
+...[clipped 3228 chars]
+
+### Turn 12 [assistant] (2026-06-20)
+I now have enough to assess. Let me note the key drift: the doc uses unnamespaced topics `/camera/rgb/image_raw` and `/camera/stereo/image_raw`, but the actual code and CLAUDE.md use namespaced `oakd/stereo/...` topics (under `/turtlebot468/oakd`). Also worth checking the model name consistency: CLAUDE.md refers generically to "OAK-D", while the doc specifically claims OAK-D-LITE. Let me do a couple of final cross-checks.
+
+### Turn 13 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "grep -rn -i \"OAK-D-LITE\\|OAK-D LITE\\|webcam\\|/camera/rgb\\|/camera/stereo\\|stereo.i_resolution\\|i_resolution\\|MXID\\|y-adapter\\|usb_speed\" /home/ubuntu/cs7980-guide-mate/CLAUDE.md /home/ubuntu/cs798
+...[clipped 226 chars]]
+
+### Turn 14 [user] (2026-06-20)
+[tool_result: 1366 chars] /home/ubuntu/cs7980-guide-mate/docs/mapping/README.md:63:  -p camera.i_pipeline_type:=RGBD -p camera.i_usb_speed:=HIGH -p camera.i_nn_type:=none \
+/home/ubuntu/cs7980-guide-mate/docs/mapping/README.md:66:  -p stereo.i_pu
+...[clipped 1146 chars]
+
+### Turn 15 [assistant] (2026-06-20)
+I have a complete picture now. Key findings:
+
+The camera README is a thin section-index. Its "Quick facts" make one notable factual drift: it lists camera topics as `/camera/rgb/image_raw` and `/camera/stereo/image_raw` (unnamespaced, default driver names), but every piece of actual code (depth_lidar_fusion.py, oakd_mapping.yaml, all launch files) and CLAUDE.md use the **namespaced** topics `oakd/stereo/image_raw` / `oakd/stereo/camera_info` (i.e. `/turtlebot468/oakd/...`). The doc's topics correspond to running the raw `camera_node` bring-up command (without the `-r __ns:=/turtlebot468 -r __node:=oakd` remaps), so they're "as-tested on the bench" but not what the operational pipeline subscribes to. The model name (OAK-D-LITE) is consistent with other docs and the FOV-fallback comment in depth_lidar_fusion.py. The USB2/power gotcha matches CLAUDE.md and config.
+
+The unique value lives almost entirely in the sibling `oak-d-camera-test.md`; this README is a 1KB pointer with a condensed restatement.
+
+### Turn 16 [assistant] (2026-06-20)
+[tool_use: StructuredOutput {"path": "/home/ubuntu/cs7980-guide-mate/docs/camera/README.md", "purpose": "Section-index landing page for the camera docs, pointing to the OAK-D-LITE bench-test write-up and giving condensed quick facts.", "importance"
+...[clipped 3114 chars]]
+
+### Turn 17 [user] (2026-06-20)
+[tool_result: 39 chars] Structured output provided successfully
+
+### Turn 18 [assistant] (2026-06-20)
+I've completed the audit of `/home/ubuntu/cs7980-guide-mate/docs/camera/README.md`.
+
+Summary of findings:
+
+- **Importance: marginal** — it's a thin (~1KB) section-index README, the standard `docs/*/README.md` boilerplate pattern, with quick facts that mostly restate the sibling `oak-d-camera-test.md`.
+
+- **Recommendation: keep** (it's referenced from `docs/README.md` and parallels the other section indexes) but **fix one factual drift**: the doc lists camera topics as the unnamespaced `/camera/rgb/image_raw` and `/camera/stereo/image_raw`, while every operational file (`depth_lidar_fusion.py:47-48`, `oakd_mapping.yaml`, the launch files) and `CLAUDE.md` use the **namespaced** `oakd/stereo/image_raw` / `oakd/stereo/camera_info` (under `/turtlebot468/oakd`). The doc's names are what the bare bench bring-up command emits, not what SLAM/Nav2/fusion actually subscribe to — misleading for anyone wiring up the pipeline.
+
+- **Verified-correct claims:** OAK-D-LITE model, `depthai_ros_driver`/not-UVC, BEST_EFFORT QoS, and the USB3-boot-loop → USB2 (`i_usb_speed:=HIGH`) power gotcha all match `CLAUDE.md` and the config.
+
+- **Unique value: near zero** — all the irreplaceable hardware findings (MXID `18443010B112591200`, USB IDs `03e7:2485`/`03e7:f63b`, power root-cause, frame-drop math, Y-adapter fix) live in the sibling `oak-d-camera-test.md`, not here.
+
+Minor note: the `docs/camera/` directory is owned by `root:root`, unlike the `ubuntu`-owned sibling doc dirs, which may cause edit-permission friction.

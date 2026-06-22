@@ -1,0 +1,315 @@
+# Digest: 2026-06-20_agent-a6.jsonl
+
+- raw_source: claude-conversations/sessions/2026-06-20_agent-a6.jsonl
+- date: 2026-06-20
+- raw_bytes: 113661
+- user_turns: 25
+- assistant_turns: 33
+- tool_calls: 24
+- images: 0
+- top_tools: 13xWebFetch, 10xWebSearch, 1xToolSearch
+
+Citation format for analysis: (file: 2026-06-20_agent-a6.jsonl, date: 2026-06-20, turn: N).
+
+---
+### Turn 1 [user] (2026-06-20)
+You are researching the ROOT CAUSE of OAK-D-LITE (Luxonis, Movidius MyriadX) USB disconnects on a Raspberry Pi 4 running ROS 2 Humble + depthai_ros_driver.
+
+Use WebSearch and WebFetch (load them first via ToolSearch query "select:WebSearch,WebFetch"). Search Luxonis docs/forums, depthai-ros and depthai-core GitHub issues, RPi forums.
+
+Key context to investigate (a real device on a Pi4 cycles between USB product IDs 03e7:2485 (bootloader) and 03e7:f63b (booted firmware), disconnecting after anywhere from <1s to ~6min, on BOTH USB3 SuperSpeed and USB2 high-speed, and CRUCIALLY without the Pi latching any under-voltage flag (vcgencmd get_throttled stays 0x0) and without any USB over-current dmesg event):
+
+1. What ACTUALLY causes OAK-D / OAK-D-LITE random USB disconnects on Pi4? Distinguish: (a) Pi main-rail under-voltage, (b) per-USB-port current-limit/over-current trip, (c) OAK on-board 5V brownout that does NOT trip the Pi's under-voltage detector, (d) XLink watchdog/comm reset, (e) cable/connector quality, (f) MyriadX thermal. How do you tell them apart from logs?
+2. The 2485<->f63b cycle: what does each product ID mean, and what makes a booted f63b device fall BACK to 2485 bootloader (vs a clean disconnect)?
+3. The official/recommended power fix: Luxonis Y-adapter pinout, powered USB3 hub, separate 5V. Real-world reports of whether USB2-forcing alone fully fixes it (we have evidence it does NOT).
+4. Is "no under-voltage flag but still disconnecting" a known signature? What does it point to?
+
+Return a detailed markdown section with concrete, cited findings (include URLs). Be specific about how to DIAGNOSE which cause applies from on-device evidence.
+
+### Turn 2 [assistant] (2026-06-20)
+I'll research the root cause of OAK-D-LITE USB disconnects on a Pi 4. Let me load the web tools first.
+
+### Turn 3 [assistant] (2026-06-20)
+[tool_use: ToolSearch {"query": "select:WebSearch,WebFetch", "max_results": 5}]
+
+### Turn 4 [user] (2026-06-20)
+[tool_result: 0 chars] 
+
+### Turn 5 [assistant] (2026-06-20)
+Now let me run a fan-out of web searches to investigate the root cause.
+
+### Turn 6 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "OAK-D-LITE USB disconnect Raspberry Pi 4 random reboot depthai power"}]
+
+### Turn 7 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "depthai OAK-D 03e7:2485 03e7:f63b USB product ID bootloader booted firmware"}]
+
+### Turn 8 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "depthai X_LINK_DEVICE_NOT_FOUND watchdog reset USB disconnect reconnect"}]
+
+### Turn 9 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "Luxonis OAK power requirements Y-adapter powered USB hub brownout 5V current draw"}]
+
+### Turn 10 [user] (2026-06-20)
+[tool_result: 3083 chars] Web search results for query: "OAK-D-LITE USB disconnect Raspberry Pi 4 random reboot depthai power"
+
+Links: [{"title":"RPI 4 Crashing when connecting Oak D-Lite Camera to USB 3.0 - Raspberry Pi Forums","url":"https://fo
+...[clipped 2863 chars]
+
+### Turn 11 [user] (2026-06-20)
+[tool_result: 3138 chars] Web search results for query: "depthai X_LINK_DEVICE_NOT_FOUND watchdog reset USB disconnect reconnect"
+
+Links: [{"title":"Troubleshooting — DepthAI documentation | Luxonis","url":"https://docs.luxonis.com/en/latest/page
+...[clipped 2918 chars]
+
+### Turn 12 [user] (2026-06-20)
+[tool_result: 2664 chars] Web search results for query: "Luxonis OAK power requirements Y-adapter powered USB hub brownout 5V current draw"
+
+Links: [{"title":"Amazon.com: Luxonis Oak Y-Adapter : Electronics","url":"https://www.amazon.com/Luxonis-
+...[clipped 2444 chars]
+
+### Turn 13 [user] (2026-06-20)
+[tool_result: 2546 chars] Web search results for query: "depthai OAK-D 03e7:2485 03e7:f63b USB product ID bootloader booted firmware"
+
+Links: [{"title":"OAK USB Deployment Guide","url":"https://docs.luxonis.com/hardware/platform/deploy/usb-deploy
+...[clipped 2326 chars]
+
+### Turn 14 [assistant] (2026-06-20)
+Good initial results. Let me fetch the most relevant detailed sources and run more targeted searches.
+
+### Turn 15 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.luxonis.com/en/latest/pages/troubleshooting/", "prompt": "Extract everything about USB disconnects, power/brownout, XLink watchdog, X_LINK_DEVICE_NOT_FOUND, device dropping back to bootloader, USB2 
+...[clipped 143 chars]]
+
+### Turn 16 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://forums.raspberrypi.com/viewtopic.php?t=364587", "prompt": "Summarize the root cause discussion: why does the OAK-D-Lite crash/disconnect the Pi4 on USB3? What current does it draw? Does USB2 fully fix it
+...[clipped 160 chars]]
+
+### Turn 17 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "depthai OAK-D disconnects USB2 still happens not power supply cable XLink reset Pi4"}]
+
+### Turn 18 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "vcgencmd get_throttled 0x0 USB device disconnect no undervoltage 5V rail brownout Raspberry Pi"}]
+
+### Turn 19 [user] (2026-06-20)
+[tool_result: 949 chars] I cannot extract the requested information about USB disconnects, power/brownout issues, XLink watchdog, device errors, USB forcing, cable quality, or product IDs from the provided content.
+
+The webpage content shown is 
+...[clipped 729 chars]
+
+### Turn 20 [user] (2026-06-20)
+[tool_result: 1171 chars] # OAK-D-Lite USB3 Crash Analysis
+
+## Root Cause
+The issue stems from excessive current draw: "the Oak Camera draws more current than the RPI4." The Raspberry Pi 4B has a maximum export current limit of 1.2A, which the ca
+...[clipped 951 chars]
+
+### Turn 21 [user] (2026-06-20)
+[tool_result: 2856 chars] Web search results for query: "vcgencmd get_throttled 0x0 USB device disconnect no undervoltage 5V rail brownout Raspberry Pi"
+
+Links: [{"title":"Undervoltage and throtteling of Pi - Repetier-Server","url":"https://www.r
+...[clipped 2636 chars]
+
+### Turn 22 [user] (2026-06-20)
+[tool_result: 2798 chars] Web search results for query: "depthai OAK-D disconnects USB2 still happens not power supply cable XLink reset Pi4"
+
+Links: [{"title":"Troubleshooting — DepthAI documentation | Luxonis","url":"https://docs.luxonis.com/en
+...[clipped 2578 chars]
+
+### Turn 23 [assistant] (2026-06-20)
+The Luxonis troubleshooting page returned only nav chrome. Let me fetch the GitHub-hosted raw version and the key forum/issue threads that directly address the disconnect/brownout/bootloader-fallback mechanics.
+
+### Turn 24 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/luxonis/depthai-docs-website/blob/master/source/pages/troubleshooting.rst", "prompt": "Extract all content about: USB disconnects/reboots, power and brownout, current draw of OAK devices, XLin
+...[clipped 340 chars]]
+
+### Turn 25 [user] (2026-06-20)
+[tool_result: 215 chars] The server returned HTTP 404 Not Found.
+
+The response body was not retrieved. If this URL requires authentication, use an authenticated tool (e.g. `gh` for GitHub, or an MCP-provided fetch tool) instead of WebFetch.
+
+### Turn 26 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://discuss.luxonis.com/d/131-oak-d-regularly-disconnects-reboots", "prompt": "This is a forum thread about an OAK-D regularly disconnecting/rebooting. Extract the full diagnosis: what was the root cause, wa
+...[clipped 255 chars]]
+
+### Turn 27 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "OAK-D-LITE current draw amps 3.3W 5V regulator brownout MyriadX boot loop reboot"}]
+
+### Turn 28 [user] (2026-06-20)
+[tool_result: 582 chars] I cannot extract the requested diagnosis information because the web page content provided is incomplete. The page shows only a loading error message: "Something went wrong while trying to load the full version of this s
+...[clipped 362 chars]
+
+### Turn 29 [user] (2026-06-20)
+[tool_result: 2310 chars] Web search results for query: "OAK-D-LITE current draw amps 3.3W 5V regulator brownout MyriadX boot loop reboot"
+
+Links: [{"title":"OAK - Waveshare Wiki","url":"https://www.waveshare.com/wiki/OAK-D"},{"title":"OAK-D-Lite
+...[clipped 2090 chars]
+
+### Turn 30 [assistant] (2026-06-20)
+Let me get the GitHub issues that document the actual disconnect/bootloader-fallback behavior, plus the OAK USB Deployment Guide and the OAK-D-Lite datasheet for power numbers.
+
+### Turn 31 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/luxonis/depthai-ros/issues/560", "prompt": "Extract the full diagnosis of this \"Failed to find device after booting, X_LINK_DEVICE_NOT_FOUND\" issue. What hardware/host? Was it a Pi? What was
+...[clipped 127 chars]]
+
+### Turn 32 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.luxonis.com/hardware/platform/deploy/usb-deployment-guide", "prompt": "Extract everything about USB power requirements, current draw, brownout, forcing USB2 (maxUsbSpeed), cable length/quality, udev
+...[clipped 145 chars]]
+
+### Turn 33 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/iRobotEducation/create3_docs/discussions/543", "prompt": "This discusses a Pi5 power issue under heavy OAK-D-Lite USB load. Extract measured power draw (watts/amps) of the OAK-D-Lite running d
+...[clipped 161 chars]]
+
+### Turn 34 [user] (2026-06-20)
+[tool_result: 1265 chars] # Analysis of Issue #560: X_LINK_DEVICE_NOT_FOUND
+
+## Hardware/Host Configuration
+- **Device**: OAK-D-LR with Bootloader version 0.028
+- **Host OS**: Ubuntu 22.04
+- **ROS Version**: ROS2 Humble
+- **Driver Version**: dept
+...[clipped 1045 chars]
+
+### Turn 35 [user] (2026-06-20)
+[tool_result: 1153 chars] # Pi5 Power Issue Analysis: OAK-D-Lite USB Load
+
+## Measured Power Draw
+
+**OAK-D-Lite Camera Performance:**
+- At the camera device: "9.5W average with some 9.8W peaks"
+- At the Pi5 with camera active: "10.1W max"
+- Camer
+...[clipped 933 chars]
+
+### Turn 36 [user] (2026-06-20)
+[tool_result: 1856 chars] # OAK USB Power & Configuration Requirements
+
+## Power Specifications
+
+**Current Draw:**
+- USB3: up to 900mA maximum supply
+- USB2: up to 500mA maximum supply
+- OAK cameras: between 500mA-900mA depending on model/workloa
+...[clipped 1636 chars]
+
+### Turn 37 [assistant] (2026-06-20)
+Excellent — the create3 discussion is a goldmine (separate 5V supply fixed it, under-voltage detector did NOT trigger). Let me get a few more decisive sources: the depthai-core watchdog issue, a forum thread on USB2-still-disconnecting, the OAK-D-Lite datasheet power numbers, and RPi USB over-current/port-current-limit behavior.
+
+### Turn 38 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/luxonis/depthai-core/issues/291", "prompt": "Extract details on the XLink watchdog timing fragility leading to \"device not found\" and startup failures. How does the watchdog cause a booted d
+...[clipped 140 chars]]
+
+### Turn 39 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://media.distrelec.com/Web/Downloads/_t/ds/OAK-D_Lite-eng_tds.pdf", "prompt": "Extract the OAK-D-Lite power specifications: input voltage, typical and peak current/power draw, USB power, on-board regulators
+...[clipped 85 chars]]
+
+### Turn 40 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "Raspberry Pi 4 USB port current limit per port 1.2A total over-current dmesg \"over-current condition\" hub 1-1"}]
+
+### Turn 41 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "OAK-D depthai watchdog DEPTHAI_WATCHDOG device resets every few minutes USB reset to bootloader 2485"}]
+
+### Turn 42 [user] (2026-06-20)
+[tool_result: 1344 chars] # Analysis of XLink Watchdog Timing Issue #291
+
+Based on the provided GitHub issue content, I cannot find specific details about:
+
+- How the watchdog mechanism causes device reset/disconnection
+- Environment variables li
+...[clipped 1124 chars]
+
+### Turn 43 [user] (2026-06-20)
+[tool_result: 978 chars] # OAK-D-Lite Power Specifications
+
+I cannot extract the specific power specifications you requested from the provided content. While the document appears to be a PDF about the OAK-D-Lite (referenced in a link about the D
+...[clipped 758 chars]
+
+### Turn 44 [user] (2026-06-20)
+[tool_result: 2345 chars] Web search results for query: "Raspberry Pi 4 USB port current limit per port 1.2A total over-current dmesg "over-current condition" hub 1-1"
+
+Links: [{"title":"Pi4 - Max USB current - Raspberry Pi Forums","url":"https:/
+...[clipped 2125 chars]
+
+### Turn 45 [user] (2026-06-20)
+[tool_result: 2635 chars] Web search results for query: "OAK-D depthai watchdog DEPTHAI_WATCHDOG device resets every few minutes USB reset to bootloader 2485"
+
+Links: [{"title":"No USB device · Issue #50 · luxonis/oak-examples","url":"https://git
+...[clipped 2415 chars]
+
+### Turn 46 [assistant] (2026-06-20)
+I have strong coverage. Let me grab the OAK-D-Lite hardware doc page (for clean power numbers), the depthai-core watchdog-in-bootloader issue #794, and one RPi over-current thread to confirm what an over-current event looks like in dmesg.
+
+### Turn 47 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://docs.luxonis.com/projects/hardware/en/latest/pages/DM9095.html", "prompt": "Extract OAK-D-Lite power/electrical specs: input power, USB power, typical and peak power consumption (watts), current draw, on
+...[clipped 106 chars]]
+
+### Turn 48 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/luxonis/depthai-core/issues/794", "prompt": "Extract details: how does the bootloader watchdog cause a booted device to reset back into bootloader / disconnect? What is the watchdog timeout, w
+...[clipped 135 chars]]
+
+### Turn 49 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://forums.raspberrypi.com/viewtopic.php?t=326056", "prompt": "What does a USB over-current condition look like on a Pi4? Quote the exact dmesg / kernel log message format (e.g. \"over-current condition on .
+...[clipped 211 chars]]
+
+### Turn 50 [user] (2026-06-20)
+[tool_result: 737 chars] # OAK-D Lite Power Specifications
+
+I've reviewed the provided web page content, but it does **not contain detailed electrical specifications** for the OAK-D Lite. The page displays product listings and navigation menus b
+...[clipped 517 chars]
+
+### Turn 51 [user] (2026-06-20)
+[tool_result: 1234 chars] # Bootloader Watchdog Issue - Analysis
+
+Based on the GitHub issue provided, here's what's documented:
+
+## The Problem
+
+The watchdog monitoring mechanism exists in `DeviceBase.cpp` but **not** in `DeviceBootloader.cpp`. W
+...[clipped 1014 chars]
+
+### Turn 52 [user] (2026-06-20)
+[tool_result: 1267 chars] # USB Over-Current Condition on Raspberry Pi 4
+
+## Kernel Log Message Format
+
+The exact dmesg format for over-current conditions appears as:
+
+`"[timestamp] usb usb2-port#: over-current condition"`
+
+For example, from the 
+...[clipped 1047 chars]
+
+### Turn 53 [assistant] (2026-06-20)
+I have enough to write a thorough, well-cited section. Let me do two final targeted searches to nail down the f63b→2485 fallback mechanism (firmware crash vs. brownout vs. watchdog) and confirm the "no under-voltage flag but still disconnecting" signature points to the OAK's own 5V brownout.
+
+### Turn 54 [assistant] (2026-06-20)
+[tool_use: WebSearch {"query": "depthai OAK device \"reset\" reboot back to bootloader firmware crash watchdog vs power loss disconnect"}]
+
+### Turn 55 [assistant] (2026-06-20)
+[tool_use: WebFetch {"url": "https://github.com/luxonis/depthai-python/issues/800", "prompt": "Extract the diagnosis: consistent failures between reconnects on USB and PoE. What did Luxonis staff identify as the cause? Watchdog ping-miss, p
+...[clipped 119 chars]]
+
+### Turn 56 [user] (2026-06-20)
+[tool_result: 844 chars] Based on the provided content, **no diagnosis or explanation from Luxonis staff is present**. The issue description only contains the problem report from the user (@dizzyd), not any response or analysis from Luxonis deve
+...[clipped 624 chars]
+
+### Turn 57 [user] (2026-06-20)
+[tool_result: 2554 chars] Web search results for query: "depthai OAK device "reset" reboot back to bootloader firmware crash watchdog vs power loss disconnect"
+
+Links: [{"title":"`DeviceBootloader::flashUserBootloader()` fails yet it returns succ
+...[clipped 2334 chars]
+
+### Turn 58 [assistant] (2026-06-20)
+I now have enough corroborated, cited material to synthesize the findings. Here is the research section.
+
+---
+
+# OAK-D-LITE Random USB Disconnects on Raspberry Pi 4 — Root-Cause Analysis
+
+## TL;DR
+
+Your signature — a device cycling `03e7:2485 (bootloader/pre-boot) ↔ 03e7:f63b (booted firmware)`, disconnecting after anywhere from <1 s to ~6 min, on **both** USB3 and USB2, **with no Pi under-voltage flag** (`vcgencmd get_throttled` stays `0x0`) and **no over-current dmesg event** — is the classic fingerprint of cause **(c): an OAK on-board 5 V brownout that does not trip the Pi's under-voltage detector**, very likely compounded by **(d): the XLink watchdog** finishing the kill once the link glitches. It is **not** (a) main-rail under-voltage (the flag would latch), and **not** (b) a host-port over-current trip (dmesg would print `over-current condition`). USB2-forcing reduces but does **not** eliminate it, exactly as you've observed, because the brownout is on the OAK's own rail, not on the USB negotiated power class. The fix is to **inject power into the camera independently** of the Pi USB port (Y-adapter + 5 V supply, powered USB3 hub, or barrel-jack power).
+
+This matches the most directly comparable documented case: a TurtleBot/Create-3 user running depthai-ros depth on an SBC measured the OAK-D-Lite at **9.5 W avg / 9.8 W peaks**, saw the host crash **without** the under-voltage detector ever firing, and **fixed it completely by adding a separate 5.1 V 2 A supply** to the OAK adapter ([create3_docs #543](https://github.com/iRobotEducation/create3_docs/discussions/543)).
+
+...[clipped 17640 chars]

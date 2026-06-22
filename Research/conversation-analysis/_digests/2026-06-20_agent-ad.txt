@@ -1,0 +1,174 @@
+# Digest: 2026-06-20_agent-ad.jsonl
+
+- raw_source: claude-conversations/sessions/2026-06-20_agent-ad.jsonl
+- date: 2026-06-20
+- raw_bytes: 121723
+- user_turns: 12
+- assistant_turns: 14
+- tool_calls: 11
+- images: 0
+- top_tools: 8xRead, 3xBash
+
+Citation format for analysis: (file: 2026-06-20_agent-ad.jsonl, date: 2026-06-20, turn: N).
+
+---
+### Turn 1 [user] (2026-06-20)
+Read and report on ALL camera/depth/power/network DOCS in the repo at /home/ubuntu/cs7980-guide-mate. I need an accurate inventory of every current CLAIM about the camera so I can reconcile it against live hardware evidence.
+
+Files (use Read/Glob/Grep):
+- docs/camera.md
+- docs/mapping/README.md, docs/mapping/depth-perception.md
+- docs/power.md (and any docs/power/*)
+- docs/network/* (two-computer offload architecture relevant to moving camera load off the Pi)
+- docs/README.md, docs/aws-iot/* (only if they mention camera/streaming)
+- CLAUDE.md (the camera/depth/power gotchas sections)
+
+Extract every concrete claim about: USB power root cause, the "USB2 is stable" assertion, frame-rate/bandwidth numbers, the pending Y-adapter fix, X_LINK stall handling, resolution/camera_info mismatch, and any recovery procedure documented.
+
+Return markdown: a table of (claim | source file:line | confidence as stated). Flag any claims that are presented as settled but could be contradicted by evidence that USB2 also disconnects and that under-voltage is NOT always flagged.
+
+### Turn 2 [assistant] (2026-06-20)
+I'll inventory all camera/depth/power/network docs. Let me start by finding all the relevant files.
+
+### Turn 3 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "find docs -type f \\( -name \"*.md\" \\) | sort && echo \"---GIT-STATUS---\" && git log --oneline -5", "description": "List all doc files and recent commits"}]
+
+### Turn 4 [user] (2026-06-20)
+[tool_result: 748 chars] docs/README.md
+docs/aws-iot/README.md
+docs/aws-iot/iot-core-overview.md
+docs/aws-iot/secure-tunneling.md
+docs/aws-iot/service-integration.md
+docs/camera.md
+docs/mapping/README.md
+docs/mapping/depth-perception.md
+docs/map
+...[clipped 528 chars]
+
+### Turn 5 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/camera.md"}]
+
+### Turn 6 [user] (2026-06-20)
+[tool_result: 10245 chars] 1	# OAK-D-LITE Camera
+2	
+3	This documents the robot's depth/RGB camera (Luxonis **OAK-D-LITE**).
+4	
+5	## Quick facts
+6	- The OAK-D-LITE provides **both** the RGB "webcam" and the stereo **depth** camera —
+7	  there is no
+...[clipped 10025 chars]
+
+### Turn 7 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/power.md"}]
+
+### Turn 8 [user] (2026-06-20)
+[tool_result: 9334 chars] 1	# Power & Battery
+2	
+3	Robot 468 is battery-powered (the iRobot Create 3 base battery feeds both the Create 3 *and* the Raspberry Pi 4 over the USB-C link). The full perception/SLAM stack runs **continuously regardless
+...[clipped 9114 chars]
+
+### Turn 9 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/README.md"}]
+
+### Turn 10 [user] (2026-06-20)
+[tool_result: 3537 chars] 1	# cs7980 Guide-Mate — Documentation
+2	
+3	Working documentation for the cs7980 TurtleBot 4 project.
+4	
+5	## Index
+6	
+7	### Network
+8	- [Network overview](network/README.md) — how the robots are connected, addressing, di
+...[clipped 3317 chars]
+
+### Turn 11 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/mapping/README.md"}]
+
+### Turn 12 [user] (2026-06-20)
+[tool_result: 10575 chars] 1	# Autonomous mapping — overview
+2	
+3	How robot **468** maps an indoor space on its own, and how we handle obstacles the 2D
+4	lidar can't see (glass). Code lives in [`src/guide_mate_explorer`](../../src/guide_mate_explo
+...[clipped 10355 chars]
+
+### Turn 13 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/mapping/depth-perception.md"}]
+
+### Turn 14 [user] (2026-06-20)
+[tool_result: 16055 chars] 1	# Depth camera for mapping — glass detection, FOV, pipeline, plan
+2	
+3	How we use the **OAK-D-LITE depth camera** to see what the 2D lidar can't (glass doors,
+4	low objects, overhangs), and turn it into obstacles for m
+...[clipped 15835 chars]
+
+### Turn 15 [assistant] (2026-06-20)
+Now let me read the network docs and check the AWS IoT docs for camera/streaming mentions, plus the CLAUDE.md gotchas (already provided but let me grep for exact line numbers).
+
+### Turn 16 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/network/README.md"}]
+
+### Turn 17 [user] (2026-06-20)
+[tool_result: 3668 chars] 1	# Network Overview
+2	
+3	This section documents the network setup for the cs7980 TurtleBot 4 robots.
+4	
+5	## Documents
+6	- [Connecting a TurtleBot 4 to NUwave](nuwave-connection.md)
+7	- [ROS 2 over NUwave — what works a
+...[clipped 3448 chars]
+
+### Turn 18 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/network/ros2-over-nuwave.md"}]
+
+### Turn 19 [assistant] (2026-06-20)
+[tool_use: Read {"file_path": "/home/ubuntu/cs7980-guide-mate/docs/network/nuwave-connection.md"}]
+
+### Turn 20 [user] (2026-06-20)
+[tool_result: 5955 chars] 1	# Connecting a TurtleBot 4 (Raspberry Pi) to NUwave
+2	
+3	How we got the TurtleBot 4's Raspberry Pi onto Northeastern's **NUwave** (WPA2-Enterprise, PEAP/MSCHAPv2) network — including the non-obvious blocker that cost u
+...[clipped 5735 chars]
+
+### Turn 21 [user] (2026-06-20)
+[tool_result: 8028 chars] 1	# ROS 2 over NUwave — What Works and What Doesn't
+2	
+3	Compatibility findings for running ROS 2 (Humble, FastDDS) between a **lab laptop** and a **TurtleBot 4** when both are on **NUwave**. Verified June 2026 with `tur
+...[clipped 7808 chars]
+
+### Turn 22 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "grep -rinE \"camera|depth|oak|stream|usb|x_link|xlink|video|fps|bandwidth\" docs/aws-iot/ docs/network/ 2>/dev/null", "description": "Grep camera/streaming mentions in aws-iot and network docs"}]
+
+### Turn 23 [user] (2026-06-20)
+[tool_result: 2305 chars] docs/aws-iot/README.md:41:| Stream battery/status telemetry to a dashboard or alert | **Rules Engine → SNS / DynamoDB / Timestream** |
+docs/network/nuwave-connection.md:99:1. Plug a **monitor + USB keyboard** into the Pi
+...[clipped 2085 chars]
+
+### Turn 24 [assistant] (2026-06-20)
+[tool_use: Bash {"command": "grep -nE \"USB|usb|OAK|oak|camera|depth|X_LINK|XLink|X_Link|stall|usb_speed|USB2|USB3|usb2|usb3|f63b|2485|power|Y-adapter|Y adapter|under-volt|throttl|600 mA|900 mA|500 mA|fps|resolution|camera_info|1280|640
+...[clipped 95 chars]]
+
+### Turn 25 [user] (2026-06-20)
+[tool_result: 8678 chars] 18:├── docs/                  # working docs (aws-iot/, camera.md, mapping/, network/, power.md)
+20:│   ├── guide_mate_explorer/    # Python pkg: bfs_explorer, glass_guard, depth_lidar_fusion, combined runner
+21:│   └── 
+...[clipped 8458 chars]
+
+### Turn 26 [assistant] (2026-06-20)
+I have all the source material. I have everything needed to build the inventory. Below is the complete claim inventory.
+
+# Camera/Depth/Power Claim Inventory — cs7980-guide-mate
+
+Reconciliation target: live hardware evidence that (a) USB2 also disconnects, and (b) under-voltage is NOT always flagged. The two flagged claims at the bottom are the ones most exposed to that evidence.
+
+## A. USB power root cause
+
+| Claim | Source file:line | Confidence as stated |
+|---|---|---|
+| USB3 boot/disconnect loop root cause is **power, not the cable or the camera** | `docs/camera.md:15-18`, `:26-29`, `:100`, `:118`, `:136` | Settled ("✅ Root cause: power starvation"); "POWER" in heading |
+| Diagnosis is power because `vcgencmd get_throttled` = `0x50000` → under-voltage **has occurred** (`0x10000`) + throttling (`0x40000`) | `docs/camera.md:122`, `:201-202` | Stated as hard evidence |
+| Pi 4 caps USB at **~600 mA shared** across all ports (`max_usb_current` not set) | `docs/camera.md:123`, `:178-179` | Stated as fact |
+| OAK `bMaxPower` = 500 mA (USB2), up to 900 mA on USB3; peak spin-up draw **exceeds** the Pi budget | `docs/camera.md:124` | Stated as fact |
+| Link **reaches SuperSpeed every cycle** before dropping → cable data lanes are fine | `docs/camera.md:125`, `:134` | Stated as proof cable is OK |
+| Streams are **flawless on USB2** → camera itself is healthy | `docs/camera.md:126`, `:133` | Stated as proof |
+| Failure chain: USB3 → current spike → exceeds ~600 mA → 5 V rail browns out (under-voltage flag) → SuperSpeed collapses → re-enumerate → loop (22 cycles observed) | `docs/c
+...[clipped 11254 chars]
