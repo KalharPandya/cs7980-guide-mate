@@ -1,0 +1,29 @@
+#!/bin/sh
+# Pre-commit secret gate for the claude-conversations archive.
+#
+# Blocks any commit if known credentials/secrets are detected in the slimmed
+# transcript output. Install with:
+#     git config core.hooksPath scripts/git-hooks
+# (or copy this file to .git/hooks/pre-commit and chmod +x it).
+
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SCRIPT="$REPO_ROOT/scripts/collect_claude_conversations.py"
+
+if [ ! -f "$SCRIPT" ]; then
+    exit 0
+fi
+
+# Pick an available Python.
+PY=python
+command -v python >/dev/null 2>&1 || PY=python3
+
+echo "pre-commit: scanning claude-conversations for secrets..."
+if ! "$PY" "$SCRIPT" --verify-only; then
+    echo ""
+    echo "COMMIT BLOCKED: secrets detected in claude-conversations/sessions/." >&2
+    echo "Re-run: python scripts/collect_claude_conversations.py   (re-redacts)," >&2
+    echo "or fix the source before committing." >&2
+    exit 1
+fi
