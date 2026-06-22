@@ -1,0 +1,55 @@
+diff --git a/mdtopdf.go b/mdtopdf.go
+index 3da4f87..0a28600 100644
+--- a/mdtopdf.go
++++ b/mdtopdf.go
+@@ -28,6 +28,7 @@ import (
+ 	"log"
+ 	"os"
+ 
++	"strconv"
+ 	"strings"
+ 
+ 	"codeberg.org/go-pdf/fpdf"
+@@ -345,6 +346,22 @@ type PdfRendererParams struct {
+ 	CustomThemeFile                                               string
+ }
+ 
++// parseCustomPaperSize parses a "WxH" papersize string (in renderer units,
++// e.g. "595.28x60000") into width and height. Returns ok=false if the string
++// is not in that form, so callers fall back to named sizes (A4, Letter, ...).
++func parseCustomPaperSize(s string) (float64, float64, bool) {
++	parts := strings.SplitN(strings.ToLower(strings.TrimSpace(s)), "x", 2)
++	if len(parts) != 2 {
++		return 0, 0, false
++	}
++	w, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
++	h, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
++	if err1 != nil || err2 != nil || w <= 0 || h <= 0 {
++		return 0, 0, false
++	}
++	return w, h, true
++}
++
+ // NewPdfRenderer creates and configures an PdfRenderer object,
+ // which satisfies the Renderer interface.
+ func NewPdfRenderer(params PdfRendererParams) *PdfRenderer {
+@@ -371,7 +388,18 @@ func NewPdfRenderer(params PdfRendererParams) *PdfRenderer {
+ 
+ 	r.Theme = params.Theme
+ 
+-	r.Pdf = fpdf.New(r.orientation, r.units, r.papersize, r.fontdir)
++	if wd, ht, ok := parseCustomPaperSize(r.papersize); ok {
++		// Custom "WxH" paper size (in renderer units), enabling a single
++		// continuous page. Not part of upstream; added for md2pdf-continuous.
++		r.Pdf = fpdf.NewCustom(&fpdf.InitType{
++			OrientationStr: r.orientation,
++			UnitStr:        r.units,
++			Size:           fpdf.SizeType{Wd: wd, Ht: ht},
++			FontDirStr:     r.fontdir,
++		})
++	} else {
++		r.Pdf = fpdf.New(r.orientation, r.units, r.papersize, r.fontdir)
++	}
+ 
+ 	r.Pdf.SetHeaderFunc(func() {
+ 		r.SetPageBackground("", r.BackgroundColor)
