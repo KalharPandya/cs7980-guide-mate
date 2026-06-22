@@ -1,3 +1,9 @@
 # Keep shell hooks LF so they run on every platform.
 scripts/git-hooks/pre-commit text eol=lf
 *.sh text eol=lf
+
+# Keep patches and Go sources LF so `git apply` works cross-platform.
+*.patch text eol=lf
+*.go text eol=lf
+# PDFs are binary.
+*.pdf binary
