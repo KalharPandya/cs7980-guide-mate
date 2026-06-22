@@ -1,0 +1,18 @@
+{
+  "Normal":     { "Font": "Arial",   "Style": "",   "Size": 11,   "Spacing": 3, "TextColor": { "Red": 33,  "Green": 37,  "Blue": 41  }, "FillColor": { "Red": 255, "Green": 255, "Blue": 255 } },
+  "Link":       { "Font": "Arial",   "Style": "u",  "Size": 11,   "Spacing": 3, "TextColor": { "Red": 13,  "Green": 102, "Blue": 208 }, "FillColor": { "Red": 255, "Green": 255, "Blue": 255 } },
+  "Backtick":   { "Font": "Courier", "Style": "",   "Size": 10.5, "Spacing": 3, "TextColor": { "Red": 171, "Green": 35,  "Blue": 71  }, "FillColor": { "Red": 244, "Green": 244, "Blue": 246 } },
+  "Blockquote": { "Font": "Arial",   "Style": "i",  "Size": 11,   "Spacing": 3, "TextColor": { "Red": 90,  "Green": 98,  "Blue": 104 }, "FillColor": { "Red": 247, "Green": 248, "Blue": 250 } },
+  "IndentValue": 0,
+  "H1":         { "Font": "Arial",   "Style": "b",  "Size": 23,   "Spacing": 6, "TextColor": { "Red": 11,  "Green": 45,  "Blue": 94  }, "FillColor": { "Red": 255, "Green": 255, "Blue": 255 } },
+  "H2":         { "Font": "Arial",   "Style": "b",  "Size": 16,   "Spacing": 5, "TextColor": { "Red": 11,  "Green": 61,  "Blue": 114 }, "FillColor": { "Red": 255, "Green": 255, "Blue": 255 } },
+  "H3":         { "Font": "Arial",   "Style": "b",  "Size": 13,   "Spacing": 4, "TextColor": { "Red": 21,  "Green": 95,  "Blue": 160 }, "FillColor": { "Red": 255, "Green": 255, "Blue": 255 } },
+  "H4":         { "Font": "Arial",   "Style": "b",  "Size": 11.5, "Spacing": 3, "TextColor": { "Red": 21,  "Green": 95,  "Blue": 160 }, "FillColor": { "Red": 255, "Green": 255, "Blue": 255 } },
+  "H5":         { "Font": "Arial",   "Style": "b",  "Size": 11,   "Spacing": 3, "TextColor": { "Red": 60,  "Green": 66,  "Blue": 72  }, "FillColor": { "Red": 255, "Green": 255, "Blue": 255 } },
+  "H6":         { "Font": "Arial",   "Style": "bi", "Size": 10.5, "Spacing": 3, "TextColor": { "Red": 90,  "Green": 98,  "Blue": 104 }, "FillColor": { "Red": 255, "Green": 255, "Blue": 255 } },
+  "THeader":    { "Font": "Arial",   "Style": "b",  "Size": 10.5, "Spacing": 3, "TextColor": { "Red": 255, "Green": 255, "Blue": 255 }, "FillColor": { "Red": 11,  "Green": 61,  "Blue": 114 } },
+  "TBody":      { "Font": "Arial",   "Style": "",   "Size": 10.5, "Spacing": 3, "TextColor": { "Red": 33,  "Green": 37,  "Blue": 41  }, "FillColor": { "Red": 255, "Green": 255, "Blue": 255 } },
+  "Code":       { "Font": "Courier", "Style": "",   "Size": 10,   "Spacing": 3, "TextColor": { "Red": 33,  "Green": 37,  "Blue": 41  }, "FillColor": { "Red": 245, "Green": 246, "Blue": 248 } },
+  "Theme": 3,
+  "BackgroundColor": { "Red": 255, "Green": 255, "Blue": 255 }
+}

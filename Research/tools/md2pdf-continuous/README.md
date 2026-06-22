@@ -32,6 +32,18 @@ in two passes:
 The result is a correct MediaBox (every viewer shows the right size) with no
 cropping tricks.
 
+## Clickable links and styling (not bland)
+
+- **Clickable links.** The wrapper sets `pf.Extensions` to include
+  `parser.Autolink`, so bare URLs become link nodes; md2pdf's `writeLink` emits
+  real gofpdf link annotations, so every URL in the output is clickable.
+- **Custom theme.** `theme-academic.json` gives a clean, non-bland look: a navy
+  heading hierarchy, blue underlined links, a blue table header with white text,
+  shaded inline code, and a softer body color with roomier line spacing.
+  `render.sh` applies it by default; override with `THEME_FILE=/path/to.json` or
+  the `-theme-file` flag, or pass an empty value to fall back to the built-in
+  light theme.
+
 ## Usage
 
 ```bash

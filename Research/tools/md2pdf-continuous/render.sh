@@ -47,4 +47,5 @@ require github.com/solworktech/md2pdf/v2 v2.0.0
 replace github.com/solworktech/md2pdf/v2 => $SRC
 EOF
 
-( cd "$BUILD" && go mod tidy >/dev/null 2>&1 && go run . -i "$IN" -o "$OUT" -w "$WIDTH" -bottom "$BOTTOM" )
+THEME="${THEME_FILE:-$HERE/theme-academic.json}"
+( cd "$BUILD" && go mod tidy >/dev/null 2>&1 && go run . -i "$IN" -o "$OUT" -w "$WIDTH" -bottom "$BOTTOM" -theme-file "$THEME" )
