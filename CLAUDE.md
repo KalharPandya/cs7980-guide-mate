@@ -122,6 +122,7 @@ top of this workspace. Work happens on branch **`kalhar/dog-agent-poc`**.
    verified access/permissions/credentials + AWS resource inventory (IoT policy, shadow,
    KB ids). Trust it over older notes.
 3. [docs/superpowers/specs/2026-07-05-dog-agent-architecture-design.md](docs/superpowers/specs/2026-07-05-dog-agent-architecture-design.md) — the approved design spec.
+4. [docs/superpowers/specs/2026-07-05-dog-agent-implementation-design.md](docs/superpowers/specs/2026-07-05-dog-agent-implementation-design.md) — the approved implementation design (build phases, access-point map, component inventory, no-motion test strategy).
 - New machine/session onboarding: [docs/agent-poc/linux-agent-warmup.md](docs/agent-poc/linux-agent-warmup.md)
   (credential-file paths + a ready-to-paste warm-up prompt).
 - ⚠️ Robot 468 is docked and unobserved: **NO MOTION** without a human observer. Motion is
