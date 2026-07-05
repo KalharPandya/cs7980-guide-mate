@@ -21,3 +21,6 @@ __pycache__/
 connect_device_package.zip
 /aws-iot-device-sdk-python-v2/
 start.sh
+
+# agent SSH keys - never commit
+ssh_keys/

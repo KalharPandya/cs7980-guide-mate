@@ -111,6 +111,18 @@ ros2 launch guide_mate_explorer autonomous_mapping.launch.py namespace:=turtlebo
 ros2 launch guide_mate_explorer combined.launch.py namespace:=turtlebot468
 ```
 
+## ACTIVE: dog agent POC (2026-07-05 →)
+An LLM "robot dog" agent (Bedrock Sonnet 4.6 + FastAPI + AWS IoT Core) is being built on
+top of this workspace. **Start here if you're joining this effort:**
+- [docs/agent-poc/HANDOFF-2026-07-05.md](docs/agent-poc/HANDOFF-2026-07-05.md) — full
+  context handoff: mission, all architecture decisions, SSH/AWS access ground truth,
+  safety rules, state of work.
+- [docs/superpowers/specs/2026-07-05-dog-agent-architecture-design.md](docs/superpowers/specs/2026-07-05-dog-agent-architecture-design.md) — the approved design spec.
+- `docs/agent-poc/access-ground-truth.md` — verified access/permissions probe results
+  (created once the probe completes; trust it over older notes).
+- ⚠️ Robot 468 is docked and unobserved: **NO MOTION** without a human observer. Motion is
+  default-deny by design (Device Shadow + dock guard + dry-run; see the spec).
+
 ## Status / roadmap
 - **Done:** BFS explorer; glass_guard + bump costmap layer; OAK-D-LITE depth brought up on USB2 and **validated to detect the glass metal base** (~0.32 m, floor rejected); depth → costmap pipeline; `depth_lidar_fusion` node built, offline-validated, and **HARDWARE-VALIDATED on robot 468 facing the glass wall** (depth saw the base on 205 beams 0.37–1.63 m where the lidar was blind/saw through; fusion injected 195 beams, raised 0); **`scan_fused` now wired into both SLAM (`slam_fused.yaml`) and Nav2 (`nav2_glass.yaml`) as the single fused obstacle source**; SLAM verified running (6.8 Hz lidar, map + map→odom); C++ port of the fusion node (`guide_mate_perception`, ~10x cheaper) and the combined `guide_mate_bringup` runner built; migrated into this repo as a colcon workspace.
 - **Next (on robot):** run the **SLAM-map localization sanity check** (map stays crisp, no double-walls) now that SLAM consumes `scan_fused`, then a full autonomous mapping run.
