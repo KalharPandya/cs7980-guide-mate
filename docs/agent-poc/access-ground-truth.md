@@ -8,9 +8,11 @@ supersedes older access notes.** Companion: [HANDOFF-2026-07-05.md](HANDOFF-2026
 ## TL;DR
 Everything needed to build the dog agent POC **works today**: SSH + passwordless sudo to the
 Pi, headless on-Pi Claude Code, AWS admin-level permissions from both machines, and a
-**verified Bedrock `converse` round-trip on `us.anthropic.claude-sonnet-4-6`**. The three
-blockers to plan around: **AWS credentials expire same-day** (interactive re-login only),
-the **IoT policy only allows `sdk/test/*`** (must be widened before any robot MQTT), and
+**verified Bedrock `converse` round-trip on `us.anthropic.claude-sonnet-4-6`**.
+**UPDATE 2026-07-05 (later):** the AWS-credential-expiry blocker is **SOLVED** — both the
+Pi and the laptop now run permanently as IAM role **`guidemate-agent-role`**
+(AdministratorAccess) via X.509-cert exchange; see [Permanent AWS credentials](#permanent-aws-credentials-solved-2026-07-05). Remaining blockers: the **IoT policy
+only allows `sdk/test/*`** for MQTT data (must be widened before any robot MQTT), and
 **battery/dock state is not remotely verifiable** (physical dock-LED check only).
 
 ## Access matrix (all verified)
@@ -20,7 +22,7 @@ the **IoT policy only allows `sdk/test/*`** (must be widened before any robot MQ
 | Pi | internet (github.com) | wlan0 | ✅ HTTP 200 |
 | Pi | Create 3 base | usb0 → `192.168.186.2` webserver (fw H.2.6) | ✅ |
 | any | on-Pi Claude Code v2.1.201 | `ssh … 'cd ~/cs7980-guide-mate && claude -p "…"'` | ✅ returned `READY`; `--output-format json` parses (`result`, `is_error`, `total_cost_usd`, `usage`…) |
-| laptop + Pi | AWS account `852373397000`, us-west-2 | same SSO role `…IsbUsersPS/pandya.kal` on both | ✅ but **expiring** (below) |
+| laptop + Pi | AWS account `852373397000`, us-west-2 | IAM role `guidemate-agent-role` via X.509 `credential_process` (permanent, 12 h auto-refresh) | ✅ |
 | laptop | Bedrock Sonnet 4.6 | `bedrock-runtime converse`, model id `us.anthropic.claude-sonnet-4-6` | ✅ live reply, 13 tokens, ~1.9 s |
 
 ## Robot 468 system state (probe snapshot)
@@ -53,20 +55,48 @@ the **IoT policy only allows `sdk/test/*`** (must be widened before any robot MQ
 - MCP: `aws-mcp` **Connected** (`uvx mcp-proxy-for-aws==1.6.3`, AWS_REGION=us-west-2) — it
   inherits the same expiring AWS creds as the CLI.
 
-## AWS identity & permissions
-- **Both machines use the identical SSO role** `AWSReservedSSO_myisb_IsbUsersPS/pandya.kal`,
-  account `852373397000`, us-west-2, via the `aws login` browser flow (no `~/.aws/credentials`;
-  token caches only).
-- Effective permissions: **AdministratorAccess + AmazonBedrockFullAccess** (verified via
-  `iam list-attached-role-policies`). No IAM blockers for anything in the design.
-- **Expiry is the #1 operational risk:** laptop session expires **2026-07-05T22:38 UTC
-  (same day)**; Pi id-tokens are 15-min-lived with auto-refresh from a cached refresh token
-  whose total session lifetime is policy-bound (hours-scale, unverifiable from the Pi).
-  Renewal is **interactive only** (`aws login`; no `sso-session` block → headless renewal
-  not configured). Every AWS call — IoT publishes, Bedrock, aws-mcp — fails on lapse.
-  → **Human action before any unattended window: re-run `aws login` on both machines**, or
-  better: provision a long-lived least-privilege robot credential (the robot's IoT data
-  path can use its X.509 cert, which bypasses SigV4 entirely).
+## Permanent AWS credentials (SOLVED 2026-07-05)
+The SSO-expiry problem is fixed. The sandbox SCP **denies `iam:CreateUser`** (no long-lived
+access keys possible) but **allows roles**, so the setup uses the **AWS IoT credentials
+provider**: an X.509 cert is exchanged over TLS for 12-hour role credentials, auto-refreshed
+by the CLI/SDK via `credential_process` — permanent, zero human renewal.
+
+**Cloud resources (all created 2026-07-05, us-west-2):**
+- IAM role `guidemate-agent-role` — **AdministratorAccess** (deliberate; sandbox account),
+  max session 12 h, trusts `credentials.iot.amazonaws.com` + `ec2.amazonaws.com`.
+- Instance profile `guidemate-agent-profile` (ready for the future EC2 deployment —
+  instances get the same role with zero credential setup).
+- IoT role alias `guidemate-agent-alias` → the role, 43200 s credential duration.
+- IoT policy `guidemate-credentials-policy` (`iot:AssumeRoleWithCertificate` on the alias),
+  attached to **two certs**: the robot's `Turtlebot-468` cert and a new dev-agent cert
+  (`aec82bf4…`).
+
+**Per machine (verified working — `sts get-caller-identity` returns
+`assumed-role/guidemate-agent-role/…` and a live Bedrock converse succeeded):**
+- **Pi:** `~/.aws/iot-credential-process.sh` (curl + robot cert) wired into `~/.aws/config`
+  `[default]`. Old config backed up at `~/.aws/config.bak-2026-07-05`. `aws-mcp` inherits it.
+- **Laptop (Windows):** `C:/Users/kalha/.aws/iot-credential-process.py` (pure-Python
+  urllib/ssl — Windows curl builds can't load PEM client certs) + dev cert/key at
+  `~/.aws/guidemate-dev.{cert.pem,private.key}` (key mode 600, **never in the repo**).
+  `[default]` uses it; the old SSO login remains available as `--profile kalhar-sso`.
+- **Any new machine (e.g. the Linux box):** two options —
+  a) copy `~/.aws/guidemate-dev.cert.pem` + `.private.key` + the Python script out-of-band
+  and add the same 3-line `[default]`; or b) mint its own cert while any valid creds exist:
+  `aws iot create-keys-and-certificate --set-as-active`, then
+  `aws iot attach-policy --policy-name guidemate-credentials-policy --target <new cert ARN>`.
+  Credentials-provider endpoint (account-specific):
+  `aws iot describe-endpoint --endpoint-type iot:CredentialProvider`.
+
+Note: `guidemate-agent-role` has **admin** on a shared sandbox — Kalhar explicitly accepted
+this. Revoke path if ever needed: detach `guidemate-credentials-policy` from a cert, or
+deactivate the cert (`aws iot update-certificate --new-status INACTIVE`).
+
+## AWS identity & permissions (as probed earlier, pre-fix)
+- Both machines previously used the SSO role `AWSReservedSSO_myisb_IsbUsersPS/pandya.kal`,
+  account `852373397000`, us-west-2 (`aws login` browser flow) — **now superseded by
+  `guidemate-agent-role` above**; the SSO profile still exists for human use.
+- Effective permissions: **AdministratorAccess** (+ Bedrock full). No IAM blockers for
+  anything in the design. SCP blocks `iam:CreateUser` (discovered 2026-07-05).
 - ⚠️ **Shared sandbox account** (Control Tower + another tenant's resources visible:
   `teamgram-*` bucket/tables/logs). Full-admin blast radius; sandbox may be recycled —
   keep all source docs in the repo, treat cloud resources as rebuildable.
@@ -89,10 +119,12 @@ the **IoT policy only allows `sdk/test/*`** (must be widened before any robot MQ
 | `ssh_keys/` was not gitignored on the laptop | **FIXED** 2026-07-05 (gitignored; never committed) |
 | `Turtlebot-468.private.key` on Pi was world-readable (644) | **FIXED** 2026-07-05 → `600` |
 | **GitHub PAT (`ghp_…`) embedded in the Pi's git remote URL** | **OPEN** — anyone with Pi/SD-card access gets repo write access. Recommend: rotate the PAT and switch the Pi remote to a fine-grained deploy token or SSH deploy key. Left untouched (the Pi needs pull access for multi-session work; changing it is a user decision). |
-| Robot acts as the human's personal admin SSO role | OPEN — consider a least-privilege robot principal before long unattended runs. |
+| Robot acts as the human's personal admin SSO role | **RESOLVED 2026-07-05** — robot + dev machines now act as the dedicated `guidemate-agent-role`. It carries AdministratorAccess by Kalhar's explicit choice (sandbox account); agent actions are now attributable (session name = cert id), and revocation is one `update-certificate` call. |
 
 ## Consolidated 24-hour risks (ranked)
-1. **AWS credential expiry, same day, interactive-only renewal** (both machines; breaks IoT/Bedrock/aws-mcp). Human: `aws login` before the window.
+1. ~~AWS credential expiry~~ **RESOLVED** — permanent cert-based `guidemate-agent-role`
+   on both machines (see above). Residual: the exchange needs the cert files + network to
+   the credentials endpoint; if a cert is deactivated, everything stops.
 2. **IoT policy too narrow** for the design's topics/shadow — required setup before any robot MQTT.
 3. **Battery/dock unverifiable remotely** — physical glance needed; the bridge node will fix this permanently.
 4. On-Pi Claude runs on a subscription with usage caps — sparse `claude -p` calls, backoff on errors.
