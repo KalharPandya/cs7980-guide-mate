@@ -113,13 +113,17 @@ ros2 launch guide_mate_explorer combined.launch.py namespace:=turtlebot468
 
 ## ACTIVE: dog agent POC (2026-07-05 →)
 An LLM "robot dog" agent (Bedrock Sonnet 4.6 + FastAPI + AWS IoT Core) is being built on
-top of this workspace. **Start here if you're joining this effort:**
-- [docs/agent-poc/HANDOFF-2026-07-05.md](docs/agent-poc/HANDOFF-2026-07-05.md) — full
-  context handoff: mission, all architecture decisions, SSH/AWS access ground truth,
-  safety rules, state of work.
-- [docs/superpowers/specs/2026-07-05-dog-agent-architecture-design.md](docs/superpowers/specs/2026-07-05-dog-agent-architecture-design.md) — the approved design spec.
-- `docs/agent-poc/access-ground-truth.md` — verified access/permissions probe results
-  (created once the probe completes; trust it over older notes).
+top of this workspace. Work happens on branch **`kalhar/dog-agent-poc`**.
+**Start here if you're joining this effort — read in this order:**
+1. [docs/agent-poc/HANDOFF-2026-07-05.md](docs/agent-poc/HANDOFF-2026-07-05.md) — full
+   context handoff: mission, all architecture decisions, access summary, safety rules,
+   state of work.
+2. [docs/agent-poc/access-ground-truth.md](docs/agent-poc/access-ground-truth.md) —
+   verified access/permissions/credentials + AWS resource inventory (IoT policy, shadow,
+   KB ids). Trust it over older notes.
+3. [docs/superpowers/specs/2026-07-05-dog-agent-architecture-design.md](docs/superpowers/specs/2026-07-05-dog-agent-architecture-design.md) — the approved design spec.
+- New machine/session onboarding: [docs/agent-poc/linux-agent-warmup.md](docs/agent-poc/linux-agent-warmup.md)
+  (credential-file paths + a ready-to-paste warm-up prompt).
 - ⚠️ Robot 468 is docked and unobserved: **NO MOTION** without a human observer. Motion is
   default-deny by design (Device Shadow + dock guard + dry-run; see the spec).
 
