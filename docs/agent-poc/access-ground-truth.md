@@ -132,9 +132,29 @@ deactivate the cert (`aws iot update-certificate --new-status INACTIVE`).
 6. Pi headroom: joy/teleop/diagnostics back (≈25% CPU), no swap, soft-temp flag tripped once — matters only when the full mapping stack runs; kill by PID (never `pkill -f`) per gotcha #6.
 7. Pi repo staleness — was 4 commits behind; **pulled to `036356c` during this probe**. Sessions should `git pull` at start.
 
-## Required setup steps before implementation (all resource-creating, not yet done)
-1. Extend `Turtlebot-468-Policy`: Connect for the bridge client id; pub/sub on
-   `guidemate/turtlebot468/*` + `$aws/things/Turtlebot-468/shadow/*` (least-privilege).
-2. Initialize the Device Shadow with `desired.motion_enabled=false` (default-deny from birth).
-3. Create the project S3 bucket + Bedrock KB (S3 Vectors) + data source; wire ingestion.
-4. Pin the agent service to `us.anthropic.claude-sonnet-4-6`.
+## Required setup steps — ALL DONE 2026-07-05
+1. ✅ IoT MQTT access: new additive policy **`guidemate-robot-policy`** attached to the
+   robot cert — `iot:Connect` for client ids `guidemate-*`; Publish/Receive/Subscribe on
+   `guidemate/turtlebot468/*` and `$aws/things/Turtlebot-468/shadow/*`. (The old
+   quick-start `Turtlebot-468-Policy` was left untouched.) **Bridge client ids must start
+   with `guidemate-`.**
+2. ✅ Device Shadow initialized (classic shadow, thing `Turtlebot-468`):
+   `desired = {motion_enabled: false, max_speed: 0.15, dry_run: true}` — motion is locked
+   from birth; the bridge must reconcile and report.
+3. ✅ Knowledge Base stack created and **verified end-to-end** (upload → ingest → retrieve
+   returned correct chunks):
+   | Resource | Id / name |
+   |---|---|
+   | Docs bucket | `s3://guidemate-kb-docs-852373397000` |
+   | S3 Vectors bucket / index | `guidemate-kb-vectors` / `guidemate-kb-index` (1024-dim, cosine, `AMAZON_BEDROCK_TEXT` non-filterable) |
+   | KB execution role | `guidemate-kb-role` |
+   | **Knowledge Base** | **`A1NIQYZ0KQ`** (`guidemate-kb`, Titan embed v2) |
+   | Data source | `OT8JLH57TE` (`guidemate-kb-docs`) |
+   | Seed doc | `docs/agent-poc/kb-seed/robert-facts.md` (repo = source of truth; synced to the bucket) |
+   Re-ingest after uploads: `aws bedrock-agent start-ingestion-job --knowledge-base-id A1NIQYZ0KQ --data-source-id OT8JLH57TE`.
+   Query: `aws bedrock-agent-runtime retrieve --knowledge-base-id A1NIQYZ0KQ --retrieval-query '{"text":"…"}'`.
+4. Pin the agent service to `us.anthropic.claude-sonnet-4-6` (still applies).
+
+## Work branch
+All POC work happens on branch **`kalhar/dog-agent-poc`** (pushed to origin). Warm-up
+instructions for a new machine/session: [linux-agent-warmup.md](linux-agent-warmup.md).
