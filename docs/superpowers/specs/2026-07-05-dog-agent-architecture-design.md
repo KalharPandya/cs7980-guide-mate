@@ -79,6 +79,15 @@ identity) + rclpy.
   the status topic.
 - Reconciles Device Shadow `desired.*` safety flags; refuses motion while
   `motion_enabled=false`; reports `reported.*`.
+- **Default-deny motion:** `motion_enabled` defaults to **false**, and a missing/unreadable
+  shadow is treated as false. The robot cannot move until a human explicitly enables motion
+  from the admin panel. This makes the unobserved, docked robot safe by default.
+- **Dry-run mode:** with `dry_run=true` (launch parameter or shadow flag), choreographies
+  are fully computed and logged but no `cmd_vel` is published; acks come back with
+  `"simulated": true`. This exercises the entire chain (chat → agent → MQTT → bridge →
+  ack) with zero motion.
+- **Dock guard:** the bridge tracks Create 3 dock state and refuses all motion primitives
+  while docked (`state: "failed", reason: "docked"`), independent of `motion_enabled`.
 - Namespaced-TF gotcha applies if it becomes a full ROS 2 node (remap `/tf` — CLAUDE.md
   gotcha #1). For the POC it only publishes `cmd_vel`, so TF is not required.
 
@@ -126,6 +135,7 @@ truth; the bridge vendors or pip-installs it).
 | Duplicate delivery (QoS 1) | Bridge de-duplicates by `cmd_id`; choreographies are also idempotent-safe (time-bounded, re-run ≈ same motion). |
 | KB ingestion failure | Sync status surfaced in the admin knowledge tab; agent falls back to answering without retrieval. |
 | Bridge crash mid-choreography | Create 3 stops on `cmd_vel` silence (no republish = no motion). Watchdog/systemd restart for the bridge. |
+| Motion command while docked or `motion_enabled=false` | Bridge refuses (`state: "failed"`, reason `docked`/`motion_disabled`); the dog explains in character. Motion is default-deny — this is the expected state for the unobserved docked robot. |
 | Admin token wrong/missing | 401; no unauthenticated admin surface. |
 
 ## Security notes
@@ -139,16 +149,47 @@ truth; the bridge vendors or pip-installs it).
   not a command type.
 
 ## Testing strategy
-- **Unit:** command schema validation (both directions), flag gating (disabled tool absent
-  from the model's tool list), choreography generators (bounded speed/duration).
-- **Integration, no robot:** run the bridge on a laptop against a mock `cmd_vel` sink;
+
+Ordered so that **everything except the final stage runs with the robot docked and
+unmoving** — motion requires a human observer and is the last step only.
+
+- **Unit (no robot):** command schema validation (both directions), flag gating (disabled
+  tool absent from the model's tool list), choreography generators (bounded
+  speed/duration).
+- **Integration (no robot):** run the bridge on a laptop against a mock `cmd_vel` sink;
   end-to-end chat → MQTT → bridge → ack with IoT Core in the loop.
-- **On robot, no motion:** bridge in dry-run mode (logs instead of `cmd_vel`), verify
-  shadow reconcile + acks on the real Pi.
-- **On robot, motion:** docked/open-space emote test at capped speed; kill-switch drill
-  (set `motion_enabled=false` mid-choreography, verify stop).
-- **Persona/KB:** scripted conversation checks (emote chosen per reply, KB answer grounded
-  in an uploaded doc).
+- **On robot, docked, zero motion** — the default on-robot mode; see checklist below.
+- **On robot, motion (observed only):** requires a human observer present. Undock,
+  admin sets `motion_enabled=true`, run emotes at capped speed in open space;
+  kill-switch drill (set `motion_enabled=false` mid-choreography, verify stop);
+  re-dock and re-disable when done.
+- **Persona/KB (no robot):** scripted conversation checks (emote chosen per reply, KB
+  answer grounded in an uploaded doc).
+
+### No-motion verification checklist (docked, unobserved — allowed anytime)
+The safety defaults make this the robot's standing state: `motion_enabled=false` +
+dock guard mean nothing can move even if a motion command is sent by mistake.
+
+1. **Connectivity:** bridge starts on the Pi, connects with the X.509 cert over the
+   widened policy, appears in IoT Core; service's MQTT-over-WSS connection up.
+2. **Telemetry:** battery + dock state arrive on `guidemate/turtlebot468/status`
+   and show in the admin panel.
+3. **Command round-trip (dry run):** send an emote from chat; verify the full chain via
+   the `"simulated": true` ack and the bridge's logged `cmd_vel` sequence — no motion.
+4. **Blocked-command behavior:** with `dry_run` off but docked + `motion_enabled=false`,
+   send a motion command; verify the bridge refuses (`failed`/`"docked"`) and the dog
+   reports it in character.
+5. **Shadow drill:** toggle robot-tier flags in the admin panel; verify
+   `desired → reported` reconciliation; restart the bridge and verify flags persist.
+6. **Autonomy hook:** publish a synthetic status event (e.g. low battery) and verify the
+   agent is invoked without a user message.
+
+Precedent: this mirrors the existing no-motion bring-up
+([docs/mapping/bringup-no-motion.md](../../mapping/bringup-no-motion.md)). The same
+Discovery-Server gotcha applies to the ROS side: the bridge's `cmd_vel`/dock-state links to
+the boot nodes must be started **from the robot's own terminal** (nodes launched from the
+Claude Bash shell are not cross-discovered). The MQTT side has no such constraint — it is
+testable from anywhere.
 
 ## Future extensions (accommodated, not built)
 - **Semantic locations:** structured table (name → map coordinates) as a new lookup tool +
