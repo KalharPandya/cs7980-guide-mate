@@ -117,15 +117,20 @@ import threading  # noqa: E402,F401
 from guidemate_msgs.choreography import TwistStep  # noqa: E402
 
 
-def _real_runner(acks, published, sleep=lambda _s: None, motion_gate=None, run_action=None):
+def _real_runner(acks, published, sleep=lambda _s: None, motion_gate=None, run_action=None,
+                 max_speed=None):
+    # Task-4 obligation C made the realdrive path fail-closed: an unwired motion_gate
+    # (None) now REFUSES. Tests that intend to drive supply a permissive gate; the
+    # helper defaults to one so the T3 drive/action tests keep exercising those paths.
     return ChoreographyRunner(
         publish_ack=acks.append,
         dry_run=False,
         publish_twist=published.append,
         publish_hz=10.0,
         sleep=sleep,
-        motion_gate=motion_gate,
+        motion_gate=motion_gate or (lambda cmd: (True, "")),
         run_action=run_action,
+        max_speed=max_speed,
     )
 
 
@@ -190,12 +195,75 @@ def test_abort_does_not_persist_across_commands():
 
 
 def test_no_sink_when_not_dry_run_acks_failed():
+    # A wired gate that permits, but no cmd_vel sink -> "no cmd_vel sink".
     acks = []
-    ChoreographyRunner(publish_ack=acks.append, dry_run=False, publish_twist=None).handle(
-        Command(type="emote", name="happy")
-    )
+    ChoreographyRunner(
+        publish_ack=acks.append, dry_run=False, publish_twist=None,
+        motion_gate=lambda cmd: (True, ""),
+    ).handle(Command(type="emote", name="happy"))
     assert [a.state for a in acks] == ["received", "running", "failed"]
     assert acks[-1].reason == "no cmd_vel sink"
+
+
+# ---- Task-4 obligation C: FAIL-CLOSED gate (default-deny) ----
+def test_no_motion_gate_when_not_dry_run_refuses_and_zeroes():
+    # motion_gate unwired (None) + not dry-run -> REFUSE, never drive unguarded, even
+    # though a cmd_vel sink IS wired.
+    acks, published = [], []
+    ChoreographyRunner(
+        publish_ack=acks.append, dry_run=False, publish_twist=published.append,
+        motion_gate=None,
+    ).handle(Command(type="motion", name="spin"))
+    assert [a.state for a in acks] == ["received", "running", "failed"]
+    assert acks[-1].reason == "motion gate unwired"
+    # Only the safety zero-twist may be published; no choreography motion drove.
+    assert published == [TwistStep(0.0, 0.0, 0.0)]
+
+
+def test_no_motion_gate_refuses_actions_too():
+    acks, published, calls = [], [], []
+    ChoreographyRunner(
+        publish_ack=acks.append, dry_run=False, publish_twist=published.append,
+        motion_gate=None, run_action=lambda name: (calls.append(name), (True, ""))[1],
+    ).handle(_cmd_action("undock"))
+    assert acks[-1].state == "failed" and acks[-1].reason == "motion gate unwired"
+    assert calls == []  # the action client was never touched
+
+
+# ---- Task-4 obligation D: LIVE dry-run (a shadow flip mid-run is honored) ----
+def test_dry_run_read_live_not_snapshotted():
+    state = {"dry": False}
+    acks, published = [], []
+    runner = ChoreographyRunner(
+        publish_ack=acks.append,
+        dry_run=lambda: state["dry"],          # LIVE source, not a ctor bool
+        publish_twist=published.append,
+        publish_hz=10.0,
+        sleep=lambda _s: None,
+        motion_gate=lambda cmd: (True, ""),
+    )
+    # First command with the live source False -> really drives (simulated=False).
+    runner.handle(Command(type="stop", name="stop"))
+    assert acks[-1].state == "done" and acks[-1].simulated is False
+    # Flip the live source to True -> next command takes the dry-run path (no publish).
+    state["dry"] = True
+    published.clear()
+    acks.clear()
+    runner.handle(Command(type="motion", name="spin"))
+    assert acks[-1].state == "done" and acks[-1].simulated is True
+    assert published == []                     # dry-run never publishes a twist
+
+
+# ---- Task-4 obligation: max_speed re-plumb (dynamic shadow clamp on realdrive) ----
+def test_realdrive_applies_dynamic_max_speed_clamp():
+    acks, published = [], []
+    # circle wants vx=0.12; a live max_speed of 0.05 must clamp every driven twist.
+    runner = _real_runner(acks, published, max_speed=lambda: 0.05)
+    runner.handle(Command(type="motion", name="circle"))
+    driven = [p for p in published if p != TwistStep(0.0, 0.0, 0.0)]
+    assert driven, "expected at least one driven twist"
+    assert all(abs(p.vx) <= 0.05 + 1e-9 for p in driven)
+    assert max(abs(p.vx) for p in driven) == 0.05  # clamped to the lowered cap
 
 
 # ---- dock/undock are Create 3 ROS ACTIONS, never twist choreographies ----

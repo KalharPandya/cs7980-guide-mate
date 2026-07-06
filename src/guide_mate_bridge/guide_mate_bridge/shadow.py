@@ -43,14 +43,22 @@ class ShadowSync:
         safety: SafetyState,
         get_timeout_s: float = 5.0,
         enabled: bool = True,
+        on_motion_disabled=None,
     ) -> None:
         self._client = client
         self._thing = thing_name
         self._safety = safety
         self._get_timeout_s = get_timeout_s
         self._enabled = enabled
+        # KILL-SWITCH: fired when a shadow delta flips motion_enabled -> false, so an
+        # in-flight choreography is aborted mid-run (main() wires this to bridge.abort).
+        self._on_motion_disabled = on_motion_disabled
         self._got = threading.Event()
         self._subscribed = False
+
+    def set_motion_disabled_callback(self, cb) -> None:
+        """Register the kill-switch fired when a delta flips motion_enabled -> false."""
+        self._on_motion_disabled = cb
 
     def start(self) -> None:
         if not self._enabled:
@@ -106,6 +114,16 @@ class ShadowSync:
         self._safety.apply_shadow(delta)
         log.info("shadow delta applied: %s -> gates %s",
                  sorted(delta.keys()), self._safety.gates())
+        # KILL-SWITCH: a delta that disables motion aborts any in-flight choreography.
+        if (
+            "motion_enabled" in delta
+            and not bool(delta.get("motion_enabled"))
+            and self._on_motion_disabled is not None
+        ):
+            try:
+                self._on_motion_disabled()
+            except Exception:  # noqa: BLE001 — the delta callback must never wedge sync
+                log.exception("on_motion_disabled callback failed")
         self.publish_reported()
 
     def _on_update_accepted(self, topic: str, payload: str) -> None:

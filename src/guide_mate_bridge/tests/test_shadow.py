@@ -151,6 +151,28 @@ def test_shadow_delta_cannot_loosen_env_dry_run():
     assert safety.effective_dry_run is True  # env=1 wins; STRICTER-only invariant
 
 
+def test_delta_disabling_motion_fires_killswitch():
+    # KILL-SWITCH (Task 4): a shadow delta that flips motion_enabled -> false must fire
+    # the registered callback (main() wires it to bridge.abort) so an in-flight
+    # choreography is interrupted mid-run.
+    fake = FakeConnection()
+    fake.auto_get_response = ("accepted", json.dumps(
+        {"state": {"desired": {"motion_enabled": True}}}))
+    safety = SafetyState(env_dry_run=False)
+    sync = _sync(fake, safety, timeout=1.0)
+    fired = {"n": 0}
+    sync.set_motion_disabled_callback(lambda: fired.__setitem__("n", fired["n"] + 1))
+    sync.start()
+    # Enabling deltas must NOT fire the kill-switch.
+    fake.deliver(shadow_topic("Turtlebot-468", "update/delta"),
+                 json.dumps({"state": {"motion_enabled": True}}))
+    assert fired["n"] == 0
+    # Disabling motion fires it exactly once.
+    fake.deliver(shadow_topic("Turtlebot-468", "update/delta"),
+                 json.dumps({"state": {"motion_enabled": False}}))
+    assert fired["n"] == 1
+
+
 def test_subscribe_denied_locks_defaults_and_never_publishes_shadow_topics():
     # Defensive raise-path only. In reality AWS IoT does NOT raise on a policy-denied
     # subscribe — it drops the whole connection, which cannot be recovered (see the

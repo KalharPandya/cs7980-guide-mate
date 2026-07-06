@@ -8,6 +8,7 @@ import os
 import queue
 import signal
 import threading
+from typing import Mapping
 
 from guidemate_msgs.jsonlog import log_extra, setup
 from guidemate_msgs.messages import Ack, Command, cmd_topic, status_topic
@@ -26,18 +27,79 @@ def _truthy(value: str) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
+def resolve_motion_enabled(
+    env: "Mapping[str, str]", effective_dry_run: bool, shadow_motion_enabled: bool
+) -> bool:
+    """Build the real cmd_vel sink ONLY when the operator opted in via env AND the shadow
+    allows motion AND we are not in effective dry-run. Any single lock closed -> no motion."""
+    if not _truthy(env.get("GUIDEMATE_ENABLE_MOTION", "0")):
+        return False
+    return bool(shadow_motion_enabled) and not effective_dry_run
+
+
+# While docked, only these commands are permitted (spec delta 91d9bcb):
+# undock (leave the dock), dock (no-op-ish -> the Create 3 Dock action succeeds
+# immediately when already docked -> done ack), and stop (always safe).
+_DOCKED_EXEMPT = {("motion", "undock"), ("motion", "dock"), ("stop", "stop")}
+
+
+def command_permitted(
+    cmd_type: str, cmd_name: str, motion_enabled: bool, docked: bool
+) -> "tuple[bool, str]":
+    """Dock-guard exemption matrix. Shadow lock is supreme: nothing runs while
+    motion_enabled is false. While docked, refuse all motion EXCEPT undock/dock/stop.
+    While undocked, everything is allowed (dock is a normal action)."""
+    if not motion_enabled:
+        return False, "motion_disabled"
+    if docked and (cmd_type, cmd_name) not in _DOCKED_EXEMPT:
+        return False, "docked"
+    return True, ""
+
+
+def assert_motion_identity_safe(env: "Mapping[str, str]") -> None:
+    """Hard robot-id guard (belt + braces): GUIDEMATE_ENABLE_MOTION must NEVER be honored for
+    robot 468. The Pi installer never sets it; this refuses even if someone does by hand.
+    The robot id defaults to turtlebot468 when unset, so an unset id is also refused."""
+    if _truthy(env.get("GUIDEMATE_ENABLE_MOTION", "0")):
+        robot_id = env.get("GUIDEMATE_ROBOT_ID", "turtlebot468")
+        if robot_id == "turtlebot468":
+            raise SystemExit(
+                "refusing GUIDEMATE_ENABLE_MOTION on turtlebot468 — motion is sim/436 only"
+            )
+
+
 class Bridge:
-    def __init__(self, client: IotClient, robot_id: str, safety: SafetyState) -> None:
+    def __init__(
+        self,
+        client: IotClient,
+        robot_id: str,
+        dry_run=True,
+        publish_twist=None,
+        publish_hz: float = 10.0,
+        motion_gate=None,
+        run_action=None,
+        max_speed=None,
+    ) -> None:
+        # Task 4 migrates the bridge fully onto the executor's REALDRIVE path (no
+        # SafetyState passed to the runner — passing both `safety=` and the v8 params
+        # is a footgun). `dry_run` may be a live callable so a shadow flip is honored.
         self._client = client
         self._robot_id = robot_id
-        self._safety = safety
         self._seen = collections.deque(maxlen=256)
         self._seen_set: set[str] = set()
         # awscrt dispatches callbacks single-threaded per connection today, but that's
         # not a documented contract — guard the check-evict-insert sequence explicitly.
         self._dedupe_lock = threading.Lock()
         self._queue: "queue.Queue[Command]" = queue.Queue()
-        self._runner = ChoreographyRunner(publish_ack=self._publish_ack, safety=safety)
+        self._runner = ChoreographyRunner(
+            publish_ack=self._publish_ack,
+            dry_run=dry_run,
+            publish_twist=publish_twist,
+            publish_hz=publish_hz,
+            motion_gate=motion_gate,
+            run_action=run_action,
+            max_speed=max_speed,
+        )
         self._worker = threading.Thread(target=self._run, daemon=True)
 
     def _publish_ack(self, ack: Ack) -> None:
@@ -52,6 +114,11 @@ class Bridge:
         except (ValidationError, ValueError) as exc:
             log.warning("ignoring invalid command: %s", exc)
             return
+        if cmd.type == "stop":
+            # KILL-SWITCH (stop path): interrupt any in-flight choreography immediately,
+            # off the worker thread, so the wheels zero within one publish period. The
+            # stop command is still enqueued below so it acks normally.
+            self._runner.abort(reason="stopped")
         with self._dedupe_lock:
             if cmd.cmd_id in self._seen_set:
                 log.info("duplicate cmd_id ignored", extra=log_extra(cmd_id=cmd.cmd_id))
@@ -71,6 +138,10 @@ class Bridge:
                 log.exception("runner failed", extra=log_extra(cmd_id=cmd.cmd_id))
             finally:
                 self._queue.task_done()
+
+    def abort(self, reason: str = "aborted") -> None:
+        """Delegate to the runner — wired to the shadow kill-switch in main()."""
+        self._runner.abort(reason=reason)
 
     def start(self) -> None:
         self._worker.start()
@@ -96,17 +167,57 @@ def _graceful_shutdown(client, shadow, robot_id, telemetry=None, heartbeat=None)
         telemetry.stop()
 
 
+def _build_motion_sinks(env: "Mapping[str, str]"):
+    """Construct the ONLY real cmd_vel sink + dock/undock action clients. Called ONLY
+    after the triple gate (resolve_motion_enabled) has already passed, so this is never
+    reached on robot 468. Requires GUIDEMATE_ROS=1 (an rclpy node to publish/act on).
+    Returns (publish_twist, run_action). Lazily imports rclpy so the bridge still runs
+    on ROS-less machines when motion is off."""
+    if not _truthy(env.get("GUIDEMATE_ROS", "0")):
+        raise SystemExit(
+            "motion requires GUIDEMATE_ROS=1 (rclpy node for cmd_vel + dock actions)"
+        )
+    import rclpy  # lazy: only when motion is actually enabled
+    from rclpy.executors import SingleThreadedExecutor
+
+    from guide_mate_bridge.cmd_vel_publisher import CmdVelPublisher
+    from guide_mate_bridge.dock_actions import DockActions
+
+    if not rclpy.ok():
+        rclpy.init(args=None)
+    namespace = env.get("GUIDEMATE_ROS_NAMESPACE", env.get("GUIDEMATE_ROBOT_ID", ""))
+    node = rclpy.create_node(
+        "guidemate_bridge_motion",
+        namespace=(namespace if namespace.startswith("/") else f"/{namespace}") if namespace else "/",
+    )
+    # Spin the motion node so the dock/undock goal + result futures resolve while
+    # DockActions.run polls them.
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
+    threading.Thread(target=executor.spin, daemon=True).start()
+
+    topic = env.get("GUIDEMATE_CMD_VEL_TOPIC", "/cmd_vel")
+    publish_twist = CmdVelPublisher(node, topic=topic)
+    run_action = DockActions(
+        node,
+        undock_action=env.get("GUIDEMATE_UNDOCK_ACTION", "/undock"),
+        dock_action=env.get("GUIDEMATE_DOCK_ACTION", "/dock"),
+    ).run
+    log.info("MOTION ENABLED", extra=log_extra(cmd_vel_topic=topic))
+    return publish_twist, run_action
+
+
 def main() -> None:
     setup("bridge")
     robot_id = os.environ.get("GUIDEMATE_ROBOT_ID", "turtlebot468")
     thing_name = os.environ.get("GUIDEMATE_THING_NAME", "Turtlebot-468")
+
+    # HARD GUARD (belt + braces): GUIDEMATE_ENABLE_MOTION is NEVER honored for robot
+    # 468 (nor when the robot id is unset -> defaults to 468). The Pi installer never
+    # sets it; this refuses even if someone exports it by hand.
+    assert_motion_identity_safe(os.environ)
+
     env_dry_run = _truthy(os.environ.get("GUIDEMATE_DRY_RUN", "1"))
-    if not env_dry_run:
-        log.warning(
-            "env dry-run is OFF — effective dry-run now follows the shadow "
-            "(which also defaults to locked). No cmd_vel publisher exists in "
-            "this phase, so nothing can move either way."
-        )
     endpoint = os.environ["GUIDEMATE_IOT_ENDPOINT"]
     cert = os.environ["GUIDEMATE_CERT"]
     key = os.environ["GUIDEMATE_KEY"]
@@ -121,8 +232,15 @@ def main() -> None:
         robot_id=robot_id,
         ca_filepath=ca,
     )
-    bridge = Bridge(client=client, robot_id=robot_id, safety=safety)
-    bridge.start()
+
+    # Telemetry first so dock state (safety.set_docked) starts flowing before we gate.
+    telemetry = Telemetry(
+        safety=safety,
+        namespace=os.environ.get("GUIDEMATE_ROS_NAMESPACE", robot_id),
+        enabled=_truthy(os.environ.get("GUIDEMATE_ROS", "0")),
+    )
+    telemetry.start()
+
     # Shadow sync is opt-in (GUIDEMATE_SHADOW, default off). It must ONLY run where
     # the cert is authorized for the thing's shadow: a policy-denied shadow SUBSCRIBE
     # makes AWS IoT drop the whole connection, which permanently poisons the shared
@@ -133,14 +251,45 @@ def main() -> None:
         client=client, thing_name=thing_name, safety=safety,
         enabled=_truthy(os.environ.get("GUIDEMATE_SHADOW", "0")),
     )
-    shadow.start()
+    shadow.start()  # reconcile motion_enabled/dry_run/max_speed from desired
 
-    telemetry = Telemetry(
-        safety=safety,
-        namespace=os.environ.get("GUIDEMATE_ROS_NAMESPACE", robot_id),
-        enabled=_truthy(os.environ.get("GUIDEMATE_ROS", "0")),
+    # ---- TRIPLE GATE for the real motion sinks ----
+    # Build the cmd_vel publisher + dock/undock action clients ONLY when the operator
+    # opted in via env AND the shadow allows motion AND we are not in effective dry-run.
+    publish_twist = None
+    run_action = None
+    if resolve_motion_enabled(
+        os.environ, safety.effective_dry_run, safety.gates()["motion_enabled"]
+    ):
+        publish_twist, run_action = _build_motion_sinks(os.environ)
+    else:
+        log.info(
+            "motion sinks NOT built (dry-run / shadow-locked / env-not-opted-in) — "
+            "commands ack but never move",
+            extra=log_extra(robot_id=robot_id),
+        )
+
+    def _motion_gate(cmd):
+        # Command-aware gate, evaluated LIVE at dispatch: shadow lock is supreme, and
+        # the dock-guard exemption matrix lets undock/dock/stop through while docked.
+        gates = safety.gates()
+        return command_permitted(
+            cmd.type, cmd.name, gates["motion_enabled"], gates["docked"] is not False
+        )
+
+    bridge = Bridge(
+        client=client,
+        robot_id=robot_id,
+        dry_run=lambda: safety.effective_dry_run,   # LIVE: a shadow flip is honored
+        publish_twist=publish_twist,
+        motion_gate=_motion_gate,
+        run_action=run_action,
+        max_speed=lambda: safety.max_speed,          # LIVE: dynamic shadow clamp
     )
-    telemetry.start()
+    # KILL-SWITCH: a shadow delta motion_enabled:false aborts the in-flight choreography.
+    shadow.set_motion_disabled_callback(lambda: bridge.abort(reason="motion_disabled"))
+    bridge.start()
+
     heartbeat = HeartbeatPublisher(
         client=client, robot_id=robot_id, safety=safety, telemetry=telemetry
     )
