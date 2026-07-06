@@ -17,6 +17,34 @@ class FakeTable:
     def put_item(self, Item):
         self.items[Item["pk"]] = dict(Item)
 
+    def update_item(
+        self,
+        Key,
+        UpdateExpression,
+        ExpressionAttributeNames=None,
+        ExpressionAttributeValues=None,
+    ):
+        """Minimal single-attribute `SET #x = :v` support (pk-keyed, merges into
+        the existing item rather than replacing it — this is what makes a
+        real DynamoDB UpdateExpression race-safe for concurrent single-attribute
+        writes, unlike a get_item/put_item whole-item read-modify-write)."""
+        pk = Key["pk"]
+        item = self.items.setdefault(pk, {"pk": pk})
+        assert UpdateExpression.startswith("SET "), UpdateExpression
+        for assignment in UpdateExpression[len("SET ") :].split(","):
+            name_token, value_token = (part.strip() for part in assignment.split("="))
+            attr_name = (
+                ExpressionAttributeNames[name_token]
+                if name_token.startswith("#")
+                else name_token
+            )
+            attr_value = (
+                ExpressionAttributeValues[value_token]
+                if value_token.startswith(":")
+                else value_token
+            )
+            item[attr_name] = attr_value
+
 
 def test_default_flags_shape():
     assert DEFAULT_FLAGS == {
@@ -42,6 +70,42 @@ def test_set_flag_round_trips():
     assert store.get_flags()["dog_muted"] is True
     # other flags keep their defaults
     assert store.get_flags()["emotes_enabled"] is True
+
+
+def test_set_flag_does_not_read_modify_write_whole_item():
+    """Regression test for the lost-update race: set_flag must write only the
+    single changed attribute (DynamoDB UpdateExpression), not read the whole
+    item and put_item it back — otherwise two concurrent set_flag calls for
+    different flags can lose one update (last-writer-wins on the whole item).
+    """
+    table = FakeTable()
+    store = ConfigStore(table=table, ttl_s=0.0)
+
+    put_calls = []
+    orig_put_item = table.put_item
+    table.put_item = lambda Item: put_calls.append(Item) or orig_put_item(Item)
+
+    store.set_flag("dog_muted", True)
+
+    assert not any(item.get("pk") == "flags" for item in put_calls), (
+        "set_flag must not put_item the whole 'flags' item"
+    )
+
+
+def test_set_flag_interleaved_writes_preserve_both_flags():
+    """Simulates two concurrent set_flag calls (different flags) interleaving
+    at the DynamoDB layer: each issues its own per-attribute update_item, so
+    neither can clobber the other's change (unlike whole-item put_item)."""
+    table = FakeTable()
+    store = ConfigStore(table=table, ttl_s=0.0)
+
+    # Two "concurrent" callers both update_item independently on the same item.
+    store.set_flag("dog_muted", True)
+    store.set_flag("kb_enabled", False)
+
+    flags = store.get_flags()
+    assert flags["dog_muted"] is True
+    assert flags["kb_enabled"] is False
 
 
 def test_unknown_flag_rejected():

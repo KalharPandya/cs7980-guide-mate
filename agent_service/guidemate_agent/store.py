@@ -73,10 +73,16 @@ class ConfigStore:
     def set_flag(self, name: str, value: bool) -> None:
         if name not in DEFAULT_FLAGS:
             raise ValueError(f"unknown flag {name!r}; valid flags: {sorted(DEFAULT_FLAGS)}")
-        item = self._read_item("flags") or {}
-        item["pk"] = "flags"
-        item[name] = bool(value)
-        self._table.put_item(Item=item)
+        # Single-attribute UpdateExpression, not a get_item/put_item whole-item
+        # read-modify-write: the "flags" item holds multiple boolean attrs, so
+        # a whole-item put_item would lose a concurrent set_flag's update to a
+        # different attribute (last-writer-wins on the whole item).
+        self._table.update_item(
+            Key={"pk": "flags"},
+            UpdateExpression="SET #f = :v",
+            ExpressionAttributeNames={"#f": name},
+            ExpressionAttributeValues={":v": bool(value)},
+        )
         self._invalidate("flags")
 
     # --- admin-set prompt -------------------------------------------------
@@ -86,6 +92,9 @@ class ConfigStore:
         return value if value else None
 
     def set_prompt(self, value: Optional[str]) -> None:
+        # Whole-item put_item is safe here (unlike set_flag): the "prompt" item
+        # holds only pk + system_prompt, a single logical attribute, so there is
+        # no second concurrent writer whose update could be clobbered.
         item = {"pk": "prompt"}
         if value and value.strip():
             item["system_prompt"] = value
