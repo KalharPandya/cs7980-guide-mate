@@ -8,7 +8,9 @@ def test_config_defaults(monkeypatch):
     for var in ("GUIDEMATE_ROBOTS", "GUIDEMATE_IOT_ENDPOINT", "GUIDEMATE_MODEL_ID", "AWS_REGION"):
         monkeypatch.delenv(var, raising=False)
     cfg = Config.from_env()
-    assert cfg.robot_ids == ["turtlebot468"]
+    # Phase 8 Task 7 (virtual-pet grant): turtlebotsim is grantable out of the
+    # box alongside the physical turtlebot468.
+    assert cfg.robot_ids == ["turtlebot468", "turtlebotsim"]
     assert cfg.model_id == "us.anthropic.claude-sonnet-4-6"
     assert cfg.region == "us-west-2"
 
