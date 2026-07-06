@@ -283,6 +283,34 @@ service-errors/bedrock-throttle/bridge-offline present, ec2-cpu pending instance
 INSUFFICIENT_DATA until traffic (service-errors is OK because its filter has
 `defaultValue=0`) — expected pre-launch.
 
+## Production deployment (LIVE) — verified 2026-07-06 (Phase 7 Task 7)
+- **URL:** https://echo.kalhar.ca (real Let's Encrypt cert via Caddy; DNS A record → the EIP)
+- **Instance:** `i-0e1301c47f73c771c`, t3.large, us-west-2, account `852373397000`, instance profile `guidemate-agent-profile` (Bedrock/DynamoDB/IoT all reachable with zero static creds)
+- **Elastic IP:** `52.32.24.152` (tag `Name=guidemate-poc-eip`)
+- **Admin password:** SSM Parameter Store `/guidemate/admin-password` (SecureString) — retrieve with:
+  ```bash
+  aws ssm get-parameter --name /guidemate/admin-password \
+    --with-decryption --query Parameter.Value --output text --region us-west-2
+  ```
+  (never print/commit the value)
+- **Redeploy:** `agent_service/deploy/redeploy.sh` — one SSM `send-command` that pulls the branch and rebuilds the prod Compose stack on the instance; no SSH key needed.
+- **Teardown:** `agent_service/deploy/teardown.sh --yes` (terminates the instance + releases the EIP; pass `--keep-eip` to retain the address). A bare invocation (no `--yes`) is a dry run.
+
+**Live verification results (2026-07-06):**
+| Check | Result |
+|---|---|
+| `GET /healthz` | `200 {"ok":true}` |
+| `GET /readyz` | `200 {"ready":true,"checks":{"mqtt":true,"dynamo":true}}` — both MQTT and DynamoDB up |
+| Admin login (`POST /api/admin/login` with SSM password) | `200 {"ok":true}`, `Set-Cookie: guidemate_admin` (HttpOnly, Secure) |
+| `GET /api/admin/flags` (with session cookie) | `200` — all flags returned (`dog_muted:false`, `emotes_enabled:true`, `motion_tools_enabled:true`, `persona_enabled:true`, `kb_enabled:true`) |
+| `POST /api/chat` (real Bedrock turn, "say hi in one word") | `200` in ~3.1s; `reply_text` present, `emote:"happy"`, robot round-trip acks all `simulated:true` (dry-run, motion disabled) |
+| `scripts/prod_slice_check.sh` against `BASE_URL=https://echo.kalhar.ca` | `OK: chat round-trip verified (emote + simulated ack)` |
+| Playwright e2e suite (`agent_service/tests/e2e`, marker `e2e`, gated by `GUIDEMATE_E2E=1`) | Harness boots its own uvicorn subprocess (`localhost`) and has no `BASE_URL` override, so it cannot target prod directly — ran the equivalent checks above via curl against prod instead; re-verified the suite itself green locally: `GUIDEMATE_E2E=1 .venv/bin/python -m pytest agent_service/tests/e2e -q` → 8 passed |
+
+No test session/request rows were left behind: the chat calls above used the legacy
+session-less `/api/chat` path (no `session_id`), so nothing was written to the
+`guidemate-sessions`/`guidemate-messages` DynamoDB tables.
+
 ## Sim identity (Turtlebot-Sim) — added 2026-07-05 (Phase 8)
 - **Thing:** `Turtlebot-Sim` (`thingId 28f0f996-6acf-4239-b180-9babae1b947a`, ARN `arn:aws:iot:us-west-2:852373397000:thing/Turtlebot-Sim`), us-west-2. Separate from `Turtlebot-468` (the real robot is never touched by any Phase 8 artifact).
 - **Cert/key (local, NOT committed):** `~/.aws/guidemate-sim.cert.pem` + `~/.aws/guidemate-sim.key.pem` (chmod 600). Cert ARN `arn:aws:iot:us-west-2:852373397000:cert/e50b6fc6e1be8d2a29ec95166abcb53b080729b3a595e79083c7df23a3eaaefc` — active, attached to the thing and to `guidemate-sim-policy`. Exactly one principal on the thing (idempotent re-run mints no second cert).
