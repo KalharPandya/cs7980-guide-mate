@@ -70,12 +70,19 @@ class DogAgent:
     def _flags(self) -> dict:
         return self._store.get_flags() if self._store is not None else dict(DEFAULT_FLAGS)
 
-    def _enabled_tool_names(self, flags: dict) -> list:
-        """Ordered names of the tools offered to the model this turn."""
+    def _enabled_tool_names(self, flags: dict, physical: bool = True) -> list:
+        """Ordered names of the tools offered to the model this turn.
+
+        The motion tools (run_motion/stop) are lock-gated: they are only offered
+        when the session PHYSICALLY holds the robot (physical=True). A virtual
+        session (no lock) never sees them, so the model cannot even attempt to
+        drive a robot it isn't bound to. Default physical=True preserves the
+        legacy (no-session) behaviour.
+        """
         names: list = []
         if flags.get("emotes_enabled", True):
             names.append("send_emote")
-        if flags.get("motion_tools_enabled", True):
+        if physical and flags.get("motion_tools_enabled", True):
             names.extend(["run_motion", "stop"])
         # get_status is a read-only truth tool with no flag — always available.
         names.append("get_status")
@@ -103,6 +110,28 @@ class DogAgent:
             parts.append(KB_INSTRUCTION)
         return " ".join(parts)
 
+    def _build_system_prompt(
+        self, user_name: Optional[str], history, flags: Optional[dict] = None
+    ) -> str:
+        """Persona/flag prompt + optional 'talking with <name>' line + last-10
+        message recap. Layers session awareness on top of the flag-driven
+        persona so an admin persona/mute flip still steers the base prompt."""
+        if flags is None:
+            flags = self._flags()
+        parts = [self._system_prompt(flags)]
+        if user_name:
+            parts.append(
+                f"You are talking with {user_name}. Greet them warmly by name "
+                "now and then."
+            )
+        if history:
+            lines = []
+            for m in history[-10:]:
+                who = "User" if m.get("role") == "user" else "Robert"
+                lines.append(f"{who}: {m.get('text', '')}")
+            parts.append("Recent conversation so far:\n" + "\n".join(lines))
+        return "\n\n".join(parts)
+
     # --- tool bodies (testable without Strands) --------------------------
     @staticmethod
     def _describe_acks(acks) -> str:
@@ -120,9 +149,19 @@ class DogAgent:
             return "delivered (simulated — dry-run, the robot stayed still)"
         return "delivered"
 
-    def _emote_impl(self, name: str, target: Optional[str], captured: dict) -> str:
-        """Body of the send_emote tool, factored out so it's testable without Strands."""
+    def _emote_impl(self, name: str, target: Optional[str], captured: dict,
+                    physical: bool = True) -> str:
+        """Body of the send_emote tool, factored out so it's testable without Strands.
+
+        physical=False is the VIRTUAL path (session holds no robot lock): the
+        emote name is captured for avatar animation but nothing is published to
+        MQTT. physical=True (the default, and the legacy no-session behaviour)
+        publishes to the target robot. This is the lock gate — a virtual session
+        can wag the avatar but can never move a physical dog.
+        """
         captured["emote"] = name
+        if not physical:
+            return "virtual emote played (avatar only — not connected to a robot)"
         if target is None:
             return _OFFLINE
         acks = self._registry.send_command(target, Command(type="emote", name=name))
@@ -179,14 +218,15 @@ class DogAgent:
         return retrieve_passages(query, region=self._region)
 
     # --- tool construction (per-turn registry mechanism) -----------------
-    def _build_tools(self, names: list, target: Optional[str], captured: dict) -> list:
+    def _build_tools(self, names: list, target: Optional[str], captured: dict,
+                     physical: bool = True) -> list:
         tools: list = []
         if "send_emote" in names:
 
             @tool
             def send_emote(name: str) -> str:
-                """Play a physical emote on the dog. name is one of happy, yes, no."""
-                return self._emote_impl(name, target, captured)
+                """Play an emote on the dog. name is one of happy, yes, no."""
+                return self._emote_impl(name, target, captured, physical)
 
             tools.append(send_emote)
         if "run_motion" in names:
@@ -230,28 +270,81 @@ class DogAgent:
         still gates through _enabled_tool_names for admin/flag purposes."""
         return cls._load_retrieve_passages() is not None
 
+    # --- session resolution ----------------------------------------------
+    def _resolve_session(self, session_id: str):
+        """Look a session up in the sessions layer. Returns
+        (user_name, history, physical, target):
+
+        - user_name / history come from the session record + its message log
+          (last 10 messages injected into the system prompt).
+        - target/physical come from sessions.robot_for_session, which is
+          authoritative: it returns a robot id ONLY when the session both binds
+          that robot AND currently holds its lock. None => virtual mode (avatar
+          only; emotes are captured but not published, motion tools withheld).
+
+        Imported lazily so dog_agent stays importable without the DynamoDB-backed
+        sessions surface (mirrors the KB lazy import).
+        """
+        from guidemate_agent import sessions
+
+        session = sessions.get_session(session_id) or {}
+        user_name = session.get("name")
+        history = sessions.get_messages(session_id, limit=10)
+        bound = sessions.robot_for_session(session_id)
+        physical = bound is not None
+        target = bound if physical else (self._robot_ids[0] if self._robot_ids else None)
+        return user_name, history, physical, target
+
     # --- main turn --------------------------------------------------------
-    def chat(self, message: str, robot_id: Optional[str] = None) -> dict:
+    def chat(
+        self,
+        message: str,
+        session_id: Optional[str] = None,
+        robot_id: Optional[str] = None,
+    ) -> dict:
         turn_id = str(uuid.uuid4())
         flags = self._flags()
+
+        if session_id is not None:
+            user_name, history, physical, target = self._resolve_session(session_id)
+        else:
+            # Legacy (no session): physical against the caller-named / first robot.
+            user_name, history, physical = None, None, True
+            target = robot_id or (self._robot_ids[0] if self._robot_ids else None)
+
+        def _wrap(reply: dict) -> dict:
+            # Echo session_id ONLY when the caller passed one, so the legacy
+            # return shape (4 keys) stays byte-for-byte identical.
+            if session_id is not None:
+                reply["session_id"] = session_id
+            return reply
+
         if flags.get("dog_muted", False):
-            return {
+            return _wrap({
                 "reply_text": "(the dog is sleeping)",
                 "emote": None,
                 "robot": [],
                 "turn_id": turn_id,
-            }
-        target = robot_id or (self._robot_ids[0] if self._robot_ids else None)
+            })
+
         captured = {"emote": None, "acks": []}
-        names = self._enabled_tool_names(flags)
-        tools = self._build_tools(names, target, captured)
-        system_prompt = self._system_prompt(flags)
+        names = self._enabled_tool_names(flags, physical)
+        tools = self._build_tools(names, target, captured, physical)
+        system_prompt = self._build_system_prompt(user_name, history, flags)
         model = BedrockModel(model_id=self._model_id, region_name=self._region)
         agent = Agent(model=model, system_prompt=system_prompt, tools=tools)
         result = agent(message)
-        return {
-            "reply_text": str(result),
+        reply_text = str(result)
+
+        if session_id is not None:
+            from guidemate_agent import sessions
+
+            sessions.append_message(session_id, "user", message)
+            sessions.append_message(session_id, "dog", reply_text)
+
+        return _wrap({
+            "reply_text": reply_text,
             "emote": captured["emote"],
             "robot": captured["acks"],
             "turn_id": turn_id,
-        }
+        })
