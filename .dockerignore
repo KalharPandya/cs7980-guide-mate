@@ -9,3 +9,14 @@ log/
 *.pem
 *.key
 agent_service/deploy/*.env
+tests/
+**/tests/
+.claude/
+ssh_keys/
+docs/
+.superpowers/
+src/
+.git/
+claude-conversations/
+Research/
+rviz/
