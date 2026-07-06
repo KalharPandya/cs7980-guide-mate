@@ -32,6 +32,7 @@ guard — three independent locks). Physical-motion validation is explicitly out
 | Session store | **SQLite on a persistent Docker volume** (already in the stack for flags): sessions, intake answers, chat history, companion requests, robot-session lock. Intake info used only for personalization + approval context. Admin can browse all chat histories. DynamoDB is the documented swap if durability across instance rebuilds is ever needed. |
 | Admin robot commands | Admin can send direct robot commands (`dock`, `stop`, primitives) from the panel — same command channel, **same bridge safety locks** (dock/undock are motion → refused while `motion_enabled=false`; verified via dry-run/refusal paths only in this plan). |
 | Admin auth | **Password → session cookie** (upgrades the architecture spec's bearer token): admin password from an env var (generated at deploy) posted to a login form → signed **HttpOnly Secure SameSite=Strict** cookie; rides every API call and WebSocket automatically, unreadable to page JS. Timing-safe compare + attempt rate-limit. Still single-credential, no user accounts. |
+| Gazebo sim / virtual pets | **In scope, after the robot path is green** (robot first — phases 0–7 unchanged). This box already has the full TB4 Ignition Fortress sim stack + GPU. New **Phase 8**: sim IoT identity (`Turtlebot-Sim` thing + cert + own shadow + `guidemate/turtlebotsim/*` policy), the same bridge pointed at the sim's ROS graph, **motion validation** (`motion_enabled=true` on the *sim shadow only*: odometry-verified choreographies, kill-switch drill, dock-guard fire) + headless pytest regression, and the companion flow gains a **virtual pet** grant: sessions that don't hold the physical-robot lock can be connected to the sim robot instead. One sim robot in this plan; multi-spawn per-user pets = documented follow-on. To keep Phase 8 a params-only drop-in, the bridge and agent service are **parameterized from day one** (thing name, namespace, topic prefix / robot registry) — robot 468's locks are never touched by any sim work. |
 
 ## Network topology (governs all verification)
 The Linux box has **tunneled, one-way** access to NUwave: SSH out to the Pi works; nothing
@@ -112,7 +113,9 @@ cs7980-guide-mate/
 **`src/guide_mate_bridge/`** (Pi; additive)
 12. **Bridge node** — AWS IoT Device SDK (existing `Turtlebot-468` X.509 cert, client id
     `guidemate-*` per policy) + rclpy; validates commands against the schema; dedupes by
-    `cmd_id`.
+    `cmd_id`. **Parameterized identity** (thing name, cert paths, ROS namespace, topic
+    prefix) so the identical code serves robot 468, the Gazebo sim (`Turtlebot-Sim`,
+    Phase 8), and later 436.
 13. **Choreography executor** — primitives as `cmd_vel` sequences; **dry-run mode**
     computes + logs the exact sequence, publishes nothing, acks `"simulated": true`.
 14. **Safety layer** — shadow reconcile (`motion_enabled`/`max_speed`/`dry_run`),
@@ -165,6 +168,20 @@ cs7980-guide-mate/
 28. **Chat-history viewer** — admin Sessions tab lists all sessions (name, intake
     answers, timestamps, robot-connected badge) with read-only transcripts.
 
+**Sim / virtual pets (Phase 8 — after the robot path is green)**
+29. **Sim identity + launch helper** — one-time script: thing `Turtlebot-Sim`, fresh
+    cert, `guidemate/turtlebotsim/*`-scoped policy, own shadow (default
+    `motion_enabled=false`, flipped true only during sim motion runs); `sim/` launch
+    helper bringing up the TB4 Ignition world + the bridge with sim params.
+30. **Sim motion validation** — odometry-asserted choreographies (circle closes, wiggle
+    nets ~zero), kill-switch drill mid-choreography, dock-guard fire on the simulated
+    dock; headless (`ign gazebo -s`) pytest variant kept as the standing regression
+    suite. Closes the motion-proof gap without touching robot 468.
+31. **Virtual-pet grant** — companion flow extension: admin can connect a non-lock
+    session to the sim robot (`robot_id=turtlebotsim`) as a **virtual pet**; same
+    tools, same UI, physical lock untouched. Single sim robot in this plan; per-user
+    multi-spawn is the documented follow-on.
+
 ## Build phases (vertical slice → widen)
 Riskiest integrations are proven first; every phase ends green before the next starts.
 
@@ -178,6 +195,7 @@ Riskiest integrations are proven first; every phase ends green before the next s
 | **5 — Voice + UI polish** | Components 8, 9 + emote sync; polish admin | Playwright fake-mic e2e: voice in → transcript → reply + synced emote ack → Polly audio out |
 | **6 — Autonomy + maps** | Autonomy hook (events + APScheduler) + component 24 | Synthetic low-battery event triggers an unprompted agent turn (checklist item **6**); map renders in admin |
 | **7 — Production** | Components 11, 17–19 | Full Playwright suite green against `https://<eip>.nip.io`; one URL for chat, one for admin |
+| **8 — Sim / virtual pets** (after robot path green) | Components 29–31 | Sim bridge connects under its own identity; choreographies odometry-verified + kill-switch drill pass (sim shadow only); admin grants a virtual pet to a second session while the physical lock is untouched |
 
 ## Testing strategy
 | Layer | Tool | Robot needed? |
