@@ -24,7 +24,9 @@ from guidemate_agent.dog_agent import DogAgent
 from guidemate_agent.fakes import FakeRobotRegistry
 from guidemate_agent.kb import KBManager
 from guidemate_agent.mqtt_link import RobotRegistry
+from guidemate_agent.observability import Observability
 from guidemate_agent.store import ConfigStore
+from guidemate_agent.ws_chat import CaptureRegistry, register as register_ws
 
 log = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -80,6 +82,22 @@ async def lifespan(app: FastAPI):
         store=store,
     )
 
+    # WS chat path (/ws/chat/{session_id}): in-process telemetry ring buffers, a
+    # WS-path agent whose emote is picked here but whose physical publish is owned
+    # by ws_chat (hence CaptureRegistry — the agent's send_emote succeeds virtually
+    # and publishes nothing; ws_chat does the real publish + release gate), and a
+    # virtual-only session->robot resolver (Phase 4 overrides it with a real one).
+    app.state.observability = Observability()
+    app.state.ws_agent = DogAgent(
+        registry=CaptureRegistry(),
+        model_id=cfg.model_id,
+        robot_ids=cfg.robot_ids,
+        region=cfg.region,
+        store=store,
+    )
+    if not hasattr(app.state, "robot_target_resolver"):
+        app.state.robot_target_resolver = lambda session_id: None
+
     # Autonomy: unprompted, motion-free turns driven by robot status events
     # (via registry.on_event) and a daily scheduled job (morning stretch).
     # NOTE (adaptation): EventEngine's `store` only needs `.ensure_session(id,
@@ -112,6 +130,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(admin.router)
+register_ws(app)
 
 
 @app.get("/healthz")
