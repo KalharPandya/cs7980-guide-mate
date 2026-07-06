@@ -1,0 +1,13 @@
+[Unit]
+Description=Ship guide-mate bridge journal to CloudWatch Logs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Environment=HOME=/home/ubuntu
+Environment=AWS_REGION=us-west-2
+Environment=GUIDEMATE_ROBOT_ID=turtlebot468
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/home/ubuntu/.local/bin
+ExecStart=/home/ubuntu/guidemate-venv/bin/python -m guide_mate_bridge.logship

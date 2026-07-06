@@ -49,5 +49,20 @@ sed -e "s#@ROBOT_ID@#${ROBOT_ID}#g" \
 echo ">> daemon-reload + enable + restart (additive; picks up the new unit + code)"
 ssh "${SSH_HOST}" "sudo systemctl daemon-reload && sudo systemctl enable guidemate-bridge.service && sudo systemctl restart guidemate-bridge.service"
 
+echo ">> Install the CloudWatch log-ship timer (additive; reuses ${PI_VENV} which now has logship.py)"
+# Ships the guidemate-bridge journal + a PiHeartbeat EMF event to /guidemate/bridge
+# every 5 min via the same zero-cred credential_process AWS creds. Touches nothing else.
+LOGSHIP_UNIT_SRC="$(cd "$(dirname "$0")/.." && pwd)/systemd/guidemate-logship.service"
+LOGSHIP_TIMER_SRC="$(cd "$(dirname "$0")/.." && pwd)/systemd/guidemate-logship.timer"
+ssh "${SSH_HOST}" "sudo install -d -m 755 -o ubuntu -g ubuntu /var/lib/guidemate"
+ssh "${SSH_HOST}" "sudo tee /etc/systemd/system/guidemate-logship.service >/dev/null" < "${LOGSHIP_UNIT_SRC}"
+ssh "${SSH_HOST}" "sudo tee /etc/systemd/system/guidemate-logship.timer >/dev/null" < "${LOGSHIP_TIMER_SRC}"
+ssh "${SSH_HOST}" "sudo systemctl daemon-reload && sudo systemctl enable --now guidemate-logship.timer"
+# Prime once so CloudWatch gets the group/stream + first heartbeat immediately.
+ssh "${SSH_HOST}" "sudo systemctl start guidemate-logship.service || true"
+ssh "${SSH_HOST}" "systemctl list-timers guidemate-logship.timer --no-pager || true"
+
 echo ">> Recent logs (expect 'bridge connected', 'shadow reconciled', heartbeat lines)"
 ssh "${SSH_HOST}" "journalctl -u guidemate-bridge -n 40 --no-pager"
+echo ">> Recent log-ship logs (expect a put-log-events run + heartbeat)"
+ssh "${SSH_HOST}" "journalctl -u guidemate-logship -n 20 --no-pager || true"
