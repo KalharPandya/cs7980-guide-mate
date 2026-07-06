@@ -4,50 +4,134 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Robert the Robot Dog</title>
+  <style>
+    #avatar { font-size: 48px; display: inline-block; }
+    #avatar.wiggle { animation: wig 0.5s ease-in-out 3; }
+    @keyframes wig { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-15deg); }
+      75% { transform: rotate(15deg); } }
+    .banner { padding: 6px; margin: 8px 0; border: 1px solid #999; }
+  </style>
 </head>
 <body>
   <h1>Robert the Robot Dog</h1>
-  <div id="messages" style="border:1px solid #ccc;padding:8px;min-height:200px;margin-bottom:8px;"></div>
-  <form id="chat-form">
-    <input id="message" autocomplete="off" placeholder="Say something to Robert..." style="width:70%" />
-    <button type="submit">Send</button>
-  </form>
-  <script>
-    const messages = document.getElementById("messages");
-    const form = document.getElementById("chat-form");
-    const input = document.getElementById("message");
 
+  <div id="intake">
+    <p>What's your name, and are you comfortable around Physical AI Dogs?</p>
+    <input id="name" placeholder="Your name" autocomplete="off" />
+    <label><input type="checkbox" id="comfortable" /> I'm comfortable around Physical AI Dogs</label>
+    <button id="start">Start chatting</button>
+  </div>
+
+  <div id="chat" hidden>
+    <span id="avatar">🐶</span>
+    <span id="emote-label"></span>
+    <div id="companion-status" class="banner">Virtual dog (avatar only)</div>
+    <button id="request-companion">Request physical companion</button>
+    <button id="new-session">Start new session</button>
+    <div id="messages" style="border:1px solid #ccc;padding:8px;min-height:200px;margin:8px 0;"></div>
+    <form id="chat-form">
+      <input id="message" autocomplete="off" placeholder="Say something to Robert..." style="width:70%" />
+      <button type="submit">Send</button>
+    </form>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let sessionId = localStorage.getItem("guidemate_session_id");
+    let userName = localStorage.getItem("guidemate_name") || "";
+
+    function showChat() { $("intake").hidden = true; $("chat").hidden = false; }
     function add(role, text) {
       const p = document.createElement("p");
       p.textContent = role + ": " + text;
-      messages.appendChild(p);
-      messages.scrollTop = messages.scrollHeight;
+      $("messages").appendChild(p);
+      $("messages").scrollTop = $("messages").scrollHeight;
     }
 
-    form.addEventListener("submit", async (e) => {
+    if (sessionId) { showChat(); startPolling(); }
+
+    $("start").addEventListener("click", async () => {
+      const name = $("name").value.trim() || "friend";
+      const comfortable = $("comfortable").checked;
+      const resp = await fetch("/api/session", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, comfortable }),
+      });
+      sessionId = (await resp.json()).session_id;
+      userName = name;
+      localStorage.setItem("guidemate_session_id", sessionId);
+      localStorage.setItem("guidemate_name", name);
+      showChat();
+      startPolling();
+    });
+
+    $("new-session").addEventListener("click", () => {
+      // Clear only the LOCAL mirror -> the intake screen reappears. The old
+      // session survives server-side (its transcript / lock are untouched).
+      localStorage.removeItem("guidemate_session_id");
+      localStorage.removeItem("guidemate_name");
+      location.reload();
+    });
+
+    $("request-companion").addEventListener("click", async () => {
+      await fetch(`/api/session/${sessionId}/request-companion`, { method: "POST" });
+      $("companion-status").textContent = "Request pending admin approval…";
+    });
+
+    $("chat-form").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const text = input.value.trim();
+      const text = $("message").value.trim();
       if (!text) return;
       add("You", text);
-      input.value = "";
+      $("message").value = "";
       try {
         const resp = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text }),
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId, message: text }),
         });
         const data = await resp.json();
         let line = data.reply_text || "(no reply)";
-        if (data.emote) line += "  [emote: " + data.emote + "]";
+        if (data.emote) {
+          $("emote-label").textContent = "[emote: " + data.emote + "]";
+          $("avatar").classList.remove("wiggle");
+          void $("avatar").offsetWidth;      // restart the animation
+          $("avatar").classList.add("wiggle");
+        }
         if (data.robot && data.robot.length) {
           const last = data.robot[data.robot.length - 1];
-          line += "  [ack: " + last.state + (last.simulated ? " (simulated)" : "") + "]";
+          line += "  [physical ack: " + last.state +
+                  (last.simulated ? " (simulated)" : "") + "]";
+        } else if (data.emote) {
+          line += "  [virtual emote]";
         }
         add("Robert", line);
       } catch (err) {
         add("Robert", "(error: " + err + ")");
       }
     });
+
+    function startPolling() {
+      async function poll() {
+        if (!sessionId) return;
+        try {
+          const s = await (await fetch(`/api/session/${sessionId}/state`)).json();
+          const banner = $("companion-status");
+          if (s.robot_id) {
+            banner.textContent = "Connected to " + s.robot_id + " 🐕 (physical)";
+          } else if (s.request_status === "pending") {
+            banner.textContent = "Request pending admin approval…";
+          } else if (s.request_status === "denied") {
+            banner.textContent = "Request denied by admin.";
+          } else if (s.request_status === "aborted") {
+            banner.textContent = "Session disconnected by admin — back to virtual.";
+          } else {
+            banner.textContent = "Virtual dog (avatar only)";
+          }
+        } catch (err) { /* keep polling */ }
+      }
+      poll();
+      setInterval(poll, 3000);
+    }
   </script>
 </body>
 </html>
