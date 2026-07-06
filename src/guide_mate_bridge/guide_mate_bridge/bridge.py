@@ -8,6 +8,7 @@ import os
 import queue
 import signal
 import threading
+import time
 from typing import Mapping
 
 from guidemate_msgs.jsonlog import log_extra, setup
@@ -79,10 +80,14 @@ class Bridge:
         motion_gate=None,
         run_action=None,
         max_speed=None,
+        sleep=time.sleep,
     ) -> None:
         # Task 4 migrates the bridge fully onto the executor's REALDRIVE path (no
         # SafetyState passed to the runner — passing both `safety=` and the v8 params
         # is a footgun). `dry_run` may be a live callable so a shadow flip is honored.
+        # `sleep` paces the choreography ticks: wall-clock (time.sleep) on the real
+        # robot; a SIM-time sleep in the Gazebo sim (see _build_sim_time_sleep) so a
+        # real-time factor < 1 doesn't under-deliver the arc.
         self._client = client
         self._robot_id = robot_id
         self._seen = collections.deque(maxlen=256)
@@ -99,6 +104,7 @@ class Bridge:
             motion_gate=motion_gate,
             run_action=run_action,
             max_speed=max_speed,
+            sleep=sleep,
         )
         self._worker = threading.Thread(target=self._run, daemon=True)
 
@@ -167,14 +173,61 @@ def _graceful_shutdown(client, shadow, robot_id, telemetry=None, heartbeat=None)
         telemetry.stop()
 
 
+def _build_sim_time_sleep(node):
+    """SIM-time choreography pacing (opt-in via GUIDEMATE_SIM_TIME_CHOREO=1, set by
+    sim/launch_sim.sh — NEVER set on a real robot, where wall time == robot time).
+
+    WHY (P8-T6 root-cause evidence, 2026-07-06): the executor times each TwistStep in
+    WALL-clock (`time.sleep`) while the sim robot integrates the commanded velocity in
+    SIM time, so the delivered arc scales by the real-time factor: at a healthy-looking
+    RTF the closure error of a radius-R circle is the chord 2*R*sin(pi*(1-RTF)) —
+    deterministically, with PERFECT velocity tracking (measured odom wz 0.2400 vs cmd
+    0.24). Measured on this box (Ignition Fortress, warehouse world, headless):
+      * RTF 0.49 (orphaned duplicate Gazebo)  -> closure 0.998 m ~= the diameter
+      * RTF 0.904-0.941 (single sim, loaded)  -> closure 0.528 / 0.479 / 0.171 m
+      * closure < 0.15 m needs RTF >= 0.952 — NOT reliably reachable on a shared box.
+    Pacing the ticks by /clock makes the delivered arc exact at ANY RTF, so the sim
+    proves the *bridge's* choreography rather than the box's momentary load.
+
+    The sleep falls back to wall-clock if /clock never arrives, and caps the wait at
+    max(4x, +2 s) wall so a dying sim can't hang the executor (the abort/kill-switch
+    check runs between ticks and must stay responsive)."""
+    from rclpy.qos import qos_profile_sensor_data
+    from rosgraph_msgs.msg import Clock
+
+    state = {"sim": None}
+    cond = threading.Condition()
+
+    def _on_clock(msg) -> None:
+        with cond:
+            state["sim"] = msg.clock.sec + msg.clock.nanosec * 1e-9
+            cond.notify_all()
+
+    node.create_subscription(Clock, "/clock", _on_clock, qos_profile_sensor_data)
+
+    def sim_sleep(duration: float) -> None:
+        deadline_wall = time.time() + max(4.0 * duration, duration + 2.0)
+        with cond:
+            if state["sim"] is None:        # no /clock (yet): wall-clock fallback
+                time.sleep(duration)
+                return
+            target = state["sim"] + duration
+            while state["sim"] < target and time.time() < deadline_wall:
+                cond.wait(timeout=0.1)
+
+    return sim_sleep
+
+
 def _build_motion_sinks(env: "Mapping[str, str]"):
     """Construct the ONLY real cmd_vel sink + dock/undock action clients. Called only
     on the env opt-in (GUIDEMATE_ENABLE_MOTION), which assert_motion_identity_safe()
     hard-guards to sim/436, so this is never reached on robot 468. The runtime shadow
     lock (default-deny) still gates every real publish LIVE in the executor.
     Requires GUIDEMATE_ROS=1 (an rclpy node to publish/act on).
-    Returns (publish_twist, run_action). Lazily imports rclpy so the bridge still runs
-    on ROS-less machines when motion is off."""
+    Returns (publish_twist, run_action, choreo_sleep); choreo_sleep is None (-> wall
+    clock) unless GUIDEMATE_SIM_TIME_CHOREO opts into /clock pacing (sim only).
+    Lazily imports rclpy so the bridge still runs on ROS-less machines when motion
+    is off."""
     if not _truthy(env.get("GUIDEMATE_ROS", "0")):
         raise SystemExit(
             "motion requires GUIDEMATE_ROS=1 (rclpy node for cmd_vel + dock actions)"
@@ -205,8 +258,12 @@ def _build_motion_sinks(env: "Mapping[str, str]"):
         undock_action=env.get("GUIDEMATE_UNDOCK_ACTION", "/undock"),
         dock_action=env.get("GUIDEMATE_DOCK_ACTION", "/dock"),
     ).run
+    choreo_sleep = None
+    if _truthy(env.get("GUIDEMATE_SIM_TIME_CHOREO", "0")):
+        choreo_sleep = _build_sim_time_sleep(node)
+        log.info("choreography paced by SIM time (/clock)")
     log.info("MOTION ENABLED", extra=log_extra(cmd_vel_topic=topic))
-    return publish_twist, run_action
+    return publish_twist, run_action, choreo_sleep
 
 
 def main() -> None:
@@ -275,8 +332,9 @@ def main() -> None:
     # unlocked every command still takes the dry-run/refusal path and never moves a wheel.
     publish_twist = None
     run_action = None
+    choreo_sleep = None
     if _truthy(os.environ.get("GUIDEMATE_ENABLE_MOTION", "0")):
-        publish_twist, run_action = _build_motion_sinks(os.environ)
+        publish_twist, run_action, choreo_sleep = _build_motion_sinks(os.environ)
         log.info(
             "motion sinks built (env opt-in) — real drive gated LIVE by shadow "
             "dry_run + motion_gate; locked shadow still acks simulated",
@@ -304,6 +362,7 @@ def main() -> None:
         motion_gate=_motion_gate,
         run_action=run_action,
         max_speed=lambda: safety.max_speed,          # LIVE: dynamic shadow clamp
+        sleep=choreo_sleep or time.sleep,            # sim: /clock-paced; robot: wall
     )
     # KILL-SWITCH: a shadow delta motion_enabled:false aborts the in-flight choreography.
     shadow.set_motion_disabled_callback(lambda: bridge.abort(reason="motion_disabled"))

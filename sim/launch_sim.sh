@@ -42,6 +42,14 @@ ros2 daemon start >/dev/null 2>&1 || true
 # the GUI (when requested) runs on :0 rather than any headless/offscreen platform.
 export DISPLAY="${DISPLAY:-:0}"
 
+# Pin ign-transport to loopback. Left to its own devices it sometimes binds its ZeroMQ
+# sockets to the DOCKER bridge interface (seen 2026-07-06: `ss -tlnp` showed the ruby
+# server listening on 172.17.0.1) and discovery between the Gazebo server and every
+# client silently fails — the launch then wedges forever at "Requesting list of world
+# names" with zero errors in the log (ros_gz_sim create + the GUI + spawners all spin).
+# The tell: bridge heartbeats missing "docked"/"battery" fields (no sim publishers).
+export IGN_IP=127.0.0.1
+
 HEADLESS=true
 [[ "$GUI" == "--gui" ]] && HEADLESS=false
 
@@ -56,6 +64,20 @@ if [[ -n "$STALE" ]]; then
   echo "FATAL: a Gazebo/sim instance is already running (pids: ${STALE//$'\n'/ })." >&2
   echo "Orphaned sims halve the real-time factor and break timed choreography." >&2
   echo "Kill them by PID (never pkill -f), then relaunch." >&2
+  exit 1
+fi
+
+# ALSO refuse a stale guide-mate bridge (second orphan class, found 2026-07-06): a
+# leftover bridge from an earlier session shares robot_id turtlebotsim, races this
+# launch's bridge on the IoT command topic, and acks motion "done simulated=True"
+# while its sinks are dead — masking the live bridge's real acks (a docked circle
+# looked *permitted* when the live bridge had correctly refused it reason=docked).
+# pgrep -f is safe HERE (this script's own cmdline never contains the pattern);
+# still kill by PID, never pkill -f.
+STALE_BRIDGE="$(pgrep -f 'guide_mate_bridge[.]bridge')" || true
+if [[ -n "$STALE_BRIDGE" ]]; then
+  echo "FATAL: a guide-mate bridge is already running (pids: ${STALE_BRIDGE//$'\n'/ })." >&2
+  echo "Duplicate bridges race command acks under the same robot_id. Kill by PID." >&2
   exit 1
 fi
 
@@ -120,6 +142,13 @@ export GUIDEMATE_ENABLE_MOTION=1      # OK: robot_id=turtlebotsim (hard guard pa
 export GUIDEMATE_DRY_RUN=0            # OK: env dry-run off does NOT loosen the shadow's
                                        # own dry_run=true default (effective_dry_run =
                                        # env OR shadow — either locked side wins).
+export GUIDEMATE_SIM_TIME_CHOREO=1    # SIM ONLY: pace choreography ticks by /clock.
+                                       # Wall-clock pacing under-delivers the arc by the
+                                       # real-time factor (closure error of a radius-R
+                                       # circle = 2*R*sin(pi*(1-RTF)); measured: RTF 0.49
+                                       # orphan -> 0.998 m, RTF 0.90-0.96 single sim ->
+                                       # 0.528/0.479/0.171 m; <0.15 m needs RTF>=0.952).
+                                       # NEVER set on a real robot (wall == robot time).
 
 echo "   robot_id=$GUIDEMATE_ROBOT_ID thing=$GUIDEMATE_THING_NAME cmd_vel=$GUIDEMATE_CMD_VEL_TOPIC"
 echo "   (motion sinks build only if the Turtlebot-Sim shadow's desired.motion_enabled=true"

@@ -254,12 +254,16 @@ def test_dock_guard_and_undock_lifecycle_over_iot(registry, spy, iot_data):
 def test_circle_closes_and_turns_full(registry, spy, iot_data):
     _confirm_undocked(spy)  # undocked by test 1 (or an earlier run); circle needs undocked
 
-    # PRECONDITION — real-time factor. The bridge executor times choreography in
-    # WALL-clock while the robot integrates velocity in SIM time, so a degraded RTF
-    # under-delivers the arc: at RTF~0.5 (measured with orphaned duplicate Gazebo
-    # instances loading the box) a circle nets only half a loop and "closure" lands
-    # at the DIAMETER (the P8-T6 0.998 m failure). Fail loud + early with the real
-    # cause instead of a misleading closure number. Clean single-sim RTF here: ~0.94.
+    # PRECONDITION — real-time factor (environment sanity gate). Historically the
+    # bridge executor timed choreography in WALL-clock while the robot integrates
+    # velocity in SIM time, so the delivered arc scaled by RTF and the closure error
+    # was the chord 2*R*sin(pi*(1-RTF)) with PERFECT velocity tracking: measured
+    # RTF 0.49 (orphaned duplicate Gazebo) -> closure 0.998 m ~= the diameter, and
+    # RTF 0.904/0.941/0.961-precheck -> closures 0.528/0.171/0.479 m — closure < 0.15
+    # needs RTF >= 0.952, unreachable reliably on a shared box. The bridge now paces
+    # choreography by /clock in the sim (GUIDEMATE_SIM_TIME_CHOREO=1 in launch_sim.sh),
+    # making the arc exact at any RTF; this precheck stays as a loud early failure for
+    # a genuinely sick environment (e.g. a second Gazebo halving RTF to ~0.5).
     rtf = spy.measure_rtf()
     assert rtf >= 0.85, (
         f"sim real-time factor {rtf:.2f} < 0.85 — the wall-clock-timed choreography "
@@ -269,11 +273,22 @@ def test_circle_closes_and_turns_full(registry, spy, iot_data):
 
     _set_shadow(iot_data, motion_enabled=True, dry_run=False)
 
-    # Warm-up: the sim's diff-drive controller under-tracks the FIRST commanded rotation
-    # after a cold/idle start (measured: a cold circle can net only ~3.5 rad and not close,
-    # while every subsequent one nets ~6.0 rad and closes < 0.02 m). A throwaway spin warms
-    # the controller so the measured circle tracks — it does NOT relax the closure threshold.
+    # Warm-up (setup only — the closure/net-yaw assertions below are NOT relaxed).
+    # ROOT CAUSE (traced 2026-07-06 with a /hazard_detection + /odom + /clock recorder):
+    # the sim Create 3 `motion_control` runs a CLIFF/BACKUP_LIMIT hazard reflex around
+    # undock (the dock plate misfires the cliff sensors: 5090 hazard msgs, types
+    # {0=BACKUP_LIMIT, 2=CLIFF}, streaming for ~44 s after a fresh launch) and
+    # SUPPRESSES external cmd_vel until it releases. Measured cold: the first post-undock
+    # spin is ignored ENTIRELY (odom wz 0.000 for all 6.9 s, net 0.000 rad) and the first
+    # forward drive is ignored for its first ~10.5 s (odom wz 0.000 vs cmd 0.24), netting
+    # only ~3.3-3.56 rad -> closure 0.997/0.978 m ~= the circle's DIAMETER. Once the
+    # reflex releases, tracking is exact from t=0 (odom wz 0.2400 vs cmd 0.24, vx 0.1200
+    # vs 0.12, zero hazards). The original P8-T6 0.998 m failure stacked BOTH causes:
+    # orphaned-Gazebo RTF 0.49 AND this reflex window. A throwaway spin + a throwaway
+    # circle absorb the suppression window, so the MEASURED circle gets an obeyed
+    # command stream for its whole duration.
     _send(registry, "motion", "spin", timeout_s=40.0)
+    _send(registry, "motion", "circle", timeout_s=60.0)
 
     i0 = len(spy.odom)
     start = spy.odom[-1]
