@@ -1,0 +1,220 @@
+"""Admin API: password login -> signed HttpOnly Secure SameSite=Strict cookie,
+then flags / prompt / robot-status / kill-switch / KB management endpoints.
+
+Absent GUIDEMATE_ADMIN_PASSWORD => every route returns 503 (admin disabled).
+The kill switch may ONLY ever write the stricter dry_run=true / motion_enabled=false;
+a request that tries to enable motion (or disable dry_run) is refused with 400
+regardless of authentication.
+"""
+from __future__ import annotations
+
+import collections
+import hmac
+import json
+import logging
+import os
+import time
+from typing import Optional
+
+import boto3
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
+from itsdangerous import BadSignature, SignatureExpired, TimestampSigner
+from pydantic import BaseModel
+
+from guidemate_agent.store import DEFAULT_FLAGS
+
+log = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/admin")
+
+COOKIE_NAME = "guidemate_admin"
+TOKEN = "admin"
+MAX_AGE = 12 * 3600  # 12 hours
+_RATE_WINDOW_S = 60
+_RATE_MAX_FAILURES = 5
+
+# In-process failure timestamps (single credential => one global counter).
+_failures: collections.deque = collections.deque()
+
+
+def _password() -> Optional[str]:
+    return os.environ.get("GUIDEMATE_ADMIN_PASSWORD")
+
+
+def _signer() -> Optional[TimestampSigner]:
+    pw = _password()
+    return TimestampSigner(pw) if pw else None
+
+
+def _require_configured() -> None:
+    if not _password():
+        raise HTTPException(status_code=503, detail="admin not configured")
+
+
+def _rate_limited() -> bool:
+    now = time.time()
+    while _failures and now - _failures[0] > _RATE_WINDOW_S:
+        _failures.popleft()
+    return len(_failures) >= _RATE_MAX_FAILURES
+
+
+def admin_required(request: Request) -> bool:
+    _require_configured()
+    raw = request.cookies.get(COOKIE_NAME)
+    if not raw:
+        raise HTTPException(status_code=401, detail="not authenticated")
+    try:
+        value = _signer().unsign(raw, max_age=MAX_AGE).decode("utf-8")
+    except (BadSignature, SignatureExpired):
+        raise HTTPException(status_code=401, detail="invalid session")
+    if value != TOKEN:
+        raise HTTPException(status_code=401, detail="invalid session")
+    return True
+
+
+# --- auth ----------------------------------------------------------------
+class LoginBody(BaseModel):
+    password: str
+
+
+@router.post("/login")
+def login(body: LoginBody, response: Response) -> dict:
+    _require_configured()
+    if _rate_limited():
+        raise HTTPException(status_code=429, detail="too many attempts, wait a minute")
+    if not hmac.compare_digest(body.password, _password()):
+        _failures.append(time.time())
+        raise HTTPException(status_code=401, detail="invalid password")
+    token = _signer().sign(TOKEN).decode("utf-8")
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        max_age=MAX_AGE,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+    )
+    return {"ok": True}
+
+
+# --- flags ---------------------------------------------------------------
+class FlagBody(BaseModel):
+    name: str
+    value: bool
+
+
+@router.get("/flags")
+def get_flags(request: Request, _: bool = Depends(admin_required)) -> dict:
+    return request.app.state.store.get_flags()
+
+
+@router.put("/flags")
+def put_flag(body: FlagBody, request: Request, _: bool = Depends(admin_required)) -> dict:
+    if body.name not in DEFAULT_FLAGS:
+        raise HTTPException(status_code=400, detail=f"unknown flag {body.name!r}")
+    request.app.state.store.set_flag(body.name, body.value)
+    return request.app.state.store.get_flags()
+
+
+# --- admin-set prompt ----------------------------------------------------
+class PromptBody(BaseModel):
+    system_prompt: Optional[str] = None
+
+
+@router.get("/prompt")
+def get_prompt(request: Request, _: bool = Depends(admin_required)) -> dict:
+    return {"system_prompt": request.app.state.store.get_prompt()}
+
+
+@router.put("/prompt")
+def put_prompt(body: PromptBody, request: Request, _: bool = Depends(admin_required)) -> dict:
+    request.app.state.store.set_prompt(body.system_prompt)
+    return {"system_prompt": request.app.state.store.get_prompt()}
+
+
+# --- robot status --------------------------------------------------------
+@router.get("/status")
+def status(request: Request, _: bool = Depends(admin_required)) -> dict:
+    reg = request.app.state.registry
+    cfg = request.app.state.config
+    return {"robots": [reg.get_status(rid) for rid in cfg.robot_ids]}
+
+
+# --- kill switch (one-way-to-safe) --------------------------------------
+class KillBody(BaseModel):
+    robot_id: str
+    # Optional overrides are accepted ONLY so we can hard-refuse an unsafe
+    # request. The endpoint never writes a caller-supplied value; see below.
+    motion_enabled: Optional[bool] = None
+    dry_run: Optional[bool] = None
+
+
+def _assert_kill_is_safe(body: "KillBody") -> None:
+    """The kill switch is one-way-to-safe: it may only ever drive the shadow to
+    dry_run=true / motion_enabled=false. Refuse (400) any attempt to enable
+    motion or disable dry_run BEFORE anything is written to the shadow."""
+    if body.motion_enabled is True:
+        raise HTTPException(
+            status_code=400, detail="kill switch may never enable motion"
+        )
+    if body.dry_run is False:
+        raise HTTPException(
+            status_code=400, detail="kill switch may never disable dry_run"
+        )
+
+
+@router.post("/kill-switch")
+def kill_switch(body: KillBody, request: Request, _: bool = Depends(admin_required)) -> dict:
+    _assert_kill_is_safe(body)
+    cfg = request.app.state.config
+    thing = cfg.thing_names.get(body.robot_id)
+    if not thing:
+        raise HTTPException(status_code=400, detail=f"unknown robot {body.robot_id!r}")
+    # HARD INVARIANT: only ever the stricter values. Never motion_enabled=true /
+    # dry_run=false — the desired dict is hardcoded, never taken from the body.
+    desired = {"dry_run": True, "motion_enabled": False}
+    payload = json.dumps({"state": {"desired": desired}}).encode("utf-8")
+    client = boto3.client(
+        "iot-data",
+        region_name=cfg.region,
+        endpoint_url=f"https://{cfg.iot_endpoint}",
+    )
+    client.update_thing_shadow(thingName=thing, payload=payload)
+    log.warning("kill switch fired", extra={"robot_id": body.robot_id, "thing": thing})
+    return {"ok": True, "thing": thing, "desired": desired}
+
+
+# --- KB management -------------------------------------------------------
+# KBManager methods now return dicts ({"ok": bool, "error"?: str}, plus
+# "job_id" from start_ingestion; latest_job_status -> {"status": ...}); these
+# endpoints consume/passthrough those shapes.
+@router.get("/kb")
+def kb_list(request: Request, _: bool = Depends(admin_required)) -> dict:
+    return {"docs": request.app.state.kb.list_docs()}
+
+
+@router.post("/kb")
+async def kb_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    _: bool = Depends(admin_required),
+) -> dict:
+    data = await file.read()
+    result = request.app.state.kb.upload(file.filename, data)
+    return {"key": file.filename, **result}
+
+
+@router.delete("/kb")
+def kb_delete(key: str, request: Request, _: bool = Depends(admin_required)) -> dict:
+    result = request.app.state.kb.delete(key)
+    return {"key": key, **result}
+
+
+@router.post("/kb/sync")
+def kb_sync(request: Request, _: bool = Depends(admin_required)) -> dict:
+    return request.app.state.kb.start_ingestion()
+
+
+@router.get("/kb/sync-status")
+def kb_sync_status(request: Request, _: bool = Depends(admin_required)) -> dict:
+    return request.app.state.kb.latest_job_status()
