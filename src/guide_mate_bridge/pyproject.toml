@@ -1,0 +1,14 @@
+[project]
+name = "guide-mate-bridge"
+version = "0.1.0"
+description = "Pi-side AWS IoT bridge for the guide-mate dog agent (dry-run in Phase 1)."
+requires-python = ">=3.10"
+dependencies = ["awsiotsdk", "guidemate-msgs"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["guide_mate_bridge*"]

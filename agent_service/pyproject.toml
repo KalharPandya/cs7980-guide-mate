@@ -1,0 +1,21 @@
+[project]
+name = "guidemate-agent"
+version = "0.1.0"
+description = "Cloud-side dog agent (FastAPI + Strands + multi-robot MQTT registry)."
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "strands-agents",
+    "awsiotsdk",
+    "boto3",
+    "guidemate-msgs",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["guidemate_agent*"]
