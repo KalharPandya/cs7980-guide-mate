@@ -159,7 +159,10 @@ else
   EIP="$(q ec2 describe-addresses --allocation-ids "${ALLOC_ID}" \
     --query 'Addresses[0].PublicIp' --output text)"
 fi
-DOMAIN="$(echo "${EIP}" | tr '.' '-').nip.io"
+# Domain: prefer an explicit GUIDEMATE_DOMAIN (real DNS, e.g. echo.kalhar.ca);
+# fall back to the <eip-dashes>.nip.io hostname when unset. Caddy obtains a
+# Let's Encrypt cert for whichever name resolves to ${EIP} on ports 80/443.
+DOMAIN="${GUIDEMATE_DOMAIN:-$(echo "${EIP}" | tr '.' '-').nip.io}"
 echo "   EIP ${EIP} -> ${DOMAIN}"
 
 echo ">> Admin password: generated ON THE INSTANCE by user_data.sh (never here)"
