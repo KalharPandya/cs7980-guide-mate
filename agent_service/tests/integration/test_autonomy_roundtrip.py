@@ -36,7 +36,13 @@ def test_synthetic_event_records_message_in_dynamodb(monkeypatch):
     from guidemate_agent.app import app
 
     with TestClient(app) as client:
-        client.post("/api/admin/login", data={"password": "test-admin-pw"})
+        login = client.post("/api/admin/login", json={"password": "test-admin-pw"})
+        assert login.status_code == 200, login.text
+        # The auth cookie is set Secure; TestClient uses http://testserver, so httpx
+        # will not auto-resend it. Re-set it (without the Secure attr) so the signed
+        # session carries — the token itself is unchanged, this only bridges the
+        # http test transport. (In prod the cookie rides HTTPS normally.)
+        client.cookies.set("guidemate_admin", login.cookies["guidemate_admin"])
         res = client.post(
             "/api/admin/synthetic-event", json={"type": "low_battery", "battery": 0.11}
         )
