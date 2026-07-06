@@ -221,6 +221,12 @@ async function loadKb() {
     tbody.appendChild(tr);
   }
 }
+// Styled file picker: mirror the chosen filename into the label (the native
+// input is visually hidden, so its filename text is too).
+$("kb-file").addEventListener("change", () => {
+  const f = $("kb-file").files[0];
+  $("kb-file-name").textContent = f ? f.name : "No file chosen";
+});
 $("kb-upload-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const fileInput = $("kb-file");
@@ -230,6 +236,7 @@ $("kb-upload-form").addEventListener("submit", async (e) => {
   const resp = await api("/kb", { method: "POST", body: fd });
   if (!resp.ok) alert("Upload failed.");
   fileInput.value = "";
+  $("kb-file-name").textContent = "No file chosen";
   loadKb();
 });
 $("kb-sync").addEventListener("click", async () => {

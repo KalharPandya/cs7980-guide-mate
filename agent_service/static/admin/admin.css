@@ -153,6 +153,10 @@ h1, h2, h3 { margin: 0; line-height: 1.1; letter-spacing: -0.01em; }
 @media (prefers-color-scheme: dark) {
   /* keep the university lockup legible on dark by giving it a white plate */
   .app-bar-lockup { background: #fff; padding: 5px 8px; border-radius: 6px; }
+  /* Hero/dark surfaces use the RED outline mark frame (brief: B for dark stages).
+     Light mode keeps the black app frame. The app-bar mark sits on the #111
+     surface here, so switch its frame to Northeastern red to match the login. */
+  .moses-mark { border-color: var(--gm-primary); }
 }
 .app-bar-rule { height: 4px; background: var(--gm-primary); }
 
@@ -275,6 +279,19 @@ button[type="submit"]:hover,
 }
 .robot .danger:hover { filter: brightness(1.08); }
 
+/* Dark-mode kill switch: the hero `--gm-danger` (#ff6b6b) is a pale coral —
+   white text on it is only ~2:1 (WCAG fail). The kill switch must stay the
+   highest-contrast, most-urgent control, so fill it with the deep Northeastern
+   red (#c8102e) instead — white on #c8102e is ~5.9:1. Light mode is unchanged. */
+@media (prefers-color-scheme: dark) {
+  .robot .danger {
+    background: #c8102e;
+    border-color: #c8102e;
+    color: #ffffff;
+  }
+  .robot .danger:hover { filter: none; background: #e11331; border-color: #e11331; }
+}
+
 :focus-visible {
   outline: 3px solid var(--gm-focus);
   outline-offset: 2px;
@@ -301,8 +318,30 @@ select { min-height: 44px; }
   display: inline-flex; align-items: center; gap: 8px;
   font-size: 14px; font-weight: 800; color: var(--gm-text-muted);
 }
-.file-input { border-style: dashed; padding: 9px 12px; }
 .kb-upload { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* Styled file picker — replaces the native OS "Choose File" chrome (light-gray
+   system button reads as foreign on the black card in dark mode). The real
+   <input type=file> is visually hidden (still focusable + functional, id kept);
+   the label's pill acts as the button and matches the system button spec. */
+.file-field { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; cursor: pointer; }
+.file-input {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; border: 0; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+.file-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: 0 18px;
+  border: 1px solid var(--gm-border); border-radius: 999px;
+  background: var(--gm-surface); color: var(--gm-text);
+  font-weight: 800; font-size: 15px;
+}
+.file-field:hover .file-btn { border-color: var(--gm-text-muted); }
+.file-field:focus-within .file-btn {
+  outline: 3px solid var(--gm-focus); outline-offset: 2px;
+}
+.file-name { color: var(--gm-text-muted); font-size: 14px; font-weight: 700; }
 
 /* ================================================================= */
 /*  STATUS PILLS  (always label + colour, never colour alone)        */

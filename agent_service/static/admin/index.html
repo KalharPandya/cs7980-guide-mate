@@ -156,7 +156,11 @@
             <h2>Knowledge base</h2>
           </div>
           <form id="kb-upload-form" class="kb-upload">
-            <input id="kb-file" type="file" class="file-input" />
+            <label class="file-field">
+              <input id="kb-file" type="file" class="file-input" />
+              <span class="file-btn">Choose file</span>
+              <span id="kb-file-name" class="file-name" aria-live="polite">No file chosen</span>
+            </label>
             <button type="submit" class="btn btn-primary">Upload</button>
           </form>
           <div class="row">
