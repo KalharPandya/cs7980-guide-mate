@@ -49,6 +49,9 @@ class ChoreographyRunner:
                 return
 
         try:
+            # max_speed is read here, intentionally outside the gates() snapshot above:
+            # it's safe at any read time because the shadow can only clamp it monotonically
+            # down (never above MAX_LINEAR), so a concurrent update can only make it stricter.
             steps = build(cmd, max_speed=self._safety.max_speed)
         except ValueError as exc:
             ack("failed", reason=str(exc))

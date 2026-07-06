@@ -31,11 +31,14 @@ def test_effective_dry_run_is_env_OR_shadow():
     assert env_off.effective_dry_run is False
 
 
-def test_reported_uses_effective_dry_run():
+def test_reported_dry_run_echoes_shadow_effective_separate():
+    # reported.dry_run must echo the SHADOW-level value (so desired==reported converges,
+    # no delta storm); the env-OR-shadow effective value is exposed separately.
     s = SafetyState(env_dry_run=True)
     s.apply_shadow({"dry_run": False, "motion_enabled": True, "max_speed": 0.10})
     rep = s.reported()
-    assert rep == {"motion_enabled": True, "max_speed": 0.10, "dry_run": True}
+    assert rep == {"motion_enabled": True, "max_speed": 0.10,
+                   "dry_run": False, "effective_dry_run": True}
 
 
 def test_docked_and_uptime():
