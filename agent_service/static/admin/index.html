@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Robert Admin</title>
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+  <header><h1>Robert &mdash; Admin</h1></header>
+
+  <section id="login-view">
+    <h2>Admin login</h2>
+    <form id="login-form">
+      <input id="password" type="password" placeholder="Admin password" autocomplete="current-password" />
+      <button type="submit">Log in</button>
+    </form>
+    <p id="login-error" class="error"></p>
+  </section>
+
+  <section id="panel" hidden>
+    <nav class="tabs">
+      <button data-tab="flags" class="active">Flags</button>
+      <button data-tab="prompt">Prompt</button>
+      <button data-tab="robot">Robot</button>
+      <button data-tab="knowledge">Knowledge</button>
+    </nav>
+
+    <div id="tab-flags" class="tab">
+      <h2>Feature flags</h2>
+      <p class="hint">Toggling a flag saves immediately.</p>
+      <div id="flags-list"></div>
+    </div>
+
+    <div id="tab-prompt" class="tab" hidden>
+      <h2>System prompt</h2>
+      <p class="hint">Blank = built-in Robert persona.</p>
+      <textarea id="prompt-text" rows="8" placeholder="(built-in persona)"></textarea>
+      <div class="row">
+        <button id="prompt-save">Save</button>
+        <button id="prompt-clear" class="secondary">Reset to persona</button>
+      </div>
+      <p id="prompt-status" class="hint"></p>
+    </div>
+
+    <div id="tab-robot" class="tab" hidden>
+      <h2>Robot status</h2>
+      <button id="robot-refresh" class="secondary">Refresh</button>
+      <div id="robot-list"></div>
+    </div>
+
+    <div id="tab-knowledge" class="tab" hidden>
+      <h2>Knowledge base</h2>
+      <form id="kb-upload-form">
+        <input id="kb-file" type="file" />
+        <button type="submit">Upload</button>
+      </form>
+      <div class="row">
+        <button id="kb-sync">Sync (ingest)</button>
+        <span id="kb-sync-status" class="hint"></span>
+      </div>
+      <table id="kb-table">
+        <thead><tr><th>Key</th><th>Size</th><th>Modified</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <script src="admin.js"></script>
+</body>
+</html>
