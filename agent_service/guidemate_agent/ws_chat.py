@@ -76,6 +76,28 @@ def _physical_target(app: FastAPI, session_id: str) -> Optional[str]:
         return None
 
 
+async def _send_stop(ws: WebSocket, app: FastAPI, session_id: str) -> None:
+    """User-facing persistent Stop: forward a real stop Command to the session's
+    bound robot. This is the SAME mechanism the agent's ``stop`` tool uses
+    (``Command(type="stop", name="stop")`` through the registry). A virtual /
+    unbound session has no robot to stop, so we ack ``sent=False`` rather than
+    naming or touching a robot the user isn't bound to.
+    """
+    target = _physical_target(app, session_id)
+    if target is None:
+        await ws.send_json({"type": "stopped", "sent": False})
+        return
+    registry = app.state.registry
+    loop = asyncio.get_running_loop()
+    try:
+        cmd = Command(type="stop", name="stop")
+        await loop.run_in_executor(None, lambda: registry.send_command(target, cmd))
+        await ws.send_json({"type": "stopped", "sent": True, "robot_id": target})
+    except Exception:  # noqa: BLE001 — a failed stop must not kill the socket
+        log.exception("stop command failed")
+        await ws.send_json({"type": "error", "message": "couldn't send the stop — try again"})
+
+
 async def _safe_finish(transcribe: TranscribeSession) -> None:
     """Close a Transcribe stream without letting a teardown error escape."""
     try:
@@ -194,6 +216,10 @@ def register(app: FastAPI) -> None:
                             text = (data.get("message") or "").strip()
                             if text:
                                 await _run_pipeline(ws, app, session_id, text)
+                        elif mtype == "stop":
+                            # Persistent user-facing Stop -> real stop Command to
+                            # the bound robot (no agent turn / no Bedrock).
+                            await _send_stop(ws, app, session_id)
                     elif msg.get("bytes") is not None and transcribe is not None:
                         pcm = msg["bytes"]
                         if declared_rate != 16000:

@@ -127,6 +127,37 @@ def test_blank_text_message_is_ignored(monkeypatch):
     assert app.state.registry.published == [("turtlebot468", "happy")]
 
 
+def test_stop_message_physical_session_forwards_stop_command(monkeypatch):
+    """The persistent user-facing Stop sends a real stop Command to the bound
+    robot via the registry (same mechanism as the agent's stop tool)."""
+    app = _app(monkeypatch, resolver=lambda sid: "turtlebot468")  # physical
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/chat/sess-stop") as ws:
+            ws.send_json({"type": "stop"})
+            ack = ws.receive_json()
+    assert ack["type"] == "stopped"
+    assert ack["sent"] is True
+    assert ack["robot_id"] == "turtlebot468"
+    assert app.state.registry.published == [("turtlebot468", "stop")]
+
+
+def test_stop_message_virtual_session_publishes_nothing(monkeypatch):
+    """A virtual/unbound session has no robot to stop: ack sent=False, no publish,
+    and the socket keeps serving."""
+    app = _app(monkeypatch, resolver=lambda sid: None)  # virtual
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/chat/sess-stop-v") as ws:
+            ws.send_json({"type": "stop"})
+            ack = ws.receive_json()
+            # socket still alive for the next message
+            ws.send_json({"type": "text", "message": "hi"})
+            reply = ws.receive_json()
+    assert ack["type"] == "stopped"
+    assert ack["sent"] is False
+    assert app.state.registry.published == []
+    assert reply["type"] == "reply"
+
+
 def test_dropped_ack_still_releases_reply(monkeypatch):
     """Timeout fallback: a robot that never confirms (no running/done ack) must
     NOT wedge the turn — gate_released is False but the reply+audio still ship."""
