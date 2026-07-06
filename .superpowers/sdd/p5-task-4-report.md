@@ -5,6 +5,12 @@ together** (emotes synchronized, never delayed/early). Implemented as
 `agent_service/guidemate_agent/ws_chat.py` and wired into the FastAPI app in
 `app.py`.
 
+> **Code-review round 2 (verdict Needs-fixes, no Critical) — addressed.** See the
+> "Code-review fixes" section at the end. Headline change: the WS turn now runs
+> through DogAgent's **session-aware** path, and **DogAgent is the single
+> persistence owner** (the WS layer no longer persists). The sections below marked
+> with ⚠️ describe the pre-fix design; the fixes section is authoritative.
+
 ## Files
 - **New:** `agent_service/guidemate_agent/ws_chat.py` — `CaptureRegistry`,
   `register(app)`, and the `_run_pipeline` turn engine.
@@ -110,3 +116,88 @@ together** (emotes synchronized, never delayed/early). Implemented as
 `agent_service/tests`: **186 passed, 16 skipped** (skips are pre-existing
 playwright/integration cases). App imports cleanly. Task-4 tests: 5 passed;
 `test_app.py` + `test_ws_chat.py`: 22 passed.
+
+---
+
+# Code-review fixes (round 2)
+
+Merged `origin/kalhar/dog-agent-poc` (tip `9ae7707`, P6-T5's `app.state.s3` +
+maps routes) first — `app.py` auto-merged cleanly; both P6-T5's lifespan
+additions and my WS wiring coexist (both are additive).
+
+## Persistence owner decision: **DogAgent** (single owner)
+Previously the WS layer ran `agent.chat(text, robot_id=target)` (no `session_id`),
+which took DogAgent's LEGACY path: `history=None`, `physical=True`
+unconditionally, and `target` fell back to the hardcoded `self._robot_ids[0]`. The
+WS layer then persisted the two messages itself. Two problems: (1) every WS turn
+lost conversation memory + name greeting and a virtual session was wrongly given
+physical framing / could name a robot it isn't bound to; (2) two persistence
+owners risked double-writes if we ever passed `session_id`.
+
+Fix: the WS turn now calls **`agent.chat(text, session_id=session_id)`**, routing
+through DogAgent's session-aware branch (`dog_agent.py` `_resolve_session`) which:
+- loads `user_name` + last-10 history (memory + name greeting);
+- sets `physical = (bound robot is not None)` → a virtual session gets
+  virtual-honest wording ("virtual emote played (avatar only)"), and
+  `run_motion`/`stop`/`get_status` are withheld (never names an unbound robot);
+- resolves the **per-session** bound robot (never a hardcoded id);
+- **persists both the user + assistant messages itself.**
+
+The WS layer's own `_persist` helper and its `sessions` import were **removed** —
+DogAgent is the sole persistence owner, so there is exactly **one user row + one
+dog row per turn** (asserted by `test_ws_virtual_turn_is_session_aware_and_single_persist`
+and `test_ws_physical_turn_publishes_to_bound_robot`).
+
+The real physical emote publish + release gate still live in the WS layer (owned,
+per the Phase-5 decision): `_physical_target()` resolves the publish target via the
+`robot_target_resolver` seam, whose **default is now the authoritative
+`sessions.robot_for_session`** (was a virtual-only `lambda: None`). So virtual →
+`None` → `emote_sync` publishes nothing and releases immediately; robot-bound →
+the bound id → real publish + order-independent gate. This keeps the WS publish
+target consistent with DogAgent's own internal resolution.
+
+## Hardened receive loop (IMPORTANT #2)
+The outer loop previously only caught `WebSocketDisconnect`, so a malformed JSON
+text frame (`json.loads`) or a client-declared `sample_rate < 16000`
+(`downsample_pcm16` raises `ValueError`, it only downsamples) propagated uncaught
+and killed the endpoint silently. Now each received message is handled inside a
+**per-message `try/except`**: `WebSocketDisconnect` still breaks the loop cleanly;
+any other exception → `log.exception` + a `{"type":"error"}` frame + **continue**
+(if even the error send fails, the socket is gone → break). `ws.receive()` itself
+is also guarded for disconnect.
+
+## Minor fixes
+- **start_audio leak:** a second `start_audio` without an intervening `stop_audio`
+  now closes the prior `TranscribeSession` (`_safe_finish`) before opening a new
+  one, instead of leaking it.
+- **Deprecation:** `asyncio.get_event_loop()` → `asyncio.get_running_loop()` inside
+  the `_run_pipeline` coroutine.
+
+## Tests added/extended (`test_ws_chat.py`, now 8 tests)
+Restructured into two layers:
+- **Protocol (minimal app + fakes):** virtual reply+audio + session-aware routing
+  assertion; physical publish + telemetry; blank-message ignored; dropped-ack
+  timeout fallback; **malformed-JSON frame → error frame + socket survives a
+  following good turn**; **bad `sample_rate` → error frame + socket survives** (a
+  no-op `_FakeTranscribe` keeps the audio path off AWS).
+- **Integration (real app + `GUIDEMATE_FAKE_ROBOT` + moto + faked Bedrock):**
+  `test_ws_virtual_turn_is_session_aware_and_single_persist` — memory-capable
+  session path, virtual framing (`get_status`/`run_motion` withheld), **no
+  publish**, exactly `["user","dog"]` persisted (no double-persist);
+  `test_ws_physical_turn_publishes_to_bound_robot` — emote published to the
+  per-session bound robot, `get_status` offered, single persistence.
+
+The old `test_text_message_persists_user_and_assistant` (which asserted a
+WS-layer persist) was removed — persistence moved to DogAgent.
+
+## Adaptation note
+Changing the `robot_target_resolver` default from virtual-only (`lambda: None`) to
+`sessions.robot_for_session` is a deliberate deviation from the original brief
+("virtual-only default installed here"): the authoritative binding surface exists
+now, and the review requires the WS to publish to the per-session bound robot. The
+seam is preserved for a Phase-4 override.
+
+## Re-verification
+`PYTHONPATH= .venv/bin/pytest -q` (full `agent_service/tests`): **196 passed, 17
+skipped** (skips pre-existing playwright/integration). App imports cleanly.
+`test_ws_chat.py`: 8 passed.

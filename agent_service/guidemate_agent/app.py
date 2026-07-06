@@ -90,8 +90,12 @@ async def lifespan(app: FastAPI):
     # WS chat path (/ws/chat/{session_id}): in-process telemetry ring buffers, a
     # WS-path agent whose emote is picked here but whose physical publish is owned
     # by ws_chat (hence CaptureRegistry — the agent's send_emote succeeds virtually
-    # and publishes nothing; ws_chat does the real publish + release gate), and a
-    # virtual-only session->robot resolver (Phase 4 overrides it with a real one).
+    # and publishes nothing; ws_chat does the real publish + release gate), and the
+    # session->robot resolver for the WS real-publish target. Default is the
+    # AUTHORITATIVE binding (sessions.robot_for_session): it returns a robot id only
+    # when the session both binds that robot AND holds its lock, else None (virtual)
+    # — so a free/no-robot session never publishes and is never told a robot id.
+    # Phase 4 may override the seam.
     app.state.observability = Observability()
     app.state.ws_agent = DogAgent(
         registry=CaptureRegistry(),
@@ -101,7 +105,7 @@ async def lifespan(app: FastAPI):
         store=store,
     )
     if not hasattr(app.state, "robot_target_resolver"):
-        app.state.robot_target_resolver = lambda session_id: None
+        app.state.robot_target_resolver = sessions.robot_for_session
 
     # Autonomy: unprompted, motion-free turns driven by robot status events
     # (via registry.on_event) and a daily scheduled job (morning stretch).

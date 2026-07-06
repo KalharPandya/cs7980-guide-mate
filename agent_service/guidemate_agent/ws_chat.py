@@ -1,15 +1,21 @@
 """WebSocket chat: /ws/chat/{session_id}. Audio -> Transcribe -> agent -> emote-sync
 -> reply + Polly audio, released together. Text messages use the same pipeline.
 
+Session awareness: the turn is run through DogAgent's SESSION-AWARE path
+(``chat(text, session_id=...)``), so it gets conversation memory + name greeting,
+correct virtual-vs-physical wording, the per-session bound robot (never a hardcoded
+id), AND single-owner persistence of both the user + assistant messages. The WS
+layer does NOT persist — DogAgent owns it — so there is exactly one user row + one
+dog row per turn.
+
 Emote ownership: the WS-path DogAgent is backed by CaptureRegistry so its send_emote
 tool 'succeeds' virtually (reply text stays clean) but publishes NOTHING. The real
-physical publish + the order-independent release gate live HERE, after the agent turn,
-per the Phase-5 emote-sync decision.
-
+physical publish + the order-independent release gate live HERE, after the agent turn.
 The gate is order-independent AND time-bounded: emote_sync publishes the emote and
-waits up to `timeout_s` for ANY running/done ack (AWS IoT QoS1 does not preserve ack
-order). If none arrives, it releases anyway (gate_released=False) so a dropped ack can
-never wedge the turn — the reply text + audio still ship together.
+waits up to GATE_TIMEOUT_S for ANY running/done ack (AWS IoT QoS1 does not preserve
+ack order). If none arrives, it releases anyway (gate_released=False) so a dropped ack
+can never wedge the turn — the reply text + audio still ship together. A virtual
+(no-robot) session never publishes and never names a robot it isn't bound to.
 """
 from __future__ import annotations
 
@@ -26,7 +32,6 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from guidemate_msgs.messages import Command
 from guidemate_msgs.metrics import emit_metric
 
-from guidemate_agent import sessions
 from guidemate_agent.emote_sync import emote_sync
 from guidemate_agent.speech import TranscribeSession, downsample_pcm16, synthesize_mp3
 
@@ -57,9 +62,9 @@ class CaptureRegistry:
 def _physical_target(app: FastAPI, session_id: str) -> Optional[str]:
     """Resolve the physical robot bound to this session, or None (virtual/free user).
 
-    Uses the `app.state.robot_target_resolver` seam (Phase 4 installs a real
-    session->robot resolver; the default is virtual-only). A broken/raising
-    resolver degrades to virtual rather than breaking chat.
+    Uses the ``app.state.robot_target_resolver`` seam (defaults to the authoritative
+    session->robot binding, ``sessions.robot_for_session``; Phase 4 may override it).
+    A broken/raising resolver degrades to virtual rather than breaking chat.
     """
     resolver = getattr(app.state, "robot_target_resolver", None)
     if resolver is None:
@@ -71,21 +76,12 @@ def _physical_target(app: FastAPI, session_id: str) -> Optional[str]:
         return None
 
 
-def _persist(session_id: str, user_text: Optional[str], reply_text: str,
-             obs, turn_id: str) -> None:
-    """Best-effort persist of the user utterance + assistant reply.
-
-    Never load-bearing: a DynamoDB hiccup (or the offline unit-test fake raising)
-    must not kill the turn — the reply + audio have already been produced.
-    """
+async def _safe_finish(transcribe: TranscribeSession) -> None:
+    """Close a Transcribe stream without letting a teardown error escape."""
     try:
-        if user_text:
-            sessions.append_message(session_id, "user", user_text)
-        sessions.append_message(session_id, "dog", reply_text)
-    except Exception as exc:  # noqa: BLE001 — persistence is best-effort
-        log.exception("message persist failed")
-        if obs is not None:
-            obs.record_error("persist", str(exc), turn_id)
+        await transcribe.finish()
+    except Exception:  # noqa: BLE001 — teardown is best-effort
+        log.exception("transcribe finish failed")
 
 
 async def _run_pipeline(ws: WebSocket, app: FastAPI, session_id: str, text: str) -> None:
@@ -94,14 +90,18 @@ async def _run_pipeline(ws: WebSocket, app: FastAPI, session_id: str, text: str)
     registry = app.state.registry
     region = getattr(app.state.config, "region", "us-west-2")
     turn_id = str(uuid.uuid4())
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     try:
         target = _physical_target(app, session_id)
         t0 = time.monotonic()
-        # Agent turn runs in a worker thread — DogAgent.chat() is sync/blocking
-        # (Bedrock + tool calls) and must not stall the event loop.
-        result = await loop.run_in_executor(None, lambda: agent.chat(text, robot_id=target))
+        # Session-aware turn: DogAgent resolves name/history + virtual-vs-physical
+        # framing + the per-session bound robot (never a hardcoded id), and persists
+        # BOTH the user + assistant messages itself (single persistence owner — the
+        # WS layer deliberately does not persist, so there is one user + one dog row).
+        result = await loop.run_in_executor(
+            None, lambda: agent.chat(text, session_id=session_id)
+        )
         turn_ms = (time.monotonic() - t0) * 1000.0
         if obs is not None:
             obs.record_latency(turn_id, turn_ms, session_id)
@@ -110,10 +110,6 @@ async def _run_pipeline(ws: WebSocket, app: FastAPI, session_id: str, text: str)
             emit_metric("WsTurnLatencyMs", turn_ms, "Milliseconds")
         except Exception:  # noqa: BLE001 — telemetry is best-effort
             log.exception("emit_metric failed")
-
-        # Persist both messages (best-effort). Done regardless of robot binding —
-        # every WS session has a session_id, virtual or robot-bound.
-        _persist(session_id, text, result["reply_text"], obs, turn_id)
 
         emote = result.get("emote")
         released = True
@@ -165,36 +161,54 @@ def register(app: FastAPI) -> None:
         declared_rate = 16000
         try:
             while True:
-                msg = await ws.receive()
+                try:
+                    msg = await ws.receive()
+                except WebSocketDisconnect:
+                    break
                 if msg["type"] == "websocket.disconnect":
                     break
-                if msg.get("text") is not None:
-                    data = json.loads(msg["text"])
-                    mtype = data.get("type")
-                    if mtype == "start_audio":
-                        declared_rate = int(data.get("sample_rate", 16000))
-                        transcribe = TranscribeSession(region=region, sample_rate=16000)
-                        await transcribe.start()
-                    elif mtype == "stop_audio":
-                        text = await transcribe.finish() if transcribe else ""
-                        transcribe = None
-                        await ws.send_json({"type": "transcript", "text": text})
-                        if text.strip():
-                            await _run_pipeline(ws, app, session_id, text)
-                    elif mtype == "text":
-                        text = (data.get("message") or "").strip()
-                        if text:
-                            await _run_pipeline(ws, app, session_id, text)
-                elif msg.get("bytes") is not None and transcribe is not None:
-                    pcm = msg["bytes"]
-                    if declared_rate != 16000:
-                        pcm = downsample_pcm16(pcm, declared_rate, 16000)
-                    await transcribe.feed(pcm)
-        except WebSocketDisconnect:
-            pass
+                # Per-message guard: a malformed JSON frame, a bad declared
+                # sample_rate (downsample_pcm16 raises), or any other one-off
+                # error must NOT kill the socket — reply with an error frame,
+                # log it, and keep serving the next message.
+                try:
+                    if msg.get("text") is not None:
+                        data = json.loads(msg["text"])
+                        mtype = data.get("type")
+                        if mtype == "start_audio":
+                            # Guard: a second start_audio without an intervening
+                            # stop_audio would leak the prior Transcribe stream.
+                            if transcribe is not None:
+                                await _safe_finish(transcribe)
+                                transcribe = None
+                            declared_rate = int(data.get("sample_rate", 16000))
+                            transcribe = TranscribeSession(region=region, sample_rate=16000)
+                            await transcribe.start()
+                        elif mtype == "stop_audio":
+                            text = await transcribe.finish() if transcribe else ""
+                            transcribe = None
+                            await ws.send_json({"type": "transcript", "text": text})
+                            if text.strip():
+                                await _run_pipeline(ws, app, session_id, text)
+                        elif mtype == "text":
+                            text = (data.get("message") or "").strip()
+                            if text:
+                                await _run_pipeline(ws, app, session_id, text)
+                    elif msg.get("bytes") is not None and transcribe is not None:
+                        pcm = msg["bytes"]
+                        if declared_rate != 16000:
+                            pcm = downsample_pcm16(pcm, declared_rate, 16000)
+                        await transcribe.feed(pcm)
+                except WebSocketDisconnect:
+                    break
+                except Exception:  # noqa: BLE001 — one bad frame must not kill the socket
+                    log.exception("ws message handling failed")
+                    try:
+                        await ws.send_json(
+                            {"type": "error", "message": "sorry, I couldn't handle that"}
+                        )
+                    except Exception:  # noqa: BLE001 — socket is already gone
+                        break
         finally:
             if transcribe is not None:
-                try:
-                    await transcribe.finish()
-                except Exception:  # noqa: BLE001
-                    pass
+                await _safe_finish(transcribe)

@@ -1,29 +1,38 @@
 """WebSocket chat endpoint tests: /ws/chat/{session_id}.
 
-Exercises the full transcript -> agent turn -> emote-sync -> reply+audio pipeline
-with fakes (no Bedrock / no MQTT / no Polly / no DynamoDB). The emote publish +
-order-independent release gate live in the WS layer (ws_chat), so these tests
-assert the virtual (no-robot) and robot-bound paths from the WS side directly.
+Two layers:
+  * lightweight protocol tests over a minimal FastAPI app with a fake WS-path
+    agent (no Bedrock / MQTT / Polly / DynamoDB) — assert the reply+audio shapes,
+    the order-independent release gate + timeout fallback, and the hardened
+    receive loop (malformed frames don't kill the socket);
+  * integration tests over the REAL app (fake robot registry + moto DynamoDB +
+    faked Bedrock) — assert the WS turn is session-aware, persists EXACTLY one
+    user + one dog row (single persistence owner = DogAgent, no double-persist),
+    is virtual-honest (no publish / no robot named when unbound), and publishes to
+    the per-session bound robot (never a hardcoded id) when bound.
 """
 import base64
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import guidemate_agent.app as appmod
 import guidemate_agent.ws_chat as ws_chat
+from guidemate_agent import dog_agent, sessions
 from guidemate_agent.observability import Observability
 
 
+# ===================================================================== fakes ==
 class _FakeAgent:
-    """Stand-in for the WS-path DogAgent: picks 'happy', no Bedrock/MQTT."""
+    """Stand-in for the WS-path DogAgent: session-aware signature, picks 'happy'."""
 
     def __init__(self):
         self.seen = []
 
-    def chat(self, message, robot_id=None):
-        self.seen.append((message, robot_id))
+    def chat(self, message, session_id=None, robot_id=None):
+        self.seen.append({"message": message, "session_id": session_id, "robot_id": robot_id})
         return {"reply_text": "woof! happy to help", "emote": "happy",
-                "robot": [], "turn_id": "turn-x"}
+                "robot": [], "turn_id": "turn-x", "session_id": session_id}
 
 
 class _FakeRegistry:
@@ -39,20 +48,30 @@ class _FakeRegistry:
         return {"robot_id": robot_id, "presence": "online"}
 
 
+class _FakeTranscribe:
+    """No-op Transcribe session so the audio-frame paths never touch AWS."""
+
+    def __init__(self, **kw):
+        pass
+
+    async def start(self):
+        return None
+
+    async def feed(self, pcm):
+        return None
+
+    async def finish(self):
+        return ""
+
+
 def _app(monkeypatch, resolver):
     monkeypatch.setattr(ws_chat, "synthesize_mp3", lambda text, **kw: b"MP3BYTES")
-    # Persistence exercised via a fake so the unit test never touches real AWS.
-    persisted: list = []
-    monkeypatch.setattr(
-        ws_chat.sessions, "append_message",
-        lambda session_id, role, text: persisted.append((session_id, role, text)),
-    )
+    monkeypatch.setattr(ws_chat, "TranscribeSession", _FakeTranscribe)
     app = FastAPI()
     app.state.registry = _FakeRegistry()
     app.state.observability = Observability()
     app.state.ws_agent = _FakeAgent()
     app.state.robot_target_resolver = resolver
-    app.state._persisted = persisted
 
     class _Cfg:
         region = "us-west-2"
@@ -61,6 +80,7 @@ def _app(monkeypatch, resolver):
     return app
 
 
+# ======================================================= protocol (fake app) ==
 def test_text_message_virtual_session_returns_reply_and_audio(monkeypatch):
     app = _app(monkeypatch, resolver=lambda sid: None)  # virtual
     with TestClient(app) as client:
@@ -75,6 +95,8 @@ def test_text_message_virtual_session_returns_reply_and_audio(monkeypatch):
     assert base64.b64decode(audio["b64"]) == b"MP3BYTES"
     # Virtual session: the WS layer must NOT publish to the robot.
     assert app.state.registry.published == []
+    # The turn is routed through the SESSION-AWARE path (session_id threaded).
+    assert app.state.ws_agent.seen[0]["session_id"] == "sess-1"
 
 
 def test_text_message_physical_session_publishes_and_records(monkeypatch):
@@ -92,21 +114,6 @@ def test_text_message_physical_session_publishes_and_records(monkeypatch):
     assert lat and lat[0]["turn_id"]
 
 
-def test_text_message_persists_user_and_assistant(monkeypatch):
-    """Both the user utterance and the assistant reply are persisted, in order,
-    regardless of robot binding (virtual session shown here)."""
-    app = _app(monkeypatch, resolver=lambda sid: None)
-    with TestClient(app) as client:
-        with client.websocket_connect("/ws/chat/sess-3") as ws:
-            ws.send_json({"type": "text", "message": "hello robert"})
-            ws.receive_json()  # reply
-            ws.receive_json()  # audio
-    assert app.state._persisted == [
-        ("sess-3", "user", "hello robert"),
-        ("sess-3", "dog", "woof! happy to help"),
-    ]
-
-
 def test_blank_text_message_is_ignored(monkeypatch):
     """An empty/whitespace message runs no turn (no reply frame, no publish)."""
     app = _app(monkeypatch, resolver=lambda sid: "turtlebot468")
@@ -117,7 +124,6 @@ def test_blank_text_message_is_ignored(monkeypatch):
             ws.send_json({"type": "text", "message": "sit"})
             reply = ws.receive_json()
     assert reply["type"] == "reply"
-    # Only the real message produced a publish.
     assert app.state.registry.published == [("turtlebot468", "happy")]
 
 
@@ -147,3 +153,115 @@ def test_dropped_ack_still_releases_reply(monkeypatch):
     assert reply["gate_released"] is False
     assert audio["type"] == "audio"
     assert app.state.registry.published == [("turtlebot468", "happy")]
+
+
+def test_malformed_json_frame_yields_error_and_socket_survives(monkeypatch):
+    """A non-JSON text frame -> {'type':'error'} frame, socket stays open for a
+    subsequent good turn (the receive loop swallows the parse error)."""
+    app = _app(monkeypatch, resolver=lambda sid: None)
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/chat/sess-6") as ws:
+            ws.send_text("this is not json {{{")
+            err = ws.receive_json()
+            assert err["type"] == "error"
+            # socket still usable
+            ws.send_json({"type": "text", "message": "hi"})
+            reply = ws.receive_json()
+            ws.receive_json()  # audio
+    assert reply["type"] == "reply"
+
+
+def test_bad_sample_rate_yields_error_and_socket_survives(monkeypatch):
+    """A client-declared sample_rate < 16000 makes downsample_pcm16 raise; the
+    guarded loop replies with an error frame and keeps the socket open."""
+    app = _app(monkeypatch, resolver=lambda sid: None)
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/chat/sess-7") as ws:
+            ws.send_json({"type": "start_audio", "sample_rate": 8000})
+            ws.send_bytes(b"\x01\x00\x02\x00\x03\x00\x04\x00")  # PCM16 chunk
+            err = ws.receive_json()
+            assert err["type"] == "error"
+            ws.send_json({"type": "text", "message": "hi"})
+            reply = ws.receive_json()
+            ws.receive_json()  # audio
+    assert reply["type"] == "reply"
+
+
+# ================================================ integration (real DogAgent) ==
+class _FakeStrands:
+    """strands.Agent stand-in: records how it was built and invokes send_emote
+    when called, so publish / no-publish is observable through the registry."""
+
+    last = None
+
+    def __init__(self, model=None, system_prompt=None, tools=None):
+        self.system_prompt = system_prompt
+        self.tools = list(tools or [])
+        self.tool_names = [t.tool_name for t in self.tools]
+        type(self).last = self
+
+    def __call__(self, message):
+        self.message = message
+        for t in self.tools:
+            if t.tool_name == "send_emote":
+                t("happy")
+        return "woof woof"
+
+
+def _fake_bedrock(monkeypatch):
+    monkeypatch.setattr(dog_agent, "Agent", _FakeStrands)
+    monkeypatch.setattr(dog_agent, "BedrockModel", lambda **kw: None)
+
+
+def _fake_client(monkeypatch):
+    monkeypatch.setenv("GUIDEMATE_FAKE_ROBOT", "1")
+    monkeypatch.setattr(ws_chat, "synthesize_mp3", lambda text, **kw: b"MP3")
+    return TestClient(appmod.app)
+
+
+def test_ws_virtual_turn_is_session_aware_and_single_persist(monkeypatch, ddb):
+    """Virtual (no-robot) WS turn: memory-capable session path + virtual framing,
+    NO MQTT publish, no robot named (get_status withheld), and EXACTLY one user +
+    one dog message persisted (single owner = DogAgent, no double-persist)."""
+    _fake_bedrock(monkeypatch)
+    with _fake_client(monkeypatch) as client:
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        with client.websocket_connect(f"/ws/chat/{sid}") as ws:
+            ws.send_json({"type": "text", "message": "hello"})
+            reply = ws.receive_json()
+            ws.receive_json()  # audio
+        assert reply["type"] == "reply"
+        assert reply["emote"] == "happy"
+        assert reply["gate_released"] is True
+        # single persistence: exactly one user + one dog row, in order
+        msgs = sessions.get_messages(sid)
+        assert [m["role"] for m in msgs] == ["user", "dog"]
+        # virtual-honest: nothing published, and no robot named (get_status/motion
+        # tools withheld because the session holds no robot lock)
+        assert client.app.state.registry.sent == []
+        assert "get_status" not in _FakeStrands.last.tool_names
+        assert "run_motion" not in _FakeStrands.last.tool_names
+
+
+def test_ws_physical_turn_publishes_to_bound_robot(monkeypatch, ddb):
+    """Robot-bound WS turn: emote published to the PER-SESSION bound robot (never a
+    hardcoded id), physical framing (get_status offered), single persistence."""
+    _fake_bedrock(monkeypatch)
+    with _fake_client(monkeypatch) as client:
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        sessions.approve_request(sessions.create_request(sid), "turtlebot468")
+        with client.websocket_connect(f"/ws/chat/{sid}") as ws:
+            ws.send_json({"type": "text", "message": "wiggle"})
+            reply = ws.receive_json()
+            ws.receive_json()  # audio
+        assert reply["gate_released"] is True
+        # real emote publish went to the bound robot via the WS layer
+        assert ("turtlebot468", "emote", "happy") in client.app.state.registry.sent
+        # physical framing: get_status offered this turn
+        assert "get_status" in _FakeStrands.last.tool_names
+        # single persistence still holds on the physical path
+        assert [m["role"] for m in sessions.get_messages(sid)] == ["user", "dog"]
