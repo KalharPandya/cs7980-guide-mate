@@ -282,3 +282,10 @@ service-errors/bedrock-throttle/bridge-offline present, ec2-cpu pending instance
 4 log groups @ 30-day retention; 2 metric filters on agent-service). Alarms sit
 INSUFFICIENT_DATA until traffic (service-errors is OK because its filter has
 `defaultValue=0`) — expected pre-launch.
+
+## Sim identity (Turtlebot-Sim) — added 2026-07-05 (Phase 8)
+- **Thing:** `Turtlebot-Sim` (`thingId 28f0f996-6acf-4239-b180-9babae1b947a`, ARN `arn:aws:iot:us-west-2:852373397000:thing/Turtlebot-Sim`), us-west-2. Separate from `Turtlebot-468` (the real robot is never touched by any Phase 8 artifact).
+- **Cert/key (local, NOT committed):** `~/.aws/guidemate-sim.cert.pem` + `~/.aws/guidemate-sim.key.pem` (chmod 600). Cert ARN `arn:aws:iot:us-west-2:852373397000:cert/e50b6fc6e1be8d2a29ec95166abcb53b080729b3a595e79083c7df23a3eaaefc` — active, attached to the thing and to `guidemate-sim-policy`. Exactly one principal on the thing (idempotent re-run mints no second cert).
+- **Policy:** `guidemate-sim-policy` (tag `project=guidemate-poc`) — connect as client `guidemate-*`; publish/subscribe/receive on `guidemate/turtlebotsim/*` and `$aws/things/Turtlebot-Sim/shadow/*` only.
+- **Classic shadow:** default-deny `{motion_enabled:false, max_speed:0.15, dry_run:true}`, same as the real robot. Flipped `true` **only** during a sim motion run, then reset to locked.
+- **Provisioning:** `scripts/create_sim_identity.sh` (idempotent — re-run skips existing thing/policy and reuses the local cert). **Note:** AWS IoT does not support tagging individual `thing` resources (only thing-groups/types/billing-groups), so the thing itself carries no tag — the script's `tag-resource || true` absorbs the `InvalidRequestException`; the **policy** carries `project=guidemate-poc`. The `sts get-caller-identity` account lookup in the ARN resolves to `852373397000`.
