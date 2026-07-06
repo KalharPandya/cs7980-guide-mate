@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Stand up a **virtual TurtleBot 4** in Ignition Fortress on the Linux box, give it its own AWS IoT identity (`Turtlebot-Sim`) and shadow, point the *unchanged, parameterized* bridge at the sim's ROS graph, build the **one and only real `cmd_vel` publishing path** (env + shadow + dry-run triple-gated), and prove motion end-to-end — circle closes, kill-switch fires, dock-guard refuses — with an odometry-asserted headless pytest regression. Then extend the companion flow with a **virtual-pet** grant so a non-lock session can be connected to the sim robot. **Robot 468's identity, shadow, and locks are never touched.**
+**Goal:** Stand up a **virtual TurtleBot 4** in Ignition Fortress on the Linux box, give it its own AWS IoT identity (`Turtlebot-Sim`) and shadow, point the *unchanged, parameterized* bridge at the sim's ROS graph, build the **one and only real `cmd_vel` publishing path** (env + shadow + dry-run triple-gated) plus `undock`/`dock` as **Create 3 ROS actions**, and prove motion end-to-end — circle closes, kill-switch fires, dock-guard refuses (with the undock/dock/stop exemption), and the full dock lifecycle (undock → drive → dock) round-trips over IoT — with an odometry-asserted headless pytest regression. Then extend the companion flow with a **virtual-pet** grant so a non-lock session can be connected to the sim robot. **Robot 468's identity, shadow, and locks are never touched.**
 
-**Architecture:** Phase 8 is a params-only drop-in on top of the multi-robot foundation. A new one-time script mints the sim's IoT thing + cert + scoped policy + classic shadow (default-deny, identical to the real robot). The bridge gains a real-drive path in `ChoreographyRunner` (a fixed-rate, abort-aware twist loop) and a thin rclpy `CmdVelPublisher`; both are wired in `bridge.main` **only** when a hard triple-gate passes (`GUIDEMATE_ENABLE_MOTION=1` AND shadow `motion_enabled=true` AND not effective-dry-run), with a belt-and-braces hard refusal if that env is ever set for `turtlebot468`. A `sim/` launch helper brings up Ignition + the bridge with sim params. A `GUIDEMATE_SIM=1`-gated pytest drives the sim over real IoT Core and asserts the trajectory from `/odom`. The companion flow gains a robot picker + virtual-pet badge.
+**Architecture:** Phase 8 is a params-only drop-in on top of the multi-robot foundation. A new one-time script mints the sim's IoT thing + cert + scoped policy + classic shadow (default-deny, identical to the real robot). The bridge gains a real-drive path in `ChoreographyRunner` (a fixed-rate, abort-aware twist loop), a thin rclpy `CmdVelPublisher`, and a `DockActions` rclpy action-client wrapper — `undock`/`dock` motion commands are dispatched as **Create 3 ROS actions** (`/undock` → `irobot_create_msgs/action/Undock`, `/dock` → `irobot_create_msgs/action/Dock`), never twist choreographies; all are wired in `bridge.main` **only** when a hard triple-gate passes (`GUIDEMATE_ENABLE_MOTION=1` AND shadow `motion_enabled=true` AND not effective-dry-run), with a belt-and-braces hard refusal if that env is ever set for `turtlebot468`. While docked, the dock guard refuses all motion **except** `undock`, `dock` (no-op-ish → done), and `stop` — the pure exemption matrix `command_permitted` (spec delta "Assignment-triggered dock/undock", commit 91d9bcb). A `sim/` launch helper brings up Ignition + the bridge with sim params. A `GUIDEMATE_SIM=1`-gated pytest drives the sim over real IoT Core and asserts the trajectory from `/odom`. The companion flow gains a robot picker + virtual-pet badge.
 
 **Tech Stack:** Python 3.10, pydantic v2, rclpy (Humble), `geometry_msgs`/`nav_msgs`/`irobot_create_msgs`, Ignition Fortress (`ign gazebo`), `turtlebot4_ignition_bringup` + `irobot_create_ignition_bringup`, awsiotsdk (awscrt MQTT), boto3 + `aws iot` / `aws iot-data`, pytest, Playwright.
 
@@ -40,6 +40,8 @@ Every task's requirements implicitly include this section (copied forward verbat
 
 **Phase 3/4 (PINNED — flag as a dependency):** per-robot lock items `pk="robot_lock#<robot_id>"` in `guidemate-config`; the admin **approve** action binds `session → robot_id` and accepts a `robot_id` argument. `RobotRegistry` is multi-robot (from `GUIDEMATE_ROBOTS`). Chat UI (`static/index.html`) and admin UI (`static/admin.html`) exist with the Requests tab approve control. A `GUIDEMATE_FAKE_ROBOT=1` test mode fakes robot acks for UI tests.
 
+**Phase 4, scope addition (PINNED — spec commit 91d9bcb, "Assignment-triggered dock/undock" delta row):** the `Command` schema's motion names gain `"undock"`/`"dock"` (`_MOTION_NAMES = ("circle", "spin", "undock", "dock")` in `guidemate_msgs/messages.py`; `choreography.build()` still raises `ValueError` for them — they are actions, never twists, and the executor branches before `build()`). The approve-hook fires an automatic `undock` command for the newly bound robot, and unassign/abort fires `dock`. Phase 8 builds the **bridge-side execution** of these commands (Tasks 3–4) and drills the full lifecycle in sim (Task 6); the agent-service hooks are Phase 4's.
+
 ---
 
 ## File Structure
@@ -52,16 +54,18 @@ cs7980-guide-mate/
 │   ├── sim_facts.env                            # NEW (Task 2) — verified topic/action names
 │   └── launch_sim.sh                            # NEW (Task 5) — Ignition + bridge (sim params)
 ├── src/guide_mate_bridge/guide_mate_bridge/
-│   ├── executor.py                              # MODIFY (Task 3) — real-drive path + abort/kill-switch
+│   ├── executor.py                              # MODIFY (Task 3) — real-drive path + dock/undock action dispatch + abort/kill-switch
 │   ├── cmd_vel_publisher.py                     # NEW (Task 4) — rclpy Twist publisher
-│   └── bridge.py                                # MODIFY (Task 4) — motion gating + robot-id guard + stop/kill wiring
+│   ├── dock_actions.py                          # NEW (Task 4) — rclpy action clients for /undock + /dock
+│   └── bridge.py                                # MODIFY (Task 4) — motion gating + exemption matrix + robot-id guard + stop/kill wiring
 ├── src/guide_mate_bridge/scripts/install_bridge_on_pi.sh   # MODIFY (Task 5) — never set GUIDEMATE_ENABLE_MOTION
 ├── src/guide_mate_bridge/tests/
-│   ├── test_executor.py                         # MODIFY (Task 3) — add real-drive + abort tests
+│   ├── test_executor.py                         # MODIFY (Task 3) — real-drive + action + abort tests
 │   ├── test_cmd_vel_publisher.py                # NEW (Task 4)
-│   ├── test_bridge.py                           # MODIFY (Task 4) — gating truth table + robot-id guard
+│   ├── test_dock_actions.py                     # NEW (Task 4) — action-client wrapper with fakes
+│   ├── test_bridge.py                           # MODIFY (Task 4) — gating truth table + exemption matrix + robot-id guard
 │   ├── test_installer_guard.py                  # NEW (Task 5) — installer omits the motion env
-│   └── test_sim_motion.py                       # NEW (Task 6) — GUIDEMATE_SIM=1 odometry regression
+│   └── test_sim_motion.py                       # NEW (Task 6) — GUIDEMATE_SIM=1 odometry regression + dock lifecycle
 ├── agent_service/guidemate_agent/config.py      # MODIFY (Task 7) — default GUIDEMATE_ROBOTS incl. turtlebotsim
 ├── agent_service/static/index.html              # MODIFY (Task 7) — virtual-pet badge
 ├── agent_service/static/admin.html              # MODIFY (Task 7) — approve robot picker
@@ -252,7 +256,7 @@ git commit -m "Kalhar: sim IoT identity script (Turtlebot-Sim thing+cert+scoped 
 
 ---
 
-## Task 2: Verify the sim ROS graph (probe topics + undock + dock-status)
+## Task 2: Verify the sim ROS graph (probe topics + undock/dock actions + dock-status)
 
 **Files:**
 - Create: `sim/probe_sim_graph.sh`, `sim/sim_facts.env`
@@ -260,7 +264,7 @@ git commit -m "Kalhar: sim IoT identity script (Turtlebot-Sim thing+cert+scoped 
 - Test: none (this is a verification task; its deliverable is *verified facts* that Tasks 3–6 trust)
 
 **Interfaces:**
-- Produces: `sim/sim_facts.env` — a shell-sourceable file of the **verified** names later tasks depend on: `SIM_CMD_VEL_TOPIC`, `SIM_ODOM_TOPIC`, `SIM_BATTERY_TOPIC`, `SIM_DOCK_STATUS_TOPIC`, `SIM_DOCK_STATUS_TYPE`, `SIM_UNDOCK_ACTION`, `SIM_UNDOCK_ACTION_TYPE`.
+- Produces: `sim/sim_facts.env` — a shell-sourceable file of the **verified** names later tasks depend on: `SIM_CMD_VEL_TOPIC`, `SIM_ODOM_TOPIC`, `SIM_BATTERY_TOPIC`, `SIM_DOCK_STATUS_TOPIC`, `SIM_DOCK_STATUS_TYPE`, `SIM_UNDOCK_ACTION`, `SIM_UNDOCK_ACTION_TYPE`, `SIM_DOCK_ACTION`, `SIM_DOCK_ACTION_TYPE`.
 
 **Phase dependencies:** none (uses this box's Ignition stack). **This is the "VERIFY as an explicit plan step" the environment note requires.**
 
@@ -296,8 +300,8 @@ for t in /cmd_vel /odom /battery_state /dock_status; do
 done
 echo "== dock-related actions =="
 ros2 action list 2>/dev/null | grep -i -E 'dock' || echo "(no dock actions found)"
-echo "== undock action type (if present) =="
-ros2 action list -t 2>/dev/null | grep -i 'undock' || true
+echo "== undock/dock action types (if present) =="
+ros2 action list -t 2>/dev/null | grep -i -E 'dock' || true
 
 echo "== tearing down (kill by PID) =="
 kill "$SIM_PID" 2>/dev/null || true
@@ -315,9 +319,9 @@ cd ~/cs7980-guide-mate
 chmod +x sim/probe_sim_graph.sh
 ./sim/probe_sim_graph.sh
 ```
-Expected: `/odom`, `/cmd_vel`, `/battery_state`, `/dock_status` appear un-namespaced in the topic list; types print (expected: `/cmd_vel -> geometry_msgs/msg/Twist`, `/odom -> nav_msgs/msg/Odometry`, `/battery_state -> sensor_msgs/msg/BatteryState`, `/dock_status -> irobot_create_msgs/msg/DockStatus`), and a dock/undock action appears (expected `/undock` of type `irobot_create_msgs/action/Undock`).
+Expected: `/odom`, `/cmd_vel`, `/battery_state`, `/dock_status` appear un-namespaced in the topic list; types print (expected: `/cmd_vel -> geometry_msgs/msg/Twist`, `/odom -> nav_msgs/msg/Odometry`, `/battery_state -> sensor_msgs/msg/BatteryState`, `/dock_status -> irobot_create_msgs/msg/DockStatus`), and **both** dock actions appear (expected `/undock` of type `irobot_create_msgs/action/Undock` and `/dock` of type `irobot_create_msgs/action/Dock` — the Create 3 sim ports both; Tasks 3, 4, and 6 dispatch `undock`/`dock` commands to exactly these actions).
 
-**If any name differs from the expected values** (e.g. the bringup namespaces the robot, or undock is a service not an action), record the ACTUAL name — Tasks 3–6 read only `sim/sim_facts.env`, so correcting it here fixes every downstream task.
+**If any name differs from the expected values** (e.g. the bringup namespaces the robot, undock/dock are services not actions, or `/dock` is named `/dock_servo` etc.), record the ACTUAL name — Tasks 3–6 read only `sim/sim_facts.env`, so correcting it here fixes every downstream task.
 
 - [ ] **Step 3: Write the verified facts into `sim/sim_facts.env`**
 
@@ -333,6 +337,8 @@ SIM_DOCK_STATUS_TOPIC=/dock_status
 SIM_DOCK_STATUS_TYPE=irobot_create_msgs/msg/DockStatus
 SIM_UNDOCK_ACTION=/undock
 SIM_UNDOCK_ACTION_TYPE=irobot_create_msgs/action/Undock
+SIM_DOCK_ACTION=/dock
+SIM_DOCK_ACTION_TYPE=irobot_create_msgs/action/Dock
 ```
 
 - [ ] **Step 4: Document the verified graph in `access-ground-truth.md`**
@@ -342,8 +348,8 @@ Append under the Task-1 sim section:
 ### Verified sim ROS graph (Phase 8, Task 2)
 Un-namespaced by default: `/cmd_vel` (geometry_msgs/msg/Twist), `/odom` (nav_msgs/msg/Odometry),
 `/battery_state` (sensor_msgs/msg/BatteryState), `/dock_status` (irobot_create_msgs/msg/DockStatus,
-field `.is_docked`). Undock via action `/undock` (irobot_create_msgs/action/Undock). Canonical
-copy: `sim/sim_facts.env`. Bring-up: `ros2 launch turtlebot4_ignition_bringup turtlebot4_ignition.launch.py rviz:=false headless:=true`.
+field `.is_docked`). Undock/dock via actions `/undock` (irobot_create_msgs/action/Undock) and
+`/dock` (irobot_create_msgs/action/Dock). Canonical copy: `sim/sim_facts.env`. Bring-up: `ros2 launch turtlebot4_ignition_bringup turtlebot4_ignition.launch.py rviz:=false headless:=true`.
 ```
 
 - [ ] **Step 5: Commit**
@@ -351,22 +357,27 @@ copy: `sim/sim_facts.env`. Bring-up: `ros2 launch turtlebot4_ignition_bringup tu
 ```bash
 cd ~/cs7980-guide-mate
 git add sim/probe_sim_graph.sh sim/sim_facts.env docs/agent-poc/access-ground-truth.md
-git commit -m "Kalhar: verify sim ROS graph (un-namespaced /cmd_vel /odom /battery_state /dock_status + /undock action)"
+git commit -m "Kalhar: verify sim ROS graph (un-namespaced /cmd_vel /odom /battery_state /dock_status + /undock + /dock actions)"
 ```
 
 ---
 
-## Task 3: Executor real-drive path + abort / kill-switch (fixed-rate twist loop)
+## Task 3: Executor real-drive path + dock/undock action dispatch + abort / kill-switch
 
 **Files:**
 - Modify: `src/guide_mate_bridge/guide_mate_bridge/executor.py`
 - Test: `src/guide_mate_bridge/tests/test_executor.py` (append)
 
 **Interfaces:**
-- Consumes: `build`, `TwistStep` (Phase 0/1 choreography); `Ack`, `Command`, `log_extra` (Phase 0/1).
-- Produces: `ChoreographyRunner.__init__(publish_ack, dry_run=True, publish_twist=None, publish_hz=10.0, sleep=time.sleep, motion_gate=None)`. New: `abort(reason="aborted") -> None` (thread-safe, sets a shared `threading.Event`). `handle(cmd)` **real path** (`not dry_run`, `publish_twist` set): for each `TwistStep`, publish it at `publish_hz` for `duration` seconds, checking the abort event between publishes; on abort, break, **zero the wheels**, ack `failed(reason)`; on clean finish, zero the wheels, ack `done(simulated=False)`. If `motion_gate` is set and returns `False` at dispatch, refuse: zero + ack `failed("motion_disabled")`. The dry-run path is **unchanged** (logs `DRY-RUN twist …`, no sleep, no publish). Each `handle` **clears** the abort event after the `running` ack so a prior stop/kill only kills the command that was in flight when it fired.
+- Consumes: `build`, `TwistStep` (Phase 0/1 choreography); `Ack`, `Command`, `log_extra` (Phase 0/1); the Phase-4 schema addition of motion names `"undock"`/`"dock"` (**FLAG Phase 4** — the `_cmd_action` test helper falls back to `model_construct` so these unit tests run even before it lands).
+- Produces: `ChoreographyRunner.__init__(publish_ack, dry_run=True, publish_twist=None, publish_hz=10.0, sleep=time.sleep, motion_gate=None, run_action=None)`.
+  - `abort(reason="aborted") -> None` (thread-safe, sets a shared `threading.Event`). Each `handle` **clears** the abort event after the `running` ack so a prior stop/kill only kills the command that was in flight when it fired.
+  - `motion_gate: Optional[Callable[[Command], tuple[bool, str]]]` — **command-aware** (so the dock-guard exemption matrix, Task 4 `command_permitted`, can allow `undock`/`dock`/`stop` while docked). Returns `(permitted, refusal_reason)`; on refusal the runner publishes a safety zero-twist (if a sink exists) and acks `failed(reason)`.
+  - `run_action: Optional[Callable[[str], tuple[bool, str]]]` — invoked for `type=="motion", name in ("undock","dock")`. These are **Create 3 ROS actions, never twist choreographies**: the executor branches BEFORE `build()` (which would raise `ValueError` for them). Real path: gate → `run_action(name)` → ack `done(simulated=False)` or `failed(reason)`. Dry-run path: log `"DRY-RUN action <name>"`, ack `done(simulated=True)`, never call the client. If `run_action` is `None` on the real path, ack `failed("no action client")`.
+  - `handle(cmd)` **real twist path** (`not dry_run`, `publish_twist` set): for each `TwistStep`, publish it at `publish_hz` for `duration` seconds, checking the abort event between publishes; on abort, break, **zero the wheels**, ack `failed(reason)`; on clean finish, zero the wheels, ack `done(simulated=False)`. The dry-run twist path is **unchanged** (logs `DRY-RUN twist …`, no sleep, no publish).
+  - Limitation (documented): a dispatched dock/undock action is not abort-interruptible mid-action (they are short, self-terminating Create 3 behaviors); abort takes effect for twist choreographies and between commands.
 
-**Phase dependencies:** the `motion_gate` argument is wired to Phase 2's `SafetyLayer.motion_allowed` in Task 4 (**FLAG Phase 2**); Task 3 itself is pure and self-tested with fakes.
+**Phase dependencies:** `motion_gate` is wired to Task 4's `command_permitted` over Phase 2's shadow/dock state (**FLAG Phase 2**); `run_action` is wired to Task 4's `DockActions`. Task 3 itself is pure and self-tested with fakes.
 
 - [ ] **Step 1: Write the failing tests (append to `test_executor.py`)**
 
@@ -378,7 +389,7 @@ from guidemate_msgs.choreography import TwistStep
 from guidemate_msgs.messages import Command
 
 
-def _real_runner(acks, published, sleep=lambda _s: None, motion_gate=None):
+def _real_runner(acks, published, sleep=lambda _s: None, motion_gate=None, run_action=None):
     return ChoreographyRunner(
         publish_ack=acks.append,
         dry_run=False,
@@ -386,7 +397,19 @@ def _real_runner(acks, published, sleep=lambda _s: None, motion_gate=None):
         publish_hz=10.0,
         sleep=sleep,
         motion_gate=motion_gate,
+        run_action=run_action,
     )
+
+
+def _cmd_action(name):
+    # Phase 4 (PINNED) adds "undock"/"dock" to _MOTION_NAMES. model_construct keeps
+    # these unit tests runnable even if Phase 8 executes before that schema change lands.
+    try:
+        return Command(type="motion", name=name)
+    except Exception:
+        return Command.model_construct(
+            cmd_id=f"test-{name}", type="motion", name=name, params={}, ts="t"
+        )
 
 
 def test_real_drive_publishes_at_rate_then_zeroes():
@@ -419,12 +442,12 @@ def test_abort_mid_step_zeroes_and_acks_failed():
     assert len(published) < 5                             # broke out early
 
 
-def test_motion_gate_false_refuses_without_driving():
+def test_motion_gate_refusal_reason_propagates():
     acks, published = [], []
-    runner = _real_runner(acks, published, motion_gate=lambda: False)
+    runner = _real_runner(acks, published, motion_gate=lambda cmd: (False, "docked"))
     runner.handle(Command(type="emote", name="happy"))
     assert [a.state for a in acks] == ["received", "running", "failed"]
-    assert acks[-1].reason == "motion_disabled"
+    assert acks[-1].reason == "docked"
     # Only the safety zero-twist may be published; no choreography motion.
     assert published == [TwistStep(0.0, 0.0, 0.0)]
 
@@ -445,12 +468,71 @@ def test_no_sink_when_not_dry_run_acks_failed():
     )
     assert [a.state for a in acks] == ["received", "running", "failed"]
     assert acks[-1].reason == "no cmd_vel sink"
+
+
+# ---- dock/undock are Create 3 ROS ACTIONS, never twist choreographies ----
+def test_undock_dry_run_logs_action_never_calls_client(caplog):
+    import logging
+
+    acks, calls = [], []
+    runner = ChoreographyRunner(
+        publish_ack=acks.append,
+        dry_run=True,
+        run_action=lambda name: (calls.append(name), (True, ""))[1],
+    )
+    with caplog.at_level(logging.INFO, logger="guide_mate_bridge.executor"):
+        runner.handle(_cmd_action("undock"))
+    assert [a.state for a in acks] == ["received", "running", "done"]
+    assert acks[-1].simulated is True
+    assert calls == []                      # dry-run NEVER touches the action client
+    assert any(r.getMessage().startswith("DRY-RUN action undock") for r in caplog.records)
+
+
+def test_undock_real_runs_action_not_twists():
+    acks, published, calls = [], [], []
+    runner = _real_runner(
+        acks, published, run_action=lambda name: (calls.append(name), (True, ""))[1]
+    )
+    runner.handle(_cmd_action("undock"))
+    assert calls == ["undock"]
+    assert published == []                  # actions never publish cmd_vel
+    assert acks[-1].state == "done" and acks[-1].simulated is False
+
+
+def test_dock_action_failure_acks_failed():
+    acks, published = [], []
+    runner = _real_runner(acks, published, run_action=lambda name: (False, "dock server unavailable"))
+    runner.handle(_cmd_action("dock"))
+    assert acks[-1].state == "failed"
+    assert acks[-1].reason == "dock server unavailable"
+
+
+def test_action_without_client_acks_failed():
+    acks, published = [], []
+    runner = _real_runner(acks, published, run_action=None)
+    runner.handle(_cmd_action("undock"))
+    assert acks[-1].state == "failed"
+    assert acks[-1].reason == "no action client"
+
+
+def test_gate_consulted_for_actions_too():
+    # Shadow lock is supreme: even undock is refused when the gate says motion_disabled.
+    acks, published, calls = [], [], []
+    runner = _real_runner(
+        acks, published,
+        motion_gate=lambda cmd: (False, "motion_disabled"),
+        run_action=lambda name: (calls.append(name), (True, ""))[1],
+    )
+    runner.handle(_cmd_action("undock"))
+    assert acks[-1].state == "failed" and acks[-1].reason == "motion_disabled"
+    assert calls == []
+    assert published == [TwistStep(0.0, 0.0, 0.0)]
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `cd ~/cs7980-guide-mate && .venv/bin/python -m pytest src/guide_mate_bridge/tests/test_executor.py -q`
-Expected: FAIL — `TypeError` (`ChoreographyRunner` has no `publish_hz`/`sleep`/`motion_gate`) and `AttributeError: 'ChoreographyRunner' object has no attribute 'abort'`.
+Expected: FAIL — `TypeError` (`ChoreographyRunner` has no `publish_hz`/`sleep`/`motion_gate`/`run_action`) and `AttributeError: 'ChoreographyRunner' object has no attribute 'abort'`.
 
 - [ ] **Step 3: Rewrite `executor.py`**
 
@@ -459,7 +541,11 @@ Replace the entire contents of `src/guide_mate_bridge/guide_mate_bridge/executor
 """Choreography executor.
 
 Phase 1 dry-run path (logs the would-be twists, never publishes) is preserved.
-Phase 8 adds the ONLY real cmd_vel drive path: a fixed-rate, abort-aware loop.
+Phase 8 adds:
+- the ONLY real cmd_vel drive path: a fixed-rate, abort-aware loop;
+- dock/undock dispatched as Create 3 ROS ACTIONS via `run_action` (never twists);
+- a command-aware motion gate (the dock-guard exemption matrix lives upstream in
+  bridge.command_permitted: while docked only undock/dock/stop pass).
 A shared threading.Event lets a `stop` command or a shadow kill-switch interrupt
 an in-flight choreography between publishes and zero the wheels within one period.
 """
@@ -468,7 +554,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 from guidemate_msgs.choreography import TwistStep, build
 from guidemate_msgs.jsonlog import log_extra
@@ -477,6 +563,11 @@ from guidemate_msgs.messages import Ack, Command
 log = logging.getLogger(__name__)
 
 _ZERO = TwistStep(0.0, 0.0, 0.0)
+_ACTION_NAMES = ("undock", "dock")   # Create 3 ROS actions, never twist choreographies
+
+
+def _is_action(cmd: Command) -> bool:
+    return cmd.type == "motion" and cmd.name in _ACTION_NAMES
 
 
 class ChoreographyRunner:
@@ -487,7 +578,8 @@ class ChoreographyRunner:
         publish_twist: Optional[Callable[[TwistStep], None]] = None,
         publish_hz: float = 10.0,
         sleep: Callable[[float], None] = time.sleep,
-        motion_gate: Optional[Callable[[], bool]] = None,
+        motion_gate: Optional[Callable[[Command], "Tuple[bool, str]"]] = None,
+        run_action: Optional[Callable[[str], "Tuple[bool, str]"]] = None,
     ) -> None:
         self._publish_ack = publish_ack
         self._dry_run = dry_run
@@ -495,6 +587,7 @@ class ChoreographyRunner:
         self._publish_hz = publish_hz
         self._sleep = sleep
         self._motion_gate = motion_gate
+        self._run_action = run_action
         self._abort = threading.Event()
         self._abort_reason = "aborted"
 
@@ -516,37 +609,68 @@ class ChoreographyRunner:
 
     def handle(self, cmd: Command) -> None:
         self._publish_ack(Ack(cmd_id=cmd.cmd_id, state="received"))
-        try:
-            steps = build(cmd)
-        except ValueError as exc:
-            self._publish_ack(Ack(cmd_id=cmd.cmd_id, state="failed", reason=str(exc)))
-            return
+        is_action = _is_action(cmd)
+        steps: Optional[list] = None
+        if not is_action:
+            try:
+                steps = build(cmd)
+            except ValueError as exc:
+                self._publish_ack(Ack(cmd_id=cmd.cmd_id, state="failed", reason=str(exc)))
+                return
         self._publish_ack(Ack(cmd_id=cmd.cmd_id, state="running"))
         # A prior stop/kill only kills the command that was in flight when it fired;
         # every fresh command starts un-aborted.
         self._abort.clear()
 
-        # ---- dry-run path (Phase 1, unchanged): log, never publish ----
+        # ---- dry-run path: log, never publish / never act ----
         if self._dry_run:
-            for step in steps:
+            if is_action:
                 log.info(
-                    "DRY-RUN twist vx=%.3f wz=%.3f dur=%.2fs",
-                    step.vx, step.wz, step.duration,
-                    extra=log_extra(cmd_id=cmd.cmd_id),
+                    "DRY-RUN action %s", cmd.name, extra=log_extra(cmd_id=cmd.cmd_id)
                 )
+            else:
+                for step in steps:
+                    log.info(
+                        "DRY-RUN twist vx=%.3f wz=%.3f dur=%.2fs",
+                        step.vx, step.wz, step.duration,
+                        extra=log_extra(cmd_id=cmd.cmd_id),
+                    )
             self._publish_ack(Ack(cmd_id=cmd.cmd_id, state="done", simulated=True))
             return
 
-        # ---- real cmd_vel path (Phase 8) ----
+        # ---- command-aware gate (shadow lock + dock-guard exemption matrix) ----
+        if self._motion_gate is not None:
+            permitted, reason = self._motion_gate(cmd)
+            if not permitted:
+                if self._publish_twist is not None:
+                    self._publish_twist(_ZERO)   # safety: make sure the wheels are stopped
+                self._publish_ack(Ack(cmd_id=cmd.cmd_id, state="failed", reason=reason))
+                return
+
+        # ---- Create 3 ROS action path (undock/dock) — never twists ----
+        if is_action:
+            if self._run_action is None:
+                self._publish_ack(
+                    Ack(cmd_id=cmd.cmd_id, state="failed", reason="no action client")
+                )
+                return
+            ok, reason = self._run_action(cmd.name)
+            if ok:
+                self._publish_ack(Ack(cmd_id=cmd.cmd_id, state="done", simulated=False))
+            else:
+                self._publish_ack(
+                    Ack(
+                        cmd_id=cmd.cmd_id,
+                        state="failed",
+                        reason=reason or f"{cmd.name} action failed",
+                    )
+                )
+            return
+
+        # ---- real cmd_vel path ----
         if self._publish_twist is None:
             self._publish_ack(
                 Ack(cmd_id=cmd.cmd_id, state="failed", reason="no cmd_vel sink")
-            )
-            return
-        if self._motion_gate is not None and not self._motion_gate():
-            self._publish_twist(_ZERO)
-            self._publish_ack(
-                Ack(cmd_id=cmd.cmd_id, state="failed", reason="motion_disabled")
             )
             return
 
@@ -565,37 +689,44 @@ class ChoreographyRunner:
             self._publish_ack(Ack(cmd_id=cmd.cmd_id, state="done", simulated=False))
 ```
 
+Note the ordering change vs Phase 1: on the real path the gate now runs **before** the
+`no cmd_vel sink` check (the gate must also cover action commands, which have no twist
+sink). The Phase-1 `test_no_sink_when_not_dry_run_acks_failed` still passes because it
+constructs the runner without a gate.
+
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `cd ~/cs7980-guide-mate && .venv/bin/python -m pytest src/guide_mate_bridge/tests/test_executor.py -q`
-Expected: PASS (the 4 original Phase-1 tests + the 5 new ones, 9 passed). The `sleep` hook keeps the loop instant.
+Expected: PASS (the 4 original Phase-1 tests + the 10 new ones, 14 passed). The `sleep` hook keeps the loop instant.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 cd ~/cs7980-guide-mate
 git add src/guide_mate_bridge/guide_mate_bridge/executor.py src/guide_mate_bridge/tests/test_executor.py
-git commit -m "Kalhar: executor real-drive path — fixed-rate twist loop + abort/kill-switch + motion gate"
+git commit -m "Kalhar: executor real-drive path — fixed-rate twist loop + dock/undock ROS-action dispatch + abort/kill-switch + command-aware gate"
 ```
 
 ---
 
-## Task 4: CmdVelPublisher (rclpy) + bridge motion gating + robot-id hard guard + stop/kill wiring
+## Task 4: CmdVelPublisher + DockActions (rclpy) + bridge motion gating + exemption matrix + robot-id hard guard + stop/kill wiring
 
 **Files:**
-- Create: `src/guide_mate_bridge/guide_mate_bridge/cmd_vel_publisher.py`
+- Create: `src/guide_mate_bridge/guide_mate_bridge/cmd_vel_publisher.py`, `src/guide_mate_bridge/guide_mate_bridge/dock_actions.py`
 - Modify: `src/guide_mate_bridge/guide_mate_bridge/bridge.py`
-- Test: `src/guide_mate_bridge/tests/test_cmd_vel_publisher.py` (new), `src/guide_mate_bridge/tests/test_bridge.py` (append)
+- Test: `src/guide_mate_bridge/tests/test_cmd_vel_publisher.py` (new), `src/guide_mate_bridge/tests/test_dock_actions.py` (new), `src/guide_mate_bridge/tests/test_bridge.py` (append)
 
 **Interfaces:**
-- Consumes: `ChoreographyRunner` incl. `abort`/`motion_gate` (Task 3); `Command`, `Ack`, `cmd_topic`, `status_topic` (Phase 0/1); Phase 2's `SafetyLayer` (**FLAG Phase 2**): `effective_dry_run() -> bool`, `motion_allowed() -> bool`, and a shadow-delta callback registration.
+- Consumes: `ChoreographyRunner` incl. `abort`/`motion_gate`/`run_action` (Task 3); `Command`, `Ack`, `cmd_topic`, `status_topic` (Phase 0/1); Phase 2's `SafetyLayer` (**FLAG Phase 2**): `effective_dry_run() -> bool`, `motion_enabled() -> bool`, `docked() -> bool`, `ros_node()`, and a shadow-delta callback registration.
 - Produces:
   - `class CmdVelPublisher(node, topic="/cmd_vel", twist_cls=None)` — callable `__call__(step: TwistStep) -> None` publishes a `geometry_msgs/msg/Twist` (`linear.x=step.vx`, `angular.z=step.wz`). `geometry_msgs` is imported lazily; `twist_cls` is injectable for tests.
+  - `class DockActions(node, undock_action="/undock", dock_action="/dock", client_factory=None, timeout_s=60.0)` with `run(name: str) -> tuple[bool, str]` — rclpy **action clients** for the Create 3 `/undock` (`irobot_create_msgs/action/Undock`) and `/dock` (`irobot_create_msgs/action/Dock`) actions; blocks until the goal resolves or times out; `client_factory` injectable for tests. Wired as the executor's `run_action`.
   - `bridge.resolve_motion_enabled(env: Mapping, effective_dry_run: bool, shadow_motion_enabled: bool) -> bool` — pure: `True` **only** if `env["GUIDEMATE_ENABLE_MOTION"]` is truthy AND `shadow_motion_enabled` AND `not effective_dry_run`.
+  - `bridge.command_permitted(cmd_type: str, cmd_name: str, motion_enabled: bool, docked: bool) -> tuple[bool, str]` — the **dock-guard exemption matrix** (spec delta 91d9bcb): shadow lock is supreme (`(False, "motion_disabled")` for everything when `motion_enabled` is false); while docked, refuse all motion `(False, "docked")` EXCEPT `("motion","undock")`, `("motion","dock")` (no-op-ish → the Create 3 Dock action succeeds immediately when already docked → done ack), and `("stop","stop")`; while undocked, everything is allowed (dock is a normal action).
   - `bridge.assert_motion_identity_safe(env: Mapping) -> None` — **hard guard**: raises `SystemExit` if `GUIDEMATE_ENABLE_MOTION` is truthy while `GUIDEMATE_ROBOT_ID` is `turtlebot468` (or unset, since it defaults to 468).
-  - `Bridge.__init__(..., publish_twist=None, publish_hz=10.0, motion_gate=None)` forwards to the runner. `Bridge.on_message` fires `self._runner.abort(reason="stopped")` immediately for a `type=="stop"` command (interrupt in flight) before enqueuing. `Bridge.abort(reason)` delegates to the runner (wired to the shadow kill-switch in `main`).
+  - `Bridge.__init__(..., publish_twist=None, publish_hz=10.0, motion_gate=None, run_action=None)` forwards to the runner. `Bridge.on_message` fires `self._runner.abort(reason="stopped")` immediately for a `type=="stop"` command (interrupt in flight) before enqueuing. `Bridge.abort(reason)` delegates to the runner (wired to the shadow kill-switch in `main`).
 
-**Phase dependencies:** `main()` reads `effective_dry_run`/`motion_allowed` from Phase 2's `SafetyLayer` and reuses Phase 2's rclpy `Node` (created behind `GUIDEMATE_ROS=1`). **FLAG Phase 2.** The pure functions + `Bridge` behavior below are fully unit-tested here without Phase 2.
+**Phase dependencies:** `main()` reads `effective_dry_run`/`motion_enabled`/`docked` from Phase 2's `SafetyLayer` and reuses Phase 2's rclpy `Node` (created behind `GUIDEMATE_ROS=1`). **FLAG Phase 2 — including one required change there:** Phase 2's *pre-enqueue* dock-guard refusal must delegate to `command_permitted` (otherwise it would refuse `undock`/`dock`/`stop` before they ever reach the executor while docked); a one-call-site change. The pure functions + `Bridge` behavior below are fully unit-tested here without Phase 2.
 
 - [ ] **Step 1: Write the failing `CmdVelPublisher` test**
 
@@ -681,11 +812,212 @@ class CmdVelPublisher:
 Run: `cd ~/cs7980-guide-mate && .venv/bin/python -m pytest src/guide_mate_bridge/tests/test_cmd_vel_publisher.py -q`
 Expected: PASS (1 passed).
 
-- [ ] **Step 5: Write the failing bridge tests (append to `test_bridge.py`)**
+- [ ] **Step 5: Write the failing `DockActions` test**
+
+`src/guide_mate_bridge/tests/test_dock_actions.py`:
+```python
+from guide_mate_bridge.dock_actions import DockActions
+
+
+class FakeFuture:
+    def __init__(self, result_value):
+        self._result = result_value
+
+    def done(self):
+        return True
+
+    def result(self):
+        return self._result
+
+
+class FakeGoalHandle:
+    def __init__(self, accepted=True):
+        self.accepted = accepted
+
+    def get_result_async(self):
+        return FakeFuture(object())
+
+
+class FakeActionClient:
+    def __init__(self, server_up=True, accepted=True):
+        self.server_up = server_up
+        self.accepted = accepted
+        self.sent = 0
+
+    def wait_for_server(self, timeout_sec=None):
+        return self.server_up
+
+    def send_goal_async(self, goal):
+        self.sent += 1
+        return FakeFuture(FakeGoalHandle(accepted=self.accepted))
+
+
+class FakeGoalCls:
+    class Goal:
+        pass
+
+
+def _actions(undock=None, dock=None):
+    clients = {"undock": undock or FakeActionClient(), "dock": dock or FakeActionClient()}
+
+    def factory(name):
+        return clients[name], FakeGoalCls
+
+    return DockActions(node=None, client_factory=factory), clients
+
+
+def test_undock_success_sends_one_goal():
+    actions, clients = _actions()
+    ok, reason = actions.run("undock")
+    assert ok and reason == ""
+    assert clients["undock"].sent == 1
+    assert clients["dock"].sent == 0
+
+
+def test_dock_success():
+    actions, clients = _actions()
+    ok, _ = actions.run("dock")
+    assert ok
+    assert clients["dock"].sent == 1
+
+
+def test_server_unavailable_fails():
+    actions, _ = _actions(dock=FakeActionClient(server_up=False))
+    ok, reason = actions.run("dock")
+    assert not ok and "unavailable" in reason
+
+
+def test_goal_rejected_fails():
+    actions, _ = _actions(undock=FakeActionClient(accepted=False))
+    ok, reason = actions.run("undock")
+    assert not ok and "rejected" in reason
+
+
+def test_unknown_action_name_fails():
+    actions, _ = _actions()
+    ok, reason = actions.run("teleport")
+    assert not ok and "unknown" in reason
+```
+
+- [ ] **Step 6: Run it red**
+
+Run: `cd ~/cs7980-guide-mate && .venv/bin/python -m pytest src/guide_mate_bridge/tests/test_dock_actions.py -q`
+Expected: FAIL — `ModuleNotFoundError: No module named 'guide_mate_bridge.dock_actions'`.
+
+- [ ] **Step 7: Implement `dock_actions.py`**
+
+`src/guide_mate_bridge/guide_mate_bridge/dock_actions.py`:
+```python
+"""Create 3 undock/dock as rclpy ACTION clients — the only non-twist motion path.
+
+Assumes the process's rclpy node is being spun by an executor elsewhere (Phase 2's
+telemetry thread spins it), so the goal/result futures resolve while we poll here.
+`client_factory` is injectable so unit tests never import rclpy/irobot_create_msgs.
+"""
+from __future__ import annotations
+
+import logging
+import time
+from typing import Tuple
+
+log = logging.getLogger(__name__)
+
+_NAMES = ("undock", "dock")
+
+
+class DockActions:
+    def __init__(
+        self,
+        node,
+        undock_action: str = "/undock",
+        dock_action: str = "/dock",
+        client_factory=None,
+        timeout_s: float = 60.0,
+    ) -> None:
+        if client_factory is None:
+            from rclpy.action import ActionClient
+            from irobot_create_msgs.action import Dock, Undock  # lazy: no ROS in unit tests
+
+            def client_factory(name):
+                if name == "undock":
+                    return ActionClient(node, Undock, undock_action), Undock
+                return ActionClient(node, Dock, dock_action), Dock
+
+        self._factory = client_factory
+        self._timeout_s = timeout_s
+        self._clients: dict = {}
+
+    def run(self, name: str) -> "Tuple[bool, str]":
+        if name not in _NAMES:
+            return False, f"unknown action {name!r}"
+        if name not in self._clients:
+            self._clients[name] = self._factory(name)
+        client, action_cls = self._clients[name]
+        if not client.wait_for_server(timeout_sec=10.0):
+            return False, f"{name} action server unavailable"
+        goal_future = client.send_goal_async(action_cls.Goal())
+        deadline = time.time() + self._timeout_s
+        while not goal_future.done():
+            if time.time() > deadline:
+                return False, f"{name} goal not accepted in time"
+            time.sleep(0.1)
+        handle = goal_future.result()
+        if not handle.accepted:
+            return False, f"{name} goal rejected"
+        result_future = handle.get_result_async()
+        while not result_future.done():
+            if time.time() > deadline:
+                return False, f"{name} result timeout"
+            time.sleep(0.1)
+        log.info("%s action completed", name)
+        return True, ""
+```
+
+- [ ] **Step 8: Run it green**
+
+Run: `cd ~/cs7980-guide-mate && .venv/bin/python -m pytest src/guide_mate_bridge/tests/test_dock_actions.py -q`
+Expected: PASS (5 passed).
+
+- [ ] **Step 9: Write the failing bridge tests (append to `test_bridge.py`)**
 
 Append to `src/guide_mate_bridge/tests/test_bridge.py`:
 ```python
-from guide_mate_bridge.bridge import assert_motion_identity_safe, resolve_motion_enabled
+from guide_mate_bridge.bridge import (
+    assert_motion_identity_safe,
+    command_permitted,
+    resolve_motion_enabled,
+)
+
+
+# ---- dock-guard exemption matrix (spec delta 91d9bcb) ----
+@pytest.mark.parametrize(
+    "cmd_type,cmd_name,motion_enabled,docked,expect_ok,expect_reason",
+    [
+        # Shadow lock is supreme — nothing passes while motion_enabled is false.
+        ("motion", "circle", False, False, False, "motion_disabled"),
+        ("motion", "undock", False, True, False, "motion_disabled"),
+        ("stop", "stop", False, True, False, "motion_disabled"),
+        # Docked: refuse all motion EXCEPT undock, dock, stop.
+        ("motion", "circle", True, True, False, "docked"),
+        ("motion", "spin", True, True, False, "docked"),
+        ("emote", "happy", True, True, False, "docked"),
+        ("emote", "yes", True, True, False, "docked"),
+        ("motion", "undock", True, True, True, ""),
+        ("motion", "dock", True, True, True, ""),  # no-op-ish -> Dock action succeeds -> done
+        ("stop", "stop", True, True, True, ""),
+        # Undocked: everything allowed; dock is a normal action.
+        ("motion", "circle", True, False, True, ""),
+        ("motion", "dock", True, False, True, ""),
+        ("motion", "undock", True, False, True, ""),
+        ("emote", "happy", True, False, True, ""),
+    ],
+)
+def test_dock_guard_exemption_matrix(
+    cmd_type, cmd_name, motion_enabled, docked, expect_ok, expect_reason
+):
+    ok, reason = command_permitted(cmd_type, cmd_name, motion_enabled, docked)
+    assert ok is expect_ok
+    assert reason == expect_reason
 
 
 # ---- pure gating truth table ----
@@ -740,16 +1072,16 @@ def test_stop_command_aborts_runner():
     assert aborted["reason"] == "stopped"
 ```
 
-- [ ] **Step 6: Run them red**
+- [ ] **Step 10: Run them red**
 
 Run: `cd ~/cs7980-guide-mate && .venv/bin/python -m pytest src/guide_mate_bridge/tests/test_bridge.py -q`
-Expected: FAIL — `ImportError: cannot import name 'resolve_motion_enabled'` / `assert_motion_identity_safe`.
+Expected: FAIL — `ImportError: cannot import name 'assert_motion_identity_safe'` (nor `command_permitted` / `resolve_motion_enabled`).
 
-- [ ] **Step 7: Modify `bridge.py`**
+- [ ] **Step 11: Modify `bridge.py`**
 
 Integrate the following into `src/guide_mate_bridge/guide_mate_bridge/bridge.py`. (Phase 2 may have altered the surrounding `main()`; keep its shadow-reconcile/telemetry pieces and fold these changes in.)
 
-**7a. Add the two pure gating functions** (top-level, after `_truthy`):
+**11a. Add the three pure gating functions** (top-level, after `_truthy`):
 ```python
 from typing import Mapping
 
@@ -764,6 +1096,25 @@ def resolve_motion_enabled(
     return bool(shadow_motion_enabled) and not effective_dry_run
 
 
+# While docked, only these commands are permitted (spec delta 91d9bcb):
+# undock (leave the dock), dock (no-op-ish -> the Create 3 Dock action succeeds
+# immediately when already docked -> done ack), and stop (always safe).
+_DOCKED_EXEMPT = {("motion", "undock"), ("motion", "dock"), ("stop", "stop")}
+
+
+def command_permitted(
+    cmd_type: str, cmd_name: str, motion_enabled: bool, docked: bool
+) -> "tuple[bool, str]":
+    """Dock-guard exemption matrix. Shadow lock is supreme: nothing runs while
+    motion_enabled is false. While docked, refuse all motion EXCEPT undock/dock/stop.
+    While undocked, everything is allowed (dock is a normal action)."""
+    if not motion_enabled:
+        return False, "motion_disabled"
+    if docked and (cmd_type, cmd_name) not in _DOCKED_EXEMPT:
+        return False, "docked"
+    return True, ""
+
+
 def assert_motion_identity_safe(env: "Mapping[str, str]") -> None:
     """Hard robot-id guard (belt + braces): GUIDEMATE_ENABLE_MOTION must NEVER be honored for
     robot 468. The Pi installer never sets it; this refuses even if someone does by hand."""
@@ -775,7 +1126,7 @@ def assert_motion_identity_safe(env: "Mapping[str, str]") -> None:
             )
 ```
 
-**7b. Extend `Bridge.__init__`** to forward the motion params and keep the runner reachable:
+**11b. Extend `Bridge.__init__`** to forward the motion params and keep the runner reachable:
 ```python
     def __init__(
         self,
@@ -785,6 +1136,7 @@ def assert_motion_identity_safe(env: "Mapping[str, str]") -> None:
         publish_twist=None,
         publish_hz: float = 10.0,
         motion_gate=None,
+        run_action=None,
     ) -> None:
         self._client = client
         self._robot_id = robot_id
@@ -798,11 +1150,12 @@ def assert_motion_identity_safe(env: "Mapping[str, str]") -> None:
             publish_twist=publish_twist,
             publish_hz=publish_hz,
             motion_gate=motion_gate,
+            run_action=run_action,
         )
         self._worker = threading.Thread(target=self._run, daemon=True)
 ```
 
-**7c. Interrupt-on-stop + expose abort.** Add an early stop-abort in `on_message` (right after the `Command.model_validate_json` parse succeeds, before the dedupe/enqueue block) and an `abort` delegate:
+**11c. Interrupt-on-stop + expose abort.** Add an early stop-abort in `on_message` (right after the `Command.model_validate_json` parse succeeds, before the dedupe/enqueue block) and an `abort` delegate:
 ```python
         if cmd.type == "stop":
             # Interrupt any in-flight choreography immediately, off the worker thread.
@@ -814,7 +1167,7 @@ def assert_motion_identity_safe(env: "Mapping[str, str]") -> None:
         self._runner.abort(reason=reason)
 ```
 
-**7d. Rewrite `main()`** to gate the real sink. Replace the existing `main()` body with:
+**11d. Rewrite `main()`** to gate the real sink + action clients. Replace the existing `main()` body with:
 ```python
 def main() -> None:
     setup("bridge")
@@ -833,26 +1186,41 @@ def main() -> None:
     )
 
     # --- Phase 2 safety layer (PINNED): shadow reconcile provides effective_dry_run,
-    # motion_allowed, dock guard, and a shadow-delta callback. Do NOT reimplement here. ---
+    # motion_enabled, docked, and a shadow-delta callback. Do NOT reimplement here. ---
     from guide_mate_bridge.safety import SafetyLayer  # Phase 2 module
     safety = SafetyLayer(client=client, robot_id=robot_id)
     safety.start()
     effective_dry_run = safety.effective_dry_run()
 
     publish_twist = None
+    run_action = None
     if resolve_motion_enabled(os.environ, effective_dry_run, safety.motion_enabled()):
-        # Build the ONLY real cmd_vel sink. Requires the Phase 2 rclpy node (GUIDEMATE_ROS=1).
+        # Build the ONLY real cmd_vel sink + dock/undock action clients.
+        # Requires the Phase 2 rclpy node (GUIDEMATE_ROS=1).
         if not _truthy(os.environ.get("GUIDEMATE_ROS", "0")):
-            raise SystemExit("motion requires GUIDEMATE_ROS=1 (rclpy node for cmd_vel)")
+            raise SystemExit(
+                "motion requires GUIDEMATE_ROS=1 (rclpy node for cmd_vel + dock actions)"
+            )
         from guide_mate_bridge.cmd_vel_publisher import CmdVelPublisher
+        from guide_mate_bridge.dock_actions import DockActions
         node = safety.ros_node()  # Phase 2 owns the process's single rclpy Node
         topic = os.environ.get("GUIDEMATE_CMD_VEL_TOPIC", "/cmd_vel")
         publish_twist = CmdVelPublisher(node, topic=topic)
+        run_action = DockActions(
+            node,
+            undock_action=os.environ.get("GUIDEMATE_UNDOCK_ACTION", "/undock"),
+            dock_action=os.environ.get("GUIDEMATE_DOCK_ACTION", "/dock"),
+        ).run
         log.info("MOTION ENABLED", extra=log_extra(robot_id=robot_id, cmd_vel_topic=topic))
+
+    def _motion_gate(cmd):
+        # Command-aware gate, evaluated live at dispatch: shadow lock is supreme,
+        # dock-guard exemption matrix lets undock/dock/stop through while docked.
+        return command_permitted(cmd.type, cmd.name, safety.motion_enabled(), safety.docked())
 
     bridge = Bridge(
         client=client, robot_id=robot_id, dry_run=effective_dry_run,
-        publish_twist=publish_twist, motion_gate=safety.motion_allowed,
+        publish_twist=publish_twist, motion_gate=_motion_gate, run_action=run_action,
     )
     # KILL-SWITCH: shadow delta motion_enabled:false -> abort in-flight choreography.
     safety.on_motion_disabled(lambda: bridge.abort(reason="motion_disabled"))
@@ -860,24 +1228,26 @@ def main() -> None:
     log.info("bridge connected", extra=log_extra(robot_id=robot_id))
     threading.Event().wait()  # block forever
 ```
-Add near the imports: `from guide_mate_bridge.executor import ChoreographyRunner` already present; ensure `resolve_motion_enabled`/`assert_motion_identity_safe` are module-level.
+Add near the imports: `from guide_mate_bridge.executor import ChoreographyRunner` already present; ensure `resolve_motion_enabled`/`command_permitted`/`assert_motion_identity_safe` are module-level.
 
-> **FLAG (Phase 2 dependency):** `guide_mate_bridge.safety.SafetyLayer` with `start()`, `effective_dry_run()`, `motion_enabled()`, `motion_allowed`, `ros_node()`, `on_motion_disabled(cb)` is delivered by Phase 2. If Phase 2's API names differ at execution time, adapt these call sites only — the gating logic and hard guard are unchanged.
+> **FLAG (Phase 2 dependency):** `guide_mate_bridge.safety.SafetyLayer` with `start()`, `effective_dry_run()`, `motion_enabled()`, `docked()`, `ros_node()`, `on_motion_disabled(cb)` is delivered by Phase 2. If Phase 2's API names differ at execution time, adapt these call sites only — the gating logic and hard guard are unchanged. **Required Phase-2-side change (exemption matrix):** Phase 2's *pre-enqueue* dock-guard refusal must delegate to `command_permitted` (replace its `if docked: refuse` with a `command_permitted(cmd.type, cmd.name, motion_enabled, docked)` call), otherwise `undock`/`dock`/`stop` would be refused before reaching the executor while docked.
 
-- [ ] **Step 8: Run the bridge tests to verify they pass**
+- [ ] **Step 12: Run the bridge tests to verify they pass**
 
 Run: `cd ~/cs7980-guide-mate && .venv/bin/python -m pytest src/guide_mate_bridge/tests/test_bridge.py -q`
-Expected: PASS (the original Phase-0/1 bridge tests still green + the 9 new ones). Note: the Phase-1 `test_main_refuses_without_dry_run` was removed by Phase 2 (its hard `GUIDEMATE_DRY_RUN` guard is superseded by shadow reconcile); if it is still present and now fails, delete that single obsolete test with a note in the commit.
+Expected: PASS (the original Phase-0/1 bridge tests still green + the 24 new ones: 15 exemption-matrix cases + 4 gating truth table + 4 identity guard + 1 stop-abort). Note: the Phase-1 `test_main_refuses_without_dry_run` was removed by Phase 2 (its hard `GUIDEMATE_DRY_RUN` guard is superseded by shadow reconcile); if it is still present and now fails, delete that single obsolete test with a note in the commit.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 13: Commit**
 
 ```bash
 cd ~/cs7980-guide-mate
 git add src/guide_mate_bridge/guide_mate_bridge/cmd_vel_publisher.py \
+        src/guide_mate_bridge/guide_mate_bridge/dock_actions.py \
         src/guide_mate_bridge/guide_mate_bridge/bridge.py \
         src/guide_mate_bridge/tests/test_cmd_vel_publisher.py \
+        src/guide_mate_bridge/tests/test_dock_actions.py \
         src/guide_mate_bridge/tests/test_bridge.py
-git commit -m "Kalhar: cmd_vel publisher + triple-gated motion wiring + robot-468 hard guard + stop/kill-switch abort"
+git commit -m "Kalhar: cmd_vel publisher + dock/undock action clients + exemption matrix + triple-gated motion wiring + robot-468 hard guard + stop/kill-switch abort"
 ```
 
 ---
@@ -891,7 +1261,7 @@ git commit -m "Kalhar: cmd_vel publisher + triple-gated motion wiring + robot-46
 
 **Interfaces:**
 - Produces: `sim/launch_sim.sh` — brings up Ignition (headless by default, `--gui` for the window), waits for `/odom`, then starts the bridge in-process with sim env: `GUIDEMATE_ROBOT_ID=turtlebotsim`, `GUIDEMATE_THING=Turtlebot-Sim`, sim cert/key, `GUIDEMATE_ROS=1`, `GUIDEMATE_ENABLE_MOTION=1`, `GUIDEMATE_DRY_RUN=0` (allowed **only** because the sim shadow still gates motion, and the robot-id is `turtlebotsim`, so the Task-4 hard guard does not fire).
-- Consumes: Task 1 cert (`~/.aws/guidemate-sim.*`), Task 2 `sim/sim_facts.env` (cmd_vel topic), Task 4 bridge motion path.
+- Consumes: Task 1 cert (`~/.aws/guidemate-sim.*`), Task 2 `sim/sim_facts.env` (cmd_vel topic + undock/dock action names), Task 4 bridge motion path (`GUIDEMATE_CMD_VEL_TOPIC`, `GUIDEMATE_UNDOCK_ACTION`, `GUIDEMATE_DOCK_ACTION`).
 
 **Phase dependencies:** the Pi installer file is created by Phase 0/1 Task 8 (**FLAG Phase 0/1**); Task 5 only adds a guard + comment to it.
 
@@ -988,6 +1358,8 @@ export GUIDEMATE_IOT_ENDPOINT="$ENDPOINT"
 export GUIDEMATE_CERT="$HOME/.aws/guidemate-sim.cert.pem"
 export GUIDEMATE_KEY="$HOME/.aws/guidemate-sim.key.pem"
 export GUIDEMATE_CMD_VEL_TOPIC="$SIM_CMD_VEL_TOPIC"
+export GUIDEMATE_UNDOCK_ACTION="$SIM_UNDOCK_ACTION"
+export GUIDEMATE_DOCK_ACTION="$SIM_DOCK_ACTION"
 export GUIDEMATE_ROS=1
 export GUIDEMATE_ENABLE_MOTION=1     # OK: robot_id=turtlebotsim (hard guard passes); shadow still gates.
 export GUIDEMATE_DRY_RUN=0           # OK: sim shadow default-deny still holds motion locked until flipped.
@@ -1018,17 +1390,17 @@ git commit -m "Kalhar: sim launch helper (motion armed, shadow-gated) + Pi-insta
 
 ---
 
-## Task 6: Motion validation pytest (GUIDEMATE_SIM=1) — circle / kill-switch / dock-guard
+## Task 6: Motion validation pytest (GUIDEMATE_SIM=1) — circle / kill-switch / dock-guard / dock lifecycle
 
 **Files:**
 - Modify: `pytest.ini` (register `sim` marker), `conftest.py` (gate `sim` on `GUIDEMATE_SIM=1`)
 - Test: `src/guide_mate_bridge/tests/test_sim_motion.py`
 
 **Interfaces:**
-- Consumes: Task 1 sim identity + shadow; Task 5 `sim/launch_sim.sh` (running externally during the test); `RobotRegistry` (Phase 0/1); Phase 2 dock guard (`docked` refusal). `sim/sim_facts.env` topic/action names (Task 2).
-- Produces: the standing sim regression suite. Three assertions: **circle closes** (`<0.15 m`) with `|net yaw| ≥ 5.5 rad`; **kill-switch drill** (flip `motion_enabled:false` mid-circle → `/cmd_vel` zeros within 1 s + ack `failed`); **dock-guard** (docked → `run_motion` refused reason `docked`; after `/undock` it is allowed). Always resets the sim shadow to locked in teardown.
+- Consumes: Task 1 sim identity + shadow; Task 5 `sim/launch_sim.sh` (running externally during the test); `RobotRegistry` (Phase 0/1); Phase 2 dock guard with the Task-4 exemption matrix (`docked` refusal for twists, undock/dock/stop exempt); Task 3/4 undock/dock action dispatch; the Phase-4 schema motion names `"undock"`/`"dock"` (**FLAG Phase 4**). `sim/sim_facts.env` topic/action names (Task 2).
+- Produces: the standing sim regression suite. Four assertions: **circle closes** (`<0.15 m`) with `|net yaw| ≥ 5.5 rad`; **kill-switch drill** (flip `motion_enabled:false` mid-circle → `/cmd_vel` zeros within 1 s + ack `failed`); **dock-guard** (docked → twist motion refused reason `docked`; after undock it is allowed); **dock lifecycle via IoT** (`undock` command → `done` + `/dock_status` `is_docked` flips false → circle runs → `dock` command → `done` + re-docks) — this is the sim-side end-to-end proof of the Phase-4 assignment lifecycle (approve-hook fires `undock`, session usable, unassign fires `dock`). Always resets the sim shadow to locked in teardown.
 
-**Phase dependencies:** dock-guard refusal is Phase 2's (**FLAG Phase 2**). The whole file is `@pytest.mark.sim`, skipped unless `GUIDEMATE_SIM=1`.
+**Phase dependencies:** dock-guard refusal is Phase 2's, updated by Task 4 to delegate to `command_permitted` (**FLAG Phase 2**); `Command(type="motion", name="undock"/"dock")` requires the Phase-4 schema addition (**FLAG Phase 4**). The whole file is `@pytest.mark.sim`, skipped unless `GUIDEMATE_SIM=1`.
 
 - [ ] **Step 1: Register + gate the `sim` marker**
 
@@ -1105,22 +1477,37 @@ def _facts() -> dict:
     return facts
 
 
+def _wait_for(predicate, timeout_s, desc=""):
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        if predicate():
+            return
+        time.sleep(0.5)
+    raise AssertionError(f"timeout waiting for {desc}")
+
+
 class _RosSpy:
-    """Subscribes /odom + /cmd_vel and drives an /undock action, on its own rclpy context."""
+    """Subscribes /odom + /cmd_vel + /dock_status and can drive the /undock action
+    directly (test precondition helper), on its own rclpy context."""
 
     def __init__(self, facts):
         import rclpy
         from rclpy.node import Node
         from nav_msgs.msg import Odometry
         from geometry_msgs.msg import Twist
+        from irobot_create_msgs.msg import DockStatus
 
         rclpy.init(args=None)
         self._rclpy = rclpy
         self.node = Node("sim_motion_spy")
         self.odom = []           # list[(x, y, yaw)]
         self.cmd_vel = []        # list[(t, vx, wz)]
+        self.docked = None       # latest /dock_status .is_docked (None until first msg)
         self.node.create_subscription(Odometry, facts["SIM_ODOM_TOPIC"], self._on_odom, 10)
         self.node.create_subscription(Twist, facts["SIM_CMD_VEL_TOPIC"], self._on_cmd, 10)
+        self.node.create_subscription(
+            DockStatus, facts["SIM_DOCK_STATUS_TOPIC"], self._on_dock, 10
+        )
         self._facts = facts
         self._stop = threading.Event()
         self._spin = threading.Thread(target=self._spin_loop, daemon=True)
@@ -1140,6 +1527,9 @@ class _RosSpy:
 
     def _on_cmd(self, msg):
         self.cmd_vel.append((time.time(), msg.linear.x, msg.angular.z))
+
+    def _on_dock(self, msg):
+        self.docked = bool(msg.is_docked)
 
     def undock(self):
         from rclpy.action import ActionClient
@@ -1182,7 +1572,7 @@ def _always_lock_shadow_after():
     _lock_shadow()
 
 
-# ---------- the three validations ----------
+# ---------- the four validations ----------
 def test_circle_closes_and_turns_full(registry, spy):
     from guidemate_msgs.messages import Command
     spy.undock()                          # leave the dock so motion is permitted
@@ -1225,23 +1615,59 @@ def test_kill_switch_zeros_cmd_vel_within_1s(registry, spy):
     assert acks_out["acks"][-1].state == "failed"
 
 
+def _ensure_docked(registry, spy):
+    """Earlier tests leave the robot undocked; re-dock via the IoT dock command
+    (a normal allowed action while undocked) so docked-start tests are order-independent."""
+    from guidemate_msgs.messages import Command
+    _wait_for(lambda: spy.docked is not None, 30, "first /dock_status message")
+    if spy.docked is False:
+        acks = registry.send_command(ROBOT_ID, Command(type="motion", name="dock"), timeout_s=120.0)
+        assert acks and acks[-1].state == "done", [a.state for a in acks]
+        _wait_for(lambda: spy.docked is True, 90, "robot to re-dock")
+
+
 def test_dock_guard_refuses_until_undock(registry, spy):
     from guidemate_msgs.messages import Command
-    # sim starts docked -> even with motion+dry_run flipped, dock guard refuses.
+    # docked -> even with motion+dry_run flipped, dock guard refuses twists.
     _set_shadow(motion_enabled=True, dry_run=False)
+    _ensure_docked(registry, spy)
     acks = registry.send_command(ROBOT_ID, Command(type="motion", name="circle"), timeout_s=10.0)
     assert acks and acks[-1].state == "failed"
     assert acks[-1].reason == "docked", acks[-1].reason
-    # undock, then the same command is accepted.
+    # undock (direct ROS action as a test helper), then the same command is accepted.
     spy.undock()
+    _wait_for(lambda: spy.docked is False, 30, "undock to complete")
     acks2 = registry.send_command(ROBOT_ID, Command(type="motion", name="spin"), timeout_s=40.0)
     assert acks2[-1].state == "done", [a.state for a in acks2]
+
+
+def test_dock_lifecycle_via_iot(registry, spy):
+    """The Phase-4 assignment lifecycle, end-to-end in sim, entirely over IoT commands:
+    approve -> undock (exempt while docked) -> usable (circle) -> unassign -> dock.
+    Requires the Phase-4 schema motion names "undock"/"dock" (FLAG Phase 4)."""
+    from guidemate_msgs.messages import Command
+    _set_shadow(motion_enabled=True, dry_run=False)
+    _ensure_docked(registry, spy)
+
+    # 1. undock via IoT — permitted while docked (exemption matrix).
+    acks = registry.send_command(ROBOT_ID, Command(type="motion", name="undock"), timeout_s=60.0)
+    assert acks and acks[-1].state == "done", [a.state for a in acks]
+    _wait_for(lambda: spy.docked is False, 30, "/dock_status is_docked to flip false")
+
+    # 2. robot is usable: a normal choreography runs.
+    acks = registry.send_command(ROBOT_ID, Command(type="motion", name="circle"), timeout_s=40.0)
+    assert acks[-1].state == "done", [a.state for a in acks]
+
+    # 3. dock via IoT — a normal allowed action while undocked.
+    acks = registry.send_command(ROBOT_ID, Command(type="motion", name="dock"), timeout_s=120.0)
+    assert acks and acks[-1].state == "done", [a.state for a in acks]
+    _wait_for(lambda: spy.docked is True, 90, "robot to re-dock")
 ```
 
 - [ ] **Step 3: Verify the suite is skipped by default (no sim needed)**
 
 Run: `cd ~/cs7980-guide-mate && .venv/bin/python -m pytest src/guide_mate_bridge/tests/test_sim_motion.py -q`
-Expected: `3 skipped` (marker gate holds; nothing runs without `GUIDEMATE_SIM=1`).
+Expected: `4 skipped` (marker gate holds; nothing runs without `GUIDEMATE_SIM=1`).
 
 - [ ] **Step 4: Run the real validation (sim up in another terminal)**
 
@@ -1252,14 +1678,14 @@ cd ~/cs7980-guide-mate
 source /opt/ros/humble/setup.bash
 GUIDEMATE_SIM=1 .venv/bin/python -m pytest src/guide_mate_bridge/tests/test_sim_motion.py -q -x
 ```
-Expected: `3 passed` — circle closes + full turn; kill-switch zeros `/cmd_vel` within 1 s and acks `failed`; dock-guard refuses `docked` then permits after undock. The sim shadow is reset to locked afterward (autouse fixture). Confirm: `~/.local/bin/aws iot-data get-thing-shadow --thing-name Turtlebot-Sim --region us-west-2 /dev/stdout | cat` shows `motion_enabled:false, dry_run:true`.
+Expected: `4 passed` — circle closes + full turn; kill-switch zeros `/cmd_vel` within 1 s and acks `failed`; dock-guard refuses `docked` then permits after undock; dock lifecycle round-trips over IoT (`undock` → `is_docked` false → circle → `dock` → re-docked). The sim shadow is reset to locked afterward (autouse fixture). Confirm: `~/.local/bin/aws iot-data get-thing-shadow --thing-name Turtlebot-Sim --region us-west-2 /dev/stdout | cat` shows `motion_enabled:false, dry_run:true`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 cd ~/cs7980-guide-mate
 git add pytest.ini conftest.py src/guide_mate_bridge/tests/test_sim_motion.py
-git commit -m "Kalhar: GUIDEMATE_SIM=1 motion validation — circle closure + kill-switch drill + dock-guard (sim shadow only)"
+git commit -m "Kalhar: GUIDEMATE_SIM=1 motion validation — circle + kill-switch drill + dock-guard exemption + IoT dock lifecycle (sim shadow only)"
 ```
 
 ---
@@ -1335,6 +1761,8 @@ await fetch(`/admin/api/requests/${requestId}/approve`, {
 });
 ```
 > **FLAG (Phase 4):** the approve endpoint must accept `{robot_id}` and acquire `robot_lock#<robot_id>` for that robot. If Phase 4 shipped approve without a `robot_id` body, this is the one-line server change to make there; Task 7 only supplies the picker.
+
+> **Integration point (FLAG Phase 4 — "Assignment-triggered dock/undock", spec 91d9bcb):** Phase 4's approve-hook fires an automatic `undock` command for the newly bound robot after acquiring the lock (and unassign/abort fires `dock`). Approving onto `turtlebotsim` therefore undocks the sim robot automatically — permitted while docked by the Task-4 exemption matrix, and executed via the Task-4 `DockActions` path; the bridge-side chain is exactly what Task 6's `test_dock_lifecycle_via_iot` proves. Do NOT re-implement the hook here; with `GUIDEMATE_FAKE_ROBOT=1` the undock ack is faked, so the Playwright test below needs no change.
 
 - [ ] **Step 6: Add the virtual-pet badge (chat UI)**
 
@@ -1431,13 +1859,15 @@ git commit -m "Kalhar: virtual-pet grant — registry default + admin robot pick
 ## Phase 8 exit checklist (spec row 8 / components 29–31)
 
 - [ ] **29 — Sim identity + launch:** `scripts/create_sim_identity.sh` mints `Turtlebot-Sim` + cert + `guidemate-sim-policy` + default-deny shadow (Task 1); `sim/launch_sim.sh` brings up Ignition + the sim-param bridge (Task 5); the bridge connects under its own identity and default-deny holds even with motion armed (Task 5 Step 6).
-- [ ] **30 — Sim motion validation:** `GUIDEMATE_SIM=1` suite green — circle closes + full 2π turn, kill-switch zeros `/cmd_vel` within 1 s + acks `failed`, dock-guard refuses `docked` then permits after `/undock`; sim shadow reset to locked (Task 6). Headless (`headless:=true`) standing regression.
-- [ ] **31 — Virtual-pet grant:** registry lists `turtlebotsim` (Task 7); admin approves a non-lock session onto `turtlebotsim` while the physical `turtlebot468` lock is untouched; user UI shows the virtual-pet badge (Task 7 Playwright).
-- [ ] **Safety invariants intact:** robot 468's shadow never written; `GUIDEMATE_ENABLE_MOTION` hard-refused for 468 (Task 4) and never set by the Pi installer (Task 5); every motion path triple-gated (env + shadow `motion_enabled` + not effective-dry-run) with the shadow kill-switch wired to executor abort.
+- [ ] **30 — Sim motion validation:** `GUIDEMATE_SIM=1` suite green — circle closes + full 2π turn, kill-switch zeros `/cmd_vel` within 1 s + acks `failed`, dock-guard refuses `docked` (twists) while the exemption matrix passes `undock`/`dock`/`stop`, and the **IoT dock lifecycle** round-trips (undock → `is_docked` false → circle → dock → re-docked = the Phase-4 assignment lifecycle proven in sim); sim shadow reset to locked (Task 6). Headless (`headless:=true`) standing regression.
+- [ ] **31 — Virtual-pet grant:** registry lists `turtlebotsim` (Task 7); admin approves a non-lock session onto `turtlebotsim` while the physical `turtlebot468` lock is untouched; user UI shows the virtual-pet badge (Task 7 Playwright); the Phase-4 approve-hook auto-undock integration point is documented (Task 7).
+- [ ] **Scope addition 91d9bcb ("Assignment-triggered dock/undock") intact:** `undock`/`dock` execute as Create 3 ROS **actions** (`/undock`, `/dock` — verified in Task 2, dispatched in Tasks 3–4), never twists; dock-guard exemption matrix (`command_permitted`) unit-tested (Task 4) and drilled in sim (Task 6).
+- [ ] **Safety invariants intact:** robot 468's shadow never written; `GUIDEMATE_ENABLE_MOTION` hard-refused for 468 (Task 4) and never set by the Pi installer (Task 5); every motion path — twists AND dock/undock actions — triple-gated (env + shadow `motion_enabled` + not effective-dry-run) with the shadow kill-switch wired to executor abort.
 
 ## Self-review notes (from the writing-plans self-review)
 
-- **Spec coverage:** components 29 (Task 1 + Task 5), 30 (Task 6), 31 (Task 7) — all mapped. Locked decisions (a) Task 1, (b) Tasks 3+4+5, (c) Task 5, (d) Task 6, (e) Task 7. The explicit "verify the sim ROS graph" step is Task 2.
-- **Type consistency:** `ChoreographyRunner(publish_ack, dry_run, publish_twist, publish_hz, sleep, motion_gate)` + `.abort(reason)` defined in Task 3 and consumed identically in Task 4's `Bridge`/`main`. `resolve_motion_enabled`/`assert_motion_identity_safe` signatures match between Task 4 interface block, implementation, and tests. `CmdVelPublisher(node, topic, twist_cls)` consistent across Task 4 impl/test and Task 5 launch env (`GUIDEMATE_CMD_VEL_TOPIC`). `sim/sim_facts.env` keys (`SIM_ODOM_TOPIC`, `SIM_CMD_VEL_TOPIC`, `SIM_UNDOCK_ACTION`) produced in Task 2 and consumed in Tasks 5 + 6.
-- **Phase dependencies flagged:** Phase 2 `SafetyLayer` (Task 4, Task 6 dock-guard), Phase 0/1 installer (Task 5), Phase 4 approve/lock + `GUIDEMATE_FAKE_ROBOT` (Task 7).
-- **No robot-468 motion path:** the hard guard (Task 4), installer ban (Task 5), and sim-only shadow writes (Tasks 1, 6) are the three independent guarantees.
+- **Spec coverage:** components 29 (Task 1 + Task 5), 30 (Task 6), 31 (Task 7) — all mapped. Locked decisions (a) Task 1, (b) Tasks 3+4+5, (c) Task 5, (d) Task 6, (e) Task 7. The explicit "verify the sim ROS graph" step is Task 2. Scope addition 91d9bcb: action-client execution (Tasks 2–4), exemption matrix + unit tests (Task 4), sim dock-lifecycle drill (Task 6), approve-hook integration note (Task 7).
+- **Type consistency:** `ChoreographyRunner(publish_ack, dry_run, publish_twist, publish_hz, sleep, motion_gate, run_action)` + `.abort(reason)` defined in Task 3 and consumed identically in Task 4's `Bridge`/`main`; `motion_gate: Callable[[Command], tuple[bool, str]]` and `run_action: Callable[[str], tuple[bool, str]]` match `command_permitted(...) -> tuple[bool, str]` and `DockActions.run(name) -> tuple[bool, str]` (Task 4). `resolve_motion_enabled`/`assert_motion_identity_safe` signatures match between Task 4 interface block, implementation, and tests. `CmdVelPublisher(node, topic, twist_cls)` consistent across Task 4 impl/test and Task 5 launch env (`GUIDEMATE_CMD_VEL_TOPIC`, `GUIDEMATE_UNDOCK_ACTION`, `GUIDEMATE_DOCK_ACTION`). `sim/sim_facts.env` keys (`SIM_ODOM_TOPIC`, `SIM_CMD_VEL_TOPIC`, `SIM_DOCK_STATUS_TOPIC`, `SIM_UNDOCK_ACTION`, `SIM_DOCK_ACTION`) produced in Task 2 and consumed in Tasks 5 + 6.
+- **Phase dependencies flagged:** Phase 2 `SafetyLayer` incl. `docked()` + the required pre-enqueue delegation to `command_permitted` (Task 4, Task 6); Phase 0/1 installer (Task 5); Phase 4 schema motion names `undock`/`dock` (Tasks 3, 6 — `_cmd_action` falls back to `model_construct` in unit tests), approve/lock + approve-hook auto-undock + `GUIDEMATE_FAKE_ROBOT` (Task 7).
+- **No robot-468 motion path:** the hard guard (Task 4), installer ban (Task 5), and sim-only shadow writes (Tasks 1, 6) are the three independent guarantees. Dock/undock actions ride the same triple gate: `DockActions` is only constructed when `resolve_motion_enabled` passes, and `command_permitted` refuses everything (`motion_disabled`) while the shadow is locked.
+- **Ordering robustness (Task 6):** docked-start tests (`dock_guard`, `dock_lifecycle`) re-dock via `_ensure_docked` (IoT `dock` command) so the suite is order-independent even though earlier tests leave the robot undocked.
