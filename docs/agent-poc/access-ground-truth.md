@@ -161,6 +161,7 @@ deactivate the cert (`aws iot update-certificate --new-status INACTIVE`).
 | IoT policy `guidemate-dev-policy` | attached to dev cert `aec82bf4…` | Connect `client/guidemate-*`; Pub/Receive `guidemate/devtest/*`; Receive `guidemate/+/status`; Subscribe `guidemate/devtest/*` + `guidemate/+/status`. Additive; robot policy untouched. Tag `project=guidemate-poc`. ARN `arn:aws:iot:us-west-2:852373397000:policy/guidemate-dev-policy`. |
 | IAM role `guidemate-iot-logging-role` | trusts `iot.amazonaws.com` | `AWSIoTLogging` managed policy (`arn:aws:iam::aws:policy/service-role/AWSIoTLogging` — note: not `AWSIotLoggingRole`, which does not exist); used by IoT v2 logging (default level WARN). Tag `project=guidemate-poc`. Role ARN `arn:aws:iam::852373397000:role/guidemate-iot-logging-role`. No prior logging role existed. |
 | IoT v2 logging | default level `WARN` | Denials land in CloudWatch `AWSIotLogsV2`. |
+| DynamoDB tables | `guidemate-sessions`, `guidemate-messages`, `guidemate-requests`, `guidemate-config` | on-demand (`PAY_PER_REQUEST`), tag `project=guidemate-poc`, region us-west-2. Created by `scripts/create_dynamo_tables.py` (idempotent). Phase 3 uses only `guidemate-config` (`pk="flags"` feature flags + `pk="prompt"` admin-set system prompt); the other three are Phase 4 (sessions / chat history / companion requests). |
 
 **Real IoT Core round-trip verified 2026-07-05:** the gated integration test
 (`agent_service/tests/integration/test_roundtrip.py`, `GUIDEMATE_INTEGRATION=1`) runs the
