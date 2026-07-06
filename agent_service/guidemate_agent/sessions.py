@@ -73,6 +73,33 @@ def create_session(name: str, comfortable: bool) -> str:
     return session_id
 
 
+def ensure_session(session_id: str, name: str) -> None:
+    """Idempotently ensure a session row exists at this EXACT session_id.
+
+    Unlike create_session (which always mints a fresh uuid), this is used by
+    the autonomy EventEngine to keep a stable, well-known system session (e.g.
+    "system-autonomy") visible in the admin Sessions tab without duplicating
+    the row on every fired rule. No-op if the row already exists.
+    """
+    try:
+        _table(TABLE_SESSIONS).put_item(
+            Item={
+                "session_id": session_id,
+                "name": name,
+                "comfortable": False,
+                "created_ts": _now_iso(),
+                "status": "active",
+                "request_status": "none",
+                "robot_id": None,
+            },
+            ConditionExpression="attribute_not_exists(session_id)",
+        )
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            return
+        raise
+
+
 def get_session(session_id: str) -> Optional[dict]:
     item = _table(TABLE_SESSIONS).get_item(Key={"session_id": session_id}).get("Item")
     return item

@@ -325,6 +325,31 @@ def admin_assign_events(robot_id: str, _: bool = Depends(admin_required)) -> lis
     return sessions.get_assign_events(robot_id)
 
 
+# --- synthetic autonomy event (Task 6 evidence) ---------------------------
+class SyntheticEvent(BaseModel):
+    type: str
+    battery: Optional[float] = None
+    robot_id: Optional[str] = None
+
+
+@router.post("/synthetic-event")
+def synthetic_event(
+    payload: SyntheticEvent, request: Request, _: bool = Depends(admin_required)
+) -> dict:
+    """Inject a fake robot status through the real autonomy path (checklist item 6):
+    same `engine.on_status_event` a real heartbeat/offline notification takes."""
+    engine = request.app.state.engine
+    robot_id = payload.robot_id or engine.default_robot_id or "turtlebot468"
+    if payload.type == "low_battery":
+        data = {"battery": payload.battery if payload.battery is not None else 0.10}
+    elif payload.type == "robot_offline":
+        data = {"event": "offline", "robot_id": robot_id}
+    else:
+        raise HTTPException(status_code=400, detail=f"unknown synthetic event type {payload.type!r}")
+    fired = engine.on_status_event({"robot_id": robot_id, "data": data})
+    return {"fired": fired, "session_id": engine.session_id}
+
+
 @router.post("/robot/{robot_id}/command")
 def admin_robot_command(
     robot_id: str, body: _RobotCommandBody, request: Request,

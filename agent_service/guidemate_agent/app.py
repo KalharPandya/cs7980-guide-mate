@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +18,7 @@ from guidemate_msgs.jsonlog import setup
 from guidemate_msgs.metrics import emit_metric
 
 from guidemate_agent import admin, sessions
+from guidemate_agent.autonomy import AUTONOMY_SESSION_ID, EventEngine
 from guidemate_agent.config import Config
 from guidemate_agent.dog_agent import DogAgent
 from guidemate_agent.fakes import FakeRobotRegistry
@@ -77,7 +79,35 @@ async def lifespan(app: FastAPI):
         region=cfg.region,
         store=store,
     )
-    yield
+
+    # Autonomy: unprompted, motion-free turns driven by robot status events
+    # (via registry.on_event) and a daily scheduled job (morning stretch).
+    # NOTE (adaptation): EventEngine's `store` only needs `.ensure_session(id,
+    # name)` to keep the system session visible in the admin Sessions tab —
+    # that's a *sessions*-table concern (guidemate-sessions), not a
+    # ConfigStore (guidemate-config flags/prompt) concern, so the `sessions`
+    # module (which now exposes ensure_session) is passed here, not
+    # `app.state.store`.
+    default_robot_id = cfg.robot_ids[0] if cfg.robot_ids else None
+    engine = EventEngine(
+        agent=app.state.agent,
+        store=sessions,
+        default_robot_id=default_robot_id,
+        session_id=os.environ.get("GUIDEMATE_AUTONOMY_SESSION_ID", AUTONOMY_SESSION_ID),
+    )
+    app.state.engine = engine
+    registry.on_event(engine.on_status_event)
+
+    scheduler = BackgroundScheduler(timezone="America/New_York")
+    scheduler.add_job(engine.morning_stretch, "cron", hour=9, minute=0, id="morning_stretch")
+    scheduler.start()
+    app.state.scheduler = scheduler
+    log.info("autonomy engine + scheduler started (morning stretch daily 09:00)")
+
+    try:
+        yield
+    finally:
+        app.state.scheduler.shutdown(wait=False)
 
 
 app = FastAPI(lifespan=lifespan)
