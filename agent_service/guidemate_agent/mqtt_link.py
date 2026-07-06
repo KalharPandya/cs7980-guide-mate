@@ -7,7 +7,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 import boto3
 from awscrt import auth, mqtt
@@ -64,6 +64,21 @@ class RobotRegistry:
         self._lock = threading.Lock()
         self._waiters: dict[str, tuple[threading.Event, list[Ack]]] = {}
         self._conn = connection
+        self._event_callbacks: list[Callable[[dict], None]] = []
+
+    def on_event(self, callback: Callable[[dict], None]) -> None:
+        """Register a callback fired once per parsed status message: {"robot_id", "data"}."""
+        with self._lock:
+            self._event_callbacks.append(callback)
+
+    def _dispatch_event(self, event: dict) -> None:
+        with self._lock:
+            callbacks = list(self._event_callbacks)
+        for cb in callbacks:
+            try:
+                cb(event)
+            except Exception:  # noqa: BLE001 — one bad callback must not stall the MQTT thread
+                log.exception("on_event callback failed")
 
     @property
     def is_connected(self) -> bool:
@@ -99,6 +114,7 @@ class RobotRegistry:
             return
         parts = topic.split("/")
         robot_id = parts[1] if len(parts) >= 2 else "?"
+        self._dispatch_event({"robot_id": robot_id, "data": data})
         with self._lock:
             state = self._robots.setdefault(robot_id, RobotState(robot_id=robot_id))
             event = data.get("event")

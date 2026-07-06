@@ -148,3 +148,34 @@ def test_collect_all_waits_full_timeout_and_keeps_out_of_order_acks():
     fake.feed_status("turtlebot468", Ack(cmd_id=cmd.cmd_id, state="running", simulated=True))
     t.join(timeout=2.0)
     assert sorted(a.state for a in out["acks"]) == ["done", "running"]
+
+
+def test_on_event_callback_receives_parsed_status():
+    reg, fake = _registry()
+    seen = []
+    reg.on_event(seen.append)
+    fake.status_cb(
+        topic=status_topic("turtlebot468"),
+        payload=b'{"battery": 0.12, "docked": true}',
+        dup=False,
+        qos=1,
+        retain=False,
+    )
+    assert seen == [{"robot_id": "turtlebot468", "data": {"battery": 0.12, "docked": True}}]
+
+
+def test_on_event_callback_error_is_swallowed():
+    reg, fake = _registry()
+
+    def boom(event):
+        raise RuntimeError("callback boom")
+
+    reg.on_event(boom)
+    # Must not raise out of the MQTT status callback.
+    fake.status_cb(
+        topic=status_topic("turtlebot468"),
+        payload=b'{"event": "offline", "robot_id": "turtlebot468"}',
+        dup=False,
+        qos=1,
+        retain=False,
+    )
