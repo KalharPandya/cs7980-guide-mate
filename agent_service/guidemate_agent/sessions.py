@@ -221,6 +221,9 @@ def _record_assign_event(robot_id: str, action: str, acks: list) -> dict:
         "refused": bool(acks) and acks[-1].state == "failed",
     }
     key = {CONFIG_PK: f"robot_assign_events#{robot_id}"}
+    # NOTE: read-modify-write with no conditional guard — safe only under the
+    # POC's single-service-instance assumption; concurrent writers would lose
+    # events (last-write-wins on the whole list).
     item = _table(TABLE_CONFIG).get_item(Key=key).get("Item")
     events = json.loads(item["events_json"]) if item else []
     events.append(event)
@@ -262,6 +265,11 @@ def _bind_robot(robot_id: str, session_id: str, registry=None) -> Optional[str]:
         aborted = holder
     if not acquire_robot_lock(robot_id, session_id):
         # Lost a race (or same session re-binding): reset and take it.
+        # NOTE: this unconditional release+retake bypasses the conditional
+        # put's atomicity — under MULTI-instance concurrency a loser could
+        # stomp a winner's fresh lock. Safe only for the POC's single
+        # service instance (robot_for_session still prevents double-drive:
+        # it requires binding AND current lock-holder to match).
         release_robot_lock(robot_id)
         acquire_robot_lock(robot_id, session_id)
     _update_session(session_id, robot_id=robot_id, request_status="approved")
