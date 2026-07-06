@@ -61,6 +61,14 @@ def test_real_iot_roundtrip():
         "GUIDEMATE_KEY": DEV_KEY,
         "GUIDEMATE_CA": ca,
         "GUIDEMATE_DRY_RUN": "1",
+        # Shadow sync OFF: the dev cert's policy (guidemate-dev-policy) has no
+        # $aws/things/* permissions. A denied shadow SUBSCRIBE is not a catchable
+        # error — AWS IoT drops the whole MQTT connection, and awscrt then replays
+        # the pending subscribe on every reconnect, permanently killing the command
+        # subscription this test depends on (regression: "missing acks; got []").
+        # Shadow is opt-in (GUIDEMATE_SHADOW) precisely so an unauthorized cert never
+        # attempts it; set it explicitly here so an enabled ambient env can't leak in.
+        "GUIDEMATE_SHADOW": "0",
     })
     bridge = subprocess.Popen(
         [sys.executable, "-m", "guide_mate_bridge.bridge"],

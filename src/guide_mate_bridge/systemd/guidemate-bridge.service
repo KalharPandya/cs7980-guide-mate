@@ -11,6 +11,11 @@ Environment=GUIDEMATE_ROBOT_ID=@ROBOT_ID@
 Environment=GUIDEMATE_THING_NAME=@THING_NAME@
 Environment=GUIDEMATE_DRY_RUN=1
 Environment=GUIDEMATE_ROS=@ROS_ENABLED@
+# Device Shadow reconcile is opt-in and MUST only run with a cert authorized for
+# this thing's $aws/things/<thing>/shadow/* topics (the robot cert is). An
+# unauthorized shadow subscribe makes AWS IoT drop the whole connection and poisons
+# the command path — so it stays OFF anywhere the cert lacks shadow perms (dev cert).
+Environment=GUIDEMATE_SHADOW=1
 Environment=GUIDEMATE_IOT_ENDPOINT=@IOT_ENDPOINT@
 Environment=GUIDEMATE_CERT=@CERT@
 Environment=GUIDEMATE_KEY=@KEY@

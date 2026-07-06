@@ -152,10 +152,32 @@ def test_shadow_delta_cannot_loosen_env_dry_run():
 
 
 def test_subscribe_denied_locks_defaults_and_never_publishes_shadow_topics():
-    # The dev cert has no shadow permissions; unauthorized publish would get the
-    # connection dropped by AWS IoT — so on subscribe denial we must go silent.
+    # Defensive raise-path only. In reality AWS IoT does NOT raise on a policy-denied
+    # subscribe — it drops the whole connection, which cannot be recovered (see the
+    # module docstring); that fatal case is prevented a-priori by keeping shadow
+    # DISABLED on unauthorized certs (test_shadow_disabled_makes_no_io below). This
+    # still covers the belt-and-suspenders except in start(): if subscribe ever does
+    # raise, we go silent and lock defaults.
     fake = FakeConnection(deny_subscribe=True)
     safety = SafetyState(env_dry_run=True)
     _sync(fake, safety, timeout=0.05).start()
     assert safety.gates()["motion_enabled"] is False
     assert fake.published == []  # no get, no reported — nothing touched shadow topics
+
+
+def test_shadow_disabled_makes_no_io_and_locks_defaults():
+    # Regression guard: with shadow disabled (unauthorized cert, e.g. the dev cert
+    # in the integration roundtrip), start() must NOT subscribe or publish anything.
+    # Attempting a denied shadow subscribe drops the connection and poisons the
+    # mandatory command subscription ("missing acks; got []"). Enforcement stays at
+    # the locked default-deny state, and publish_reported() is also a no-op.
+    fake = FakeConnection()
+    safety = SafetyState(env_dry_run=True)
+    sync = ShadowSync(client=_client(fake), thing_name="Turtlebot-468",
+                      safety=safety, get_timeout_s=0.05, enabled=False)
+    sync.start()
+    assert fake.subscriptions == {}  # never subscribed to any shadow topic
+    assert fake.published == []       # never published get or reported
+    sync.publish_reported(sync=True)  # shutdown path stays silent too
+    assert fake.published == []
+    assert safety.gates() == {"docked": None, "motion_enabled": False, "dry_run": True}

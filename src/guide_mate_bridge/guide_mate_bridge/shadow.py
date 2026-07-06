@@ -1,8 +1,19 @@
 """Classic Device Shadow reconcile over the existing IotClient connection.
 
 Plain MQTT on the reserved $aws shadow topics — no extra SDK layer. Missing
-shadow, rejected get, timeout, or denied subscription all leave the defaults
-LOCKED (motion_enabled=False, max_speed=0.15, dry_run=True).
+shadow, rejected get, or timeout all leave the defaults LOCKED
+(motion_enabled=False, max_speed=0.15, dry_run=True).
+
+Shadow sync is OPT-IN (``enabled``, wired to GUIDEMATE_SHADOW in the bridge).
+A policy-DENIED shadow SUBSCRIBE is NOT a catchable SUBACK error: AWS IoT
+responds to an unauthorized subscribe by dropping the whole MQTT connection
+(UNEXPECTED_HANGUP), the SUBACK never arrives, and awscrt then replays the
+pending subscribe on every auto-reconnect — permanently poisoning the shared
+connection and taking the mandatory command subscription down with it. There is
+no post-hoc recovery: the attempt itself is fatal. So shadow must only ever be
+attempted where the cert is authorized for it (production). Where it is not
+(the dev cert / integration test), leave it disabled; defaults stay locked,
+which is the fail-safe state anyway.
 """
 from __future__ import annotations
 
@@ -17,6 +28,7 @@ from guide_mate_bridge.safety import SafetyState
 log = logging.getLogger(__name__)
 
 _LOCKED_MSG = "DEFAULTS LOCKED (motion_enabled=False, max_speed=0.15, dry_run=True)"
+_DISABLED_MSG = "shadow sync disabled (GUIDEMATE_SHADOW not truthy) — " + _LOCKED_MSG
 
 
 def shadow_topic(thing_name: str, suffix: str) -> str:
@@ -30,15 +42,24 @@ class ShadowSync:
         thing_name: str,
         safety: SafetyState,
         get_timeout_s: float = 5.0,
+        enabled: bool = True,
     ) -> None:
         self._client = client
         self._thing = thing_name
         self._safety = safety
         self._get_timeout_s = get_timeout_s
+        self._enabled = enabled
         self._got = threading.Event()
         self._subscribed = False
 
     def start(self) -> None:
+        if not self._enabled:
+            # Never touch shadow topics when disabled: a denied subscribe drops the
+            # whole connection (see module docstring), so this is the ONLY safe path
+            # for a cert that isn't authorized for the thing's shadow. Defaults stay
+            # locked, which is the fail-safe state.
+            log.info(_DISABLED_MSG)
+            return
         try:
             self._client.subscribe(shadow_topic(self._thing, "get/accepted"), self._on_get_accepted)
             self._client.subscribe(shadow_topic(self._thing, "get/rejected"), self._on_get_rejected)

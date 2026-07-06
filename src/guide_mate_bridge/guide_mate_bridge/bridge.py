@@ -123,7 +123,16 @@ def main() -> None:
     )
     bridge = Bridge(client=client, robot_id=robot_id, safety=safety)
     bridge.start()
-    shadow = ShadowSync(client=client, thing_name=thing_name, safety=safety)
+    # Shadow sync is opt-in (GUIDEMATE_SHADOW, default off). It must ONLY run where
+    # the cert is authorized for the thing's shadow: a policy-denied shadow SUBSCRIBE
+    # makes AWS IoT drop the whole connection, which permanently poisons the shared
+    # command subscription (awscrt replays the pending subscribe on every reconnect).
+    # Production enables it via systemd with the authorized robot cert; the dev cert
+    # (integration test) leaves it off, so defaults stay locked = fail-safe.
+    shadow = ShadowSync(
+        client=client, thing_name=thing_name, safety=safety,
+        enabled=_truthy(os.environ.get("GUIDEMATE_SHADOW", "0")),
+    )
     shadow.start()
 
     telemetry = Telemetry(
