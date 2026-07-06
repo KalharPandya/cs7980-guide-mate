@@ -31,6 +31,7 @@ guard — three independent locks). Physical-motion validation is explicitly out
 | Physical-companion flow | **In scope**: user requests a physical companion from the chat UI → pending request in the admin panel → admin approves → that session is bound to the robot. **Exactly one robot-connected session at a time.** Admin can abort the ongoing robot session, or approve another request (aborting the current one). Non-connected sessions get *virtual* emotes (avatar animation only); the connected session also drives the physical robot. |
 | Session store | **SQLite on a persistent Docker volume** (already in the stack for flags): sessions, intake answers, chat history, companion requests, robot-session lock. Intake info used only for personalization + approval context. Admin can browse all chat histories. DynamoDB is the documented swap if durability across instance rebuilds is ever needed. |
 | Admin robot commands | Admin can send direct robot commands (`dock`, `stop`, primitives) from the panel — same command channel, **same bridge safety locks** (dock/undock are motion → refused while `motion_enabled=false`; verified via dry-run/refusal paths only in this plan). |
+| Admin auth | **Password → session cookie** (upgrades the architecture spec's bearer token): admin password from an env var (generated at deploy) posted to a login form → signed **HttpOnly Secure SameSite=Strict** cookie; rides every API call and WebSocket automatically, unreadable to page JS. Timing-safe compare + attempt rate-limit. Still single-credential, no user accounts. |
 
 ## Network topology (governs all verification)
 The Linux box has **tunneled, one-way** access to NUwave: SSH out to the Pi works; nothing
@@ -100,7 +101,7 @@ cs7980-guide-mate/
    chip, emote indicator (virtual for everyone; physical too when robot-connected);
    **Request physical companion** button with request-state banner
    (pending/approved/denied/aborted); **Start new session** (clears localStorage).
-10. **Admin UI (`/admin`)** — single-token auth; tabs: agent flags, robot-tier flags +
+10. **Admin UI (`/admin`)** — password login → signed HttpOnly session cookie; tabs: agent flags, robot-tier flags +
     kill switch (writes Device Shadow), live robot status, KB manage, **Maps**,
     **Requests** (pending companion requests with intake context → approve/deny),
     **Sessions** (all users' chat histories, read-only), **Robot session** (who's
