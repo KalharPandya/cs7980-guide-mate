@@ -24,6 +24,8 @@
   const bannerText = $("companion-status");
   const requestBtn = $("request-companion");
   const virtualPetBadge = $("virtual-pet-badge");
+  const stopBar = $("stop-bar");
+  const stopBtn = $("stop-btn");
   const toast = $("toast");
 
   // --- session id: minted by POST /api/session at intake, mirrored in
@@ -46,16 +48,13 @@
     showToast._t = setTimeout(() => toast.classList.add("hidden"), 3500);
   }
 
-  function addBubble(role, text, emote) {
+  // The emote is metadata: it drives the avatar animation (armPendingEmote),
+  // never rendered as text in the answer bubble. Signature keeps the `emote`
+  // param for call-site compatibility but no dev label is printed.
+  function addBubble(role, text) {
     const div = document.createElement("div");
     div.className = "bubble " + (role === "you" ? "you" : "dog");
     div.textContent = text;
-    if (emote) {
-      const tag = document.createElement("span");
-      tag.className = "emote-tag";
-      tag.textContent = "emote: " + emote;
-      div.appendChild(tag);
-    }
     messages.appendChild(div);
     messages.scrollTop = messages.scrollHeight;
   }
@@ -125,8 +124,10 @@
       if (msg.type === "transcript") {
         if (msg.text) addBubble("you", msg.text);
       } else if (msg.type === "reply") {
-        addBubble("dog", msg.text, msg.emote);
+        addBubble("dog", msg.text);
         armPendingEmote(msg.emote);
+      } else if (msg.type === "stopped") {
+        showToast(msg.sent ? "Stop sent to the robot." : "Nothing to stop — no robot moving.");
       } else if (msg.type === "audio") {
         try {
           const bytes = Uint8Array.from(atob(msg.b64), (c) => c.charCodeAt(0));
@@ -286,21 +287,39 @@
   // not the richer shape an earlier draft speculated about.
   function renderState(s) {
     const physical = !!s.robot_id;
-    chip.className = "chip " + (physical ? "chip-physical" : "chip-virtual");
-    chipMode.textContent = physical ? "physical" : "virtual";
+    // The virtual pet (sim) is bound like a robot but has no real motion; it is
+    // NOT a physical connection. Treat it as its own authoritative state.
+    const isPet = s.robot_id === "turtlebotsim";
+    const physicalMotion = physical && !isPet;
 
-    // Task 7 (virtual-pet grant): the sim is bound like any other robot (still
-    // goes through the "physical" branch below, "Connected to turtlebotsim");
-    // this badge is the only extra cue that the bound robot is virtual, not
-    // the real turtlebot468 -- companion-banner strings stay untouched.
+    // Single authoritative connection pill (no contradictory "physical" +
+    // "Virtual pet" at once): the virtual-pet badge OWNS the header state when
+    // the sim is bound, so the status chip is hidden in that case.
     if (virtualPetBadge) {
-      virtualPetBadge.classList.toggle("hidden", s.robot_id !== "turtlebotsim");
+      virtualPetBadge.classList.toggle("hidden", !isPet);
     }
+    if (isPet) {
+      chip.classList.add("hidden");
+    } else {
+      chip.className = "chip " + (physical ? "chip-physical" : "chip-virtual");
+      chipMode.textContent = physical ? "physical" : "virtual";
+    }
+
+    // Persistent Stop: visible only while REAL robot motion can be active
+    // (a bound physical robot — not virtual, not the motion-less sim pet).
+    if (stopBar) stopBar.classList.toggle("hidden", !physicalMotion);
+
+    // The "Connected" request button reads as a green success chip when bound.
+    requestBtn.classList.toggle("is-connected", physical);
 
     banner.classList.remove("pending", "approved", "denied", "aborted");
     if (physical) {
       banner.classList.add("approved");
-      bannerText.textContent = "Connected to " + s.robot_id + " 🐕 (physical)";
+      // Flat monochrome status is carried by the banner dot; no emoji glyph.
+      // One authoritative label: the motion-less sim reads "(virtual pet)", a
+      // real robot reads "(physical)" -- never both cues at once.
+      bannerText.textContent =
+        "Connected to " + s.robot_id + (isPet ? " (virtual pet)" : " (physical)");
       requestBtn.disabled = true;
       requestBtn.textContent = "Connected";
     } else if (s.request_status === "pending") {
@@ -337,6 +356,9 @@
       // virtual default rather than wedging the UI.
       chip.className = "chip chip-virtual";
       chipMode.textContent = "virtual";
+      if (stopBar) stopBar.classList.add("hidden");
+      if (virtualPetBadge) virtualPetBadge.classList.add("hidden");
+      requestBtn.classList.remove("is-connected");
     }
   }
 
@@ -362,6 +384,16 @@
     } catch (e) { /* network hiccup -- next poll will reconcile */ }
     requestBtn.disabled = false;
   });
+
+  // --- persistent Stop: send a real stop command to the bound robot ---------
+  // The button is only shown while a physical robot is connected (renderState),
+  // but we defend in depth here too. The backend WS handler resolves the
+  // session's bound robot and forwards a Command(type="stop") to it.
+  if (stopBtn) {
+    stopBtn.addEventListener("click", () => {
+      wsSend(JSON.stringify({ type: "stop" }));
+    });
+  }
 
   // --- intake ----------------------------------------------------------------
   async function beginSession(name, comfortable) {

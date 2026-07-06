@@ -140,8 +140,10 @@ def test_voice_in_transcript_reply_emote_audio(server_url):
             # Transcript bubble carries the spoken word "wiggle" (real Transcribe result).
             page.wait_for_selector("text=wiggle", timeout=20000)
 
-            # A dog reply bubble with an emote tag appears (real Bedrock + emote tool call).
-            page.wait_for_selector(".bubble.dog .emote-tag", timeout=20000)
+            # A dog reply bubble appears (real Bedrock + emote tool call). The emote
+            # itself is metadata now — NOT printed in the bubble — it is asserted
+            # below via the avatar animation class (the emote<->audio sync check).
+            page.wait_for_selector(".bubble.dog", timeout=20000)
 
             # Sync half 1: right after the reply bubble lands, the avatar must NOT yet
             # carry an emote class -- chat.js only applies it on the <audio> 'play' event,
