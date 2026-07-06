@@ -8,7 +8,12 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
 _EMOTE_NAMES = ("happy", "yes", "no")
-_MOTION_NAMES = ("circle", "spin")
+# "dock"/"undock" added for the assignment-triggered dock/undock flow (spec delta,
+# commit 91d9bcb). The choreography library has NO dock/undock sequence — the bridge
+# executor's build() raises ValueError for them, acking `failed` ("unknown
+# choreography"), and the Phase 2 safety layer refuses them as motion while locked.
+# Bridge-side EXECUTION (Create 3 dock actions + dock-guard exemption) is Phase 8.
+_MOTION_NAMES = ("circle", "spin", "dock", "undock")
 
 
 def _utc_now_iso() -> str:
