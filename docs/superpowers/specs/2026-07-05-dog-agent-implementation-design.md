@@ -29,11 +29,11 @@ guard — three independent locks). Physical-motion validation is explicitly out
 | Mapping stack | **BFS explorer / depth fusion / SLAM are parked.** The bridge depends only on base bringup (Create 3 battery/dock topics + `cmd_vel` sink). |
 | Multi-user sessions | **In scope** (added 2026-07-05, late): open/free chat for all users; per-session intake (name + "comfortable around Physical AI Dogs?"); session id + intake in browser localStorage; **Start new session** button clears it. Agent knows the user's name. |
 | Physical-companion flow | **In scope**: user requests a physical companion from the chat UI → pending request in the admin panel → admin approves → that session is bound to the robot. **Exactly one robot-connected session at a time.** Admin can abort the ongoing robot session, or approve another request (aborting the current one). Non-connected sessions get *virtual* emotes (avatar animation only); the connected session also drives the physical robot. |
-| Session store | **SQLite on a persistent Docker volume** (already in the stack for flags): sessions, intake answers, chat history, companion requests, robot-session lock. Intake info used only for personalization + approval context. Admin can browse all chat histories. DynamoDB is the documented swap if durability across instance rebuilds is ever needed. |
+| Session store | **DynamoDB** (chosen 2026-07-05, supersedes the earlier SQLite choice — Kalhar wants data readable in the AWS console): 4 small on-demand tables — `guidemate-sessions`, `guidemate-messages`, `guidemate-requests`, `guidemate-config` (flags + admin-set prompts + robot locks). Console-browsable, ~$0 at POC scale, survives instance rebuilds; the per-robot session lock is an **atomic conditional write**. Intake info used only for personalization + approval context. Admin can browse all chat histories. |
 | Admin robot commands | Admin can send direct robot commands (`dock`, `stop`, primitives) from the panel — same command channel, **same bridge safety locks** (dock/undock are motion → refused while `motion_enabled=false`; verified via dry-run/refusal paths only in this plan). |
 | Admin auth | **Password → session cookie** (upgrades the architecture spec's bearer token): admin password from an env var (generated at deploy) posted to a login form → signed **HttpOnly Secure SameSite=Strict** cookie; rides every API call and WebSocket automatically, unreadable to page JS. Timing-safe compare + attempt rate-limit. Still single-credential, no user accounts. |
 | Multi-robot agent core | **First-class from day one** (goal directive): the agent service holds a **robot registry** (`robot_id` → MQTT topics, link state, latest status) over one shared IoT connection (wildcard `guidemate/+/status` subscribe). Agent tools take/receive a robot binding; a session can be bound to **one or more robots**; admin assigns/revokes per robot. POC exercises two (468 + sim); the registry and schema impose no upper bound, so multi-robot-per-user and AI coordination of several robots are configuration, not rework. |
-| Admin-set agent prompts | Admin panel can **edit the dog's system prompt / behavior directives** (stored in SQLite alongside flags, applied on the next turn); the agent must demonstrably follow the admin-set prompt. |
+| Admin-set agent prompts | Admin panel can **edit the dog's system prompt / behavior directives** (stored in DynamoDB `guidemate-config` alongside flags, applied on the next turn); the agent must demonstrably follow the admin-set prompt. |
 | Gazebo sim / virtual pets | **In scope, after the robot path is green** (robot first — phases 0–7 unchanged). This box already has the full TB4 Ignition Fortress sim stack + GPU. New **Phase 8**: sim IoT identity (`Turtlebot-Sim` thing + cert + own shadow + `guidemate/turtlebotsim/*` policy), the same bridge pointed at the sim's ROS graph, **motion validation** (`motion_enabled=true` on the *sim shadow only*: odometry-verified choreographies, kill-switch drill, dock-guard fire) + headless pytest regression, and the companion flow gains a **virtual pet** grant: sessions that don't hold the physical-robot lock can be connected to the sim robot instead. One sim robot in this plan; multi-spawn per-user pets = documented follow-on. To keep Phase 8 a params-only drop-in, the bridge and agent service are **parameterized from day one** (thing name, namespace, topic prefix / robot registry) — robot 468's locks are never touched by any sim work. |
 
 ## Network topology (governs all verification)
@@ -93,9 +93,10 @@ cs7980-guide-mate/
 4. **Chat API** — REST + WebSocket; returns `{reply_text, emote}`; emote-sync gating.
 5. **Event layer** — persistent MQTT-over-WSS (IAM/SigV4); subscribes `/status`, publishes
    `/cmd`; robot events + APScheduler trigger agent turns without a user message.
-6. **App store (SQLite, volume-persisted)** — agent-tier feature flags (mute, emotes
-   off, motion tools off, persona off; checked every turn) + sessions, intake answers,
-   chat history, companion requests, and the single robot-session lock.
+6. **App store (DynamoDB, on-demand)** — tables `guidemate-sessions`, `guidemate-messages`,
+   `guidemate-requests`, `guidemate-config`: agent-tier feature flags + admin-set prompts
+   (checked every turn), sessions, intake answers, chat history, companion requests, and
+   per-robot session locks (atomic conditional writes). All console-browsable.
 7. **KB manager** — upload → S3 → `StartIngestionJob` → sync status (KB `A1NIQYZ0KQ`,
    data source `OT8JLH57TE`).
 8. **Speech backend** — Transcribe streaming (mic→text) + Polly neural (dog voice out).
@@ -110,7 +111,7 @@ cs7980-guide-mate/
     **Sessions** (all users' chat histories, read-only), **Robot session** (who's
     connected, abort, reassign, direct commands like `dock`/`stop`).
 11. **Dockerfile + compose** — app + Caddy; identical artifact locally and on EC2;
-    named volume for SQLite persistence.
+    containers log via the `awslogs` driver to CloudWatch.
 
 **`src/guide_mate_bridge/`** (Pi; additive)
 12. **Bridge node** — AWS IoT Device SDK (existing `Turtlebot-468` X.509 cert, client id
@@ -153,7 +154,7 @@ cs7980-guide-mate/
 
 **Sessions & companion flow** (in `agent_service/`)
 25. **Session layer** — anonymous session id (UUID) minted at intake (name + comfort
-    question), mirrored in localStorage; server-side record in SQLite; the agent's
+    question), mirrored in localStorage; server-side record in DynamoDB; the agent's
     system context includes the user's name; **Start new session** clears localStorage
     and mints a fresh id (old record kept server-side for admin history).
 26. **Companion request flow** — chat-UI request → `pending` row (with intake context)
@@ -214,6 +215,40 @@ Riskiest integrations are proven first; every phase ends green before the next s
 (default-deny, missing shadow = false), dock guard, and `dry_run=true`. None are touched
 by this plan. **Out of scope:** physical-motion validation (observed session later);
 BFS explorer / fusion / SLAM (parked); robot 436; multi-org.
+
+## Observability (cross-cutting; approved 2026-07-05, late)
+Built in from the first line of code, not bolted on. Everything lands in **CloudWatch**
+(console-readable, matching the DynamoDB choice).
+
+**Core (unconditional):**
+1. **Correlation IDs end-to-end** — every chat turn gets a `turn_id`, carried through
+   agent → tool call → MQTT `cmd_id` → bridge log → ack → UI. One Logs Insights query
+   reconstructs any interaction. Shared JSON-logging helper lives in
+   `shared/guidemate_msgs` (used by service *and* bridge) from Phase 0.
+2. **Structured JSON logs → CloudWatch** — service containers via the Docker `awslogs`
+   driver (`/guidemate/agent-service`); every line carries
+   `turn_id`/`cmd_id`/`session_id`/`robot_id`.
+3. **Metrics via EMF** (metrics are just log lines; zero infra) — turn latency, Bedrock
+   latency/tokens/cost-per-turn, KB retrieval latency, MQTT ack round-trip per robot,
+   Transcribe/Polly latency, WS connections, error counts.
+4. **IoT Core logging + presence** — IoT logging enabled (surfaces policy denials);
+   bridge sets an **MQTT Last Will** so a dropped Pi instantly publishes `offline` to
+   its status topic; console MQTT test client for live topic watching.
+5. **Health endpoints + heartbeats** — service `/healthz` + `/readyz` (MQTT? DynamoDB?
+   creds?); bridge heartbeats every 30 s (battery/dock/uptime) — closes the
+   silent-wedge blind spot (gotcha #8).
+6. **Dashboard + alarms** — CloudWatch dashboard `guidemate-poc` (service health, robot
+   presence, ack latency, tokens/cost, errors) + 4 alarms (service unhealthy, bridge
+   offline >5 min, Bedrock throttling, EC2 CPU). No SNS/email (declined).
+7. **Admin Health tab** — robot link state + last heartbeat, last 10 commands with ack
+   timings, recent errors, per-turn cost.
+8. **Dev-time** — Playwright traces/videos on failure kept as artifacts; integration
+   tests log with the same correlation IDs as production.
+
+**Extras (approved):** **Bedrock model-invocation logging** (full request/response →
+CloudWatch/S3 — audit + prompt debugging); **CloudWatch agent on the Pi** (journald →
+same log groups; watch the CPU cost on the compute-tight Pi); **CloudWatch agent on
+EC2** (system metrics + Caddy access logs, alongside the container `awslogs` driver).
 
 ## Execution rules
 - TDD per phase; commit + push per phase with **"Kalhar"** in the message, never any
