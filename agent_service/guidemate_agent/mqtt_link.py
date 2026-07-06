@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Optional
@@ -23,6 +24,7 @@ class RobotState:
     presence: str = "unknown"          # online | offline | unknown
     last_status: Optional[dict] = None
     last_ack: Optional[dict] = None
+    last_heartbeat: Optional[dict] = None
 
 
 def _credentials_provider(region: str):
@@ -92,8 +94,14 @@ class RobotRegistry:
         robot_id = parts[1] if len(parts) >= 2 else "?"
         with self._lock:
             state = self._robots.setdefault(robot_id, RobotState(robot_id=robot_id))
-            if data.get("event") in ("online", "offline"):
-                state.presence = data["event"]
+            event = data.get("event")
+            if event in ("online", "offline"):
+                state.presence = event
+                state.last_status = data
+                return
+            if event == "heartbeat":
+                state.presence = "online"  # a heartbeat proves liveness
+                state.last_heartbeat = data
                 state.last_status = data
                 return
             state.last_ack = data
@@ -110,7 +118,20 @@ class RobotRegistry:
         if data.get("state") in ("done", "failed"):
             event.set()
 
-    def send_command(self, robot_id: str, cmd: Command, timeout_s: float = 5.0) -> list[Ack]:
+    def send_command(
+        self,
+        robot_id: str,
+        cmd: Command,
+        timeout_s: float = 5.0,
+        collect_all: bool = False,
+    ) -> list[Ack]:
+        """Publish a command and collect its acks.
+
+        collect_all=False: return as soon as a terminal (done/failed) ack lands,
+        or at timeout. collect_all=True: wait the FULL timeout and return every
+        ack collected — AWS IoT QoS1 acks can arrive out of order ('done' before
+        'running'), so early return can drop trailing acks (Phase-5 groundwork).
+        """
         if self._conn is None:
             log.warning("send_command(%s) with no MQTT connection — robot unreachable", robot_id)
             return []
@@ -124,7 +145,10 @@ class RobotRegistry:
                 payload=cmd.model_dump_json().encode("utf-8"),
                 qos=mqtt.QoS.AT_LEAST_ONCE,
             )
-            event.wait(timeout_s)
+            if collect_all:
+                time.sleep(timeout_s)
+            else:
+                event.wait(timeout_s)
         finally:
             with self._lock:
                 self._waiters.pop(cmd.cmd_id, None)
@@ -134,10 +158,15 @@ class RobotRegistry:
         with self._lock:
             state = self._robots.get(robot_id)
             if state is None:
-                return {"robot_id": robot_id, "presence": "unknown"}
+                state = RobotState(robot_id=robot_id)
+            hb = state.last_heartbeat or {}
             return {
                 "robot_id": robot_id,
                 "presence": state.presence,
                 "last_ack": state.last_ack,
                 "last_status": state.last_status,
+                "last_heartbeat": state.last_heartbeat,
+                "battery": hb.get("battery"),
+                "docked": hb.get("docked"),
+                "gates": hb.get("gates"),
             }

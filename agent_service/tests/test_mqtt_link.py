@@ -100,3 +100,51 @@ def test_presence_tracked_from_events():
         retain=False,
     )
     assert reg.get_status("turtlebot468")["presence"] == "online"
+
+
+def test_heartbeat_updates_robot_truth_and_presence():
+    reg, fake = _registry()
+    hb = {
+        "event": "heartbeat", "robot_id": "turtlebot468", "battery": 0.92,
+        "docked": True, "uptime_s": 42.0,
+        "gates": {"docked": True, "motion_enabled": False, "dry_run": True},
+        "ts": "t",
+    }
+    fake.status_cb(
+        topic=status_topic("turtlebot468"),
+        payload=json.dumps(hb).encode("utf-8"),
+        dup=False, qos=1, retain=False,
+    )
+    status = reg.get_status("turtlebot468")
+    assert status["presence"] == "online"  # a heartbeat proves liveness
+    assert status["battery"] == 0.92
+    assert status["docked"] is True
+    assert status["gates"]["motion_enabled"] is False
+    assert status["last_heartbeat"]["uptime_s"] == 42.0
+    assert status["last_ack"] is None  # heartbeats are not acks
+
+
+def test_get_status_robot_truth_keys_default_none():
+    reg, _ = _registry()
+    status = reg.get_status("turtlebot468")
+    for key in ("last_heartbeat", "battery", "docked", "gates"):
+        assert status[key] is None
+
+
+def test_collect_all_waits_full_timeout_and_keeps_out_of_order_acks():
+    reg, fake = _registry()
+    cmd = Command(type="motion", name="spin")
+    out = {}
+
+    def worker():
+        out["acks"] = reg.send_command("turtlebot468", cmd, timeout_s=0.5,
+                                       collect_all=True)
+
+    t = threading.Thread(target=worker)
+    t.start()
+    # QoS1 reordering: 'done' lands BEFORE 'running' — collect_all must not
+    # return early on the terminal ack.
+    fake.feed_status("turtlebot468", Ack(cmd_id=cmd.cmd_id, state="done", simulated=True))
+    fake.feed_status("turtlebot468", Ack(cmd_id=cmd.cmd_id, state="running", simulated=True))
+    t.join(timeout=2.0)
+    assert sorted(a.state for a in out["acks"]) == ["done", "running"]
