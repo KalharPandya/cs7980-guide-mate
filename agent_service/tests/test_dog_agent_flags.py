@@ -114,5 +114,8 @@ def test_muted_returns_sleeping_without_bedrock():
         "emote": None,
         "robot": [],
         "turn_id": result["turn_id"],
+        # sources always present for /api/chat parity, even on the mute path
+        "sources": [],
     }
     assert result["turn_id"]
+    assert result["sources"] == []

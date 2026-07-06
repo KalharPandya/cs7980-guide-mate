@@ -392,6 +392,10 @@ class DogAgent:
                 "emote": None,
                 "robot": [],
                 "turn_id": turn_id,
+                # Keep the "sources always present" contract on BOTH transports:
+                # /api/chat returns this dict directly, so a muted turn must still
+                # carry sources (WS is guarded by .get, but /api/chat is not).
+                "sources": [],
             })
 
         captured = {"emote": None, "acks": [], "kb_sources": []}
