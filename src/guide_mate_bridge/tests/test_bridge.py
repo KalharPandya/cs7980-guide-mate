@@ -6,6 +6,7 @@ from guidemate_msgs.messages import Command, cmd_topic, status_topic
 
 from guide_mate_bridge.bridge import Bridge, main
 from guide_mate_bridge.iot_client import IotClient
+from guide_mate_bridge.safety import SafetyState
 
 
 class FakeFuture:
@@ -46,7 +47,8 @@ def _bridge(robot_id="devtest"):
         robot_id=robot_id,
         connection=fake,
     )
-    return Bridge(client=client, robot_id=robot_id, dry_run=True), fake
+    safety = SafetyState(env_dry_run=True)
+    return Bridge(client=client, robot_id=robot_id, safety=safety), fake
 
 
 def test_connect_publishes_online_and_subscribes():
