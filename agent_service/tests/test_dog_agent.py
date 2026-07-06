@@ -217,6 +217,22 @@ def test_enabled_tool_names_physical_offers_motion():
     assert "run_motion" in names and "stop" in names
 
 
+# --- get_status is a physical-only truth tool (Task-4 review follow-up) ---
+# A virtual/unbound session must NOT see another robot's live status, so
+# get_status is withheld unless the session physically holds the robot. The
+# legacy no-session path is physical=True and keeps get_status.
+def test_enabled_tool_names_virtual_drops_get_status():
+    names = _agent(RecordingRegistry())._enabled_tool_names(
+        dict(DEFAULT_FLAGS), physical=False)
+    assert "get_status" not in names
+
+
+def test_enabled_tool_names_physical_offers_get_status():
+    names = _agent(RecordingRegistry())._enabled_tool_names(
+        dict(DEFAULT_FLAGS), physical=True)
+    assert "get_status" in names
+
+
 # --- chat() session awareness (Bedrock faked) ---------------------------
 class _FakeAgent:
     """Stand-in for strands.Agent: records what it was built with and, when

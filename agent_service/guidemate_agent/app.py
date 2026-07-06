@@ -5,15 +5,16 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from guidemate_msgs.jsonlog import setup
 
-from guidemate_agent import admin
+from guidemate_agent import admin, sessions
 from guidemate_agent.config import Config
 from guidemate_agent.dog_agent import DogAgent
 from guidemate_agent.fakes import FakeRobotRegistry
@@ -27,6 +28,15 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 class ChatRequest(BaseModel):
     message: str
+    # Optional session id. When present the turn is session-aware (DogAgent
+    # resolves name / last-10 history / bound robot and persists both messages
+    # internally). Absent => the legacy message-only path (Phase 0-1 callers).
+    session_id: Optional[str] = None
+
+
+class SessionRequest(BaseModel):
+    name: str
+    comfortable: bool = False
 
 
 @asynccontextmanager
@@ -77,9 +87,33 @@ def healthz() -> dict:
     return {"ok": True}
 
 
+@app.post("/api/session")
+def create_session(req: SessionRequest) -> dict:
+    return {"session_id": sessions.create_session(req.name, req.comfortable)}
+
+
 @app.post("/api/chat")
 def chat(req: ChatRequest) -> JSONResponse:
-    return JSONResponse(app.state.agent.chat(req.message))
+    # Legacy message-only path unchanged. With a session_id, DogAgent.chat
+    # resolves name/history/robot binding and persists both messages itself;
+    # app.py only threads the id through (validating it first).
+    if req.session_id is None:
+        return JSONResponse(app.state.agent.chat(req.message))
+    if sessions.get_session(req.session_id) is None:
+        raise HTTPException(status_code=404, detail="unknown session")
+    return JSONResponse(app.state.agent.chat(req.message, session_id=req.session_id))
+
+
+@app.post("/api/session/{session_id}/request-companion")
+def request_companion(session_id: str) -> dict:
+    if sessions.get_session(session_id) is None:
+        raise HTTPException(status_code=404, detail="unknown session")
+    return {"request_id": sessions.create_request(session_id), "status": "pending"}
+
+
+@app.get("/api/session/{session_id}/state")
+def session_state(session_id: str) -> dict:
+    return sessions.get_session_state(session_id)
 
 
 @app.get("/")

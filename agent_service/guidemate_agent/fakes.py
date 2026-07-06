@@ -3,7 +3,15 @@
 No MQTT, no robot: get_status reports a healthy docked robot and send_command
 returns the same simulated ack sequence the real dry-run bridge would. The
 status dict mirrors the real RobotRegistry.get_status() shape (adds battery /
-docked / gates) so the admin Robot tab renders identically against the fake."""
+docked / gates) so the admin Robot tab renders identically against the fake.
+
+Every command is recorded in ``self.sent`` (list of ``(robot_id, type, name)``)
+— the e2e/demo's evidence that a command (e.g. an assignment-triggered undock)
+was actually published. dock/undock return the bridge's motion-locked refusal
+(``received`` then ``failed(reason="motion_disabled …")``) so both the admin
+'dock' control and the assignment undock/dock exercise their refusal path,
+matching robot 468's motion-locked state; everything else acks
+received -> running -> done (simulated)."""
 from __future__ import annotations
 
 from guidemate_msgs.messages import Ack, Command
@@ -12,6 +20,7 @@ from guidemate_msgs.messages import Ack, Command
 class FakeRobotRegistry:
     def __init__(self, robot_ids: list) -> None:
         self._robot_ids = list(robot_ids)
+        self.sent: list[tuple] = []      # (robot_id, cmd.type, cmd.name)
 
     def connect(self) -> None:
         return None
@@ -29,6 +38,14 @@ class FakeRobotRegistry:
         }
 
     def send_command(self, robot_id: str, cmd: Command, timeout_s: float = 5.0) -> list:
+        self.sent.append((robot_id, cmd.type, cmd.name))
+        if cmd.type == "motion" and cmd.name in ("dock", "undock"):
+            # Robot 468 is motion-locked: docking is refused, not executed.
+            return [
+                Ack(cmd_id=cmd.cmd_id, state="received", simulated=True),
+                Ack(cmd_id=cmd.cmd_id, state="failed", simulated=True,
+                    reason="motion_disabled (docking blocked while motion is locked)"),
+            ]
         return [
             Ack(cmd_id=cmd.cmd_id, state=state, simulated=True)
             for state in ("received", "running", "done")
