@@ -171,6 +171,28 @@ acks can arrive out of order (observed `received → done → running`), so cons
 collecting on the terminal `done` (e.g. `RobotRegistry.send_command`) may return a partial
 list. The test asserts on the complete captured set, not on arrival order.
 
+## Pi bridge service — DEPLOYED (2026-07-05, Phase 1)
+The dog-agent bridge now runs on robot 468's Pi as a systemd service, **dry-run, additive**.
+Installed from the Linux box by `src/guide_mate_bridge/scripts/install_bridge_on_pi.sh`
+(SSH-driven, idempotent; `git pull` on the Pi is the transport, renders the unit from
+`src/guide_mate_bridge/systemd/guidemate-bridge.service`).
+| Item | Value |
+|---|---|
+| Unit | `/etc/systemd/system/guidemate-bridge.service` — `enable --now`, `active (running)` |
+| Identity | robot cert `~/cs7980-guide-mate/Turtlebot-468.{cert.pem,private.key}`, client id `guidemate-bridge-turtlebot468`, `GUIDEMATE_ROBOT_ID=turtlebot468` |
+| Safety | `Environment=GUIDEMATE_DRY_RUN=1` in the unit; the bridge **refuses to start** without a truthy dry-run. No motion path exists. |
+| Endpoint / CA | `GUIDEMATE_IOT_ENDPOINT` = data-ATS endpoint (rendered at install); `GUIDEMATE_CA=/home/ubuntu/certs/AmazonRootCA1.pem` (fetched by the installer) |
+| venv | `~/guidemate-venv` (editable `guidemate_msgs` + `guide_mate_bridge`). **Gotcha:** this Pi image has **no `python3-venv`/`ensurepip`** — the installer creates the venv `--without-pip --system-site-packages` then bootstraps pip in-venv (no apt needed; `awscrt`/`awsiotsdk` come from the user's `~/.local`). |
+| Logs | `journalctl -u guidemate-bridge` — startup line `{"msg": "bridge connected", "robot_id": "turtlebot468"}`; online event published to `guidemate/turtlebot468/status` on connect. |
+
+**Phase 1 slice check PASSED (`scripts/slice_check.sh`, checklist items 1 & 3):** local
+uvicorn + `POST /api/chat "do a happy wiggle"` → Bedrock (`us.anthropic.claude-sonnet-4-6`)
+→ MQTT → Pi bridge. Response `emote="happy"`, acks `received (simulated:false)` +
+`done (simulated:true)`; the Pi journal showed the six computed `DRY-RUN twist vx=0.050
+wz=±1.200 dur=0.40s` lines and **published no twists**. Robot 468 untouched beyond the
+additive unit; shadow not modified. Manage only via `sudo systemctl … guidemate-bridge`
+(never `pkill`).
+
 ## Work branch
 All POC work happens on branch **`kalhar/dog-agent-poc`** (pushed to origin). Warm-up
 instructions for a new machine/session: [linux-agent-warmup.md](linux-agent-warmup.md).
