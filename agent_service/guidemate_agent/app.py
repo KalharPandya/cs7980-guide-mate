@@ -216,6 +216,18 @@ def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+# Task 5 chat UI assets. Explicit routes (not a root StaticFiles mount) so they
+# can't shadow /api/* or /admin -- same pattern as `index()` above.
+@app.get("/chat.js")
+def chat_js() -> FileResponse:
+    return FileResponse(STATIC_DIR / "chat.js", media_type="application/javascript")
+
+
+@app.get("/chat.css")
+def chat_css() -> FileResponse:
+    return FileResponse(STATIC_DIR / "chat.css", media_type="text/css")
+
+
 # Admin UI (index.html + admin.js + admin.css). Mounted AFTER the API routes so
 # /api/admin/* is handled by the router, not the static files.
 app.mount(

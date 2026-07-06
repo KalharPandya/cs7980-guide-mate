@@ -49,6 +49,41 @@ def test_index_served(monkeypatch):
         resp = client.get("/")
         assert resp.status_code == 200
         assert "Robert" in resp.text
+        # Task 5 polished chat UI: intake gate + chat shell DOM hooks that
+        # both chat.js and the gated Playwright e2e (test_companion_flow.py)
+        # depend on by id.
+        for hook in (
+            'id="intake"', 'id="name"', 'id="comfortable"', 'id="start"',
+            'id="chat"', 'id="avatar"', 'id="companion-status"',
+            'id="request-companion"', 'id="messages"', 'id="chat-form"',
+            'id="message"', 'id="mic"', 'id="status-chip"',
+            '/chat.css', '/chat.js',
+        ):
+            assert hook in resp.text, f"missing {hook}"
+
+
+def test_chat_static_assets_served(monkeypatch):
+    """chat.js/chat.css are served as real routes (not just referenced) and
+    the JS is well-formed enough to at least balance braces/parens -- a cheap
+    proxy for "no syntax errors" without a JS runtime in this environment."""
+    app = _no_connect(monkeypatch)
+    with TestClient(app) as client:
+        js = client.get("/chat.js")
+        assert js.status_code == 200
+        assert "javascript" in js.headers["content-type"]
+        body = js.text
+        assert body.count("{") == body.count("}")
+        assert body.count("(") == body.count(")")
+        # Emote<->audio sync contract: the emote is armed on "reply" and only
+        # released on the audio element's own "play" event, not on arrival.
+        assert 'armPendingEmote(msg.emote)' in body
+        assert 'player.addEventListener("play"' in body
+        assert "/ws/chat/" in body
+
+        css = client.get("/chat.css")
+        assert css.status_code == 200
+        assert "text/css" in css.headers["content-type"]
+        assert "emote-happy" in css.text
 
 
 def test_fake_robot_registry_status_and_acks():
