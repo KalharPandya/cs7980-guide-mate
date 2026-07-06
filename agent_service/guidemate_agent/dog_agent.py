@@ -96,7 +96,10 @@ class DogAgent:
             parts.append(EMOTE_INSTRUCTION)
         if flags.get("motion_tools_enabled", True):
             parts.append(MOTION_INSTRUCTION)
-        if flags.get("kb_enabled", True):
+        # Only instruct the model to use retrieve_kb when the tool is actually
+        # offered this turn (flag on AND the KB surface present) — no rule for a
+        # tool that isn't in the list.
+        if flags.get("kb_enabled", True) and self._kb_available():
             parts.append(KB_INSTRUCTION)
         return " ".join(parts)
 
@@ -153,14 +156,25 @@ class DogAgent:
             return json.dumps({"presence": "unknown"})
         return json.dumps(self._registry.get_status(target), default=str)
 
-    def _kb_impl(self, query: str) -> str:
-        """Body of the retrieve_kb tool. Lazily imports Task-3's retrieve_passages
-        so this module stays importable before that surface lands; the tool is
-        only ever offered to the model once retrieve_passages exists (see
-        _kb_available), so this fallback string is a belt-and-suspenders guard."""
+    @staticmethod
+    def _load_retrieve_passages():
+        """Lazily import the KB retrieval callable, or None if absent.
+
+        Single source of truth for the lazy import used by both `_kb_available`
+        (tool-offering / instruction gate) and `_kb_impl` (tool body), so the
+        module stays importable before/without the kb.retrieve_passages surface."""
         try:
             from guidemate_agent.kb import retrieve_passages  # type: ignore
         except ImportError:
+            return None
+        return retrieve_passages
+
+    def _kb_impl(self, query: str) -> str:
+        """Body of the retrieve_kb tool. The tool is only ever offered to the
+        model once the KB surface exists (see _kb_available), so this fallback
+        string is a belt-and-suspenders guard."""
+        retrieve_passages = self._load_retrieve_passages()
+        if retrieve_passages is None:
             return "knowledge base is unavailable right now"
         return retrieve_passages(query, region=self._region)
 
@@ -209,16 +223,12 @@ class DogAgent:
             tools.append(retrieve_kb)
         return tools
 
-    @staticmethod
-    def _kb_available() -> bool:
-        """True once Task 3 lands the retrieve_passages KB surface. Keeps the
-        model from being handed a KB tool that can't do anything yet, while the
-        name still gates through _enabled_tool_names for admin/flag purposes."""
-        try:
-            from guidemate_agent.kb import retrieve_passages  # noqa: F401
-        except ImportError:
-            return False
-        return True
+    @classmethod
+    def _kb_available(cls) -> bool:
+        """True when the retrieve_passages KB surface is importable. Keeps the
+        model from being handed a KB tool that can't do anything, while the name
+        still gates through _enabled_tool_names for admin/flag purposes."""
+        return cls._load_retrieve_passages() is not None
 
     # --- main turn --------------------------------------------------------
     def chat(self, message: str, robot_id: Optional[str] = None) -> dict:

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from botocore.exceptions import ClientError, BotoCoreError
 
-from guidemate_agent.kb import KBManager
+from guidemate_agent.kb import KBManager, retrieve_passages
 
 
 class FakeS3:
@@ -245,6 +245,87 @@ def test_latest_job_status_returns_error_shape_on_client_error():
     result = mgr.latest_job_status()
     assert result["status"] == "ERROR"
     assert "error" in result
+
+
+# --- retrieve_passages (agent-side KB retrieval tool) ---------------------
+class FakeKBRuntime:
+    """Injectable stand-in for a bedrock-agent-runtime client."""
+
+    def __init__(self, results=None, boom=False):
+        self._results = results or []
+        self._boom = boom
+        self.calls = []
+
+    def retrieve(self, **kwargs):
+        self.calls.append(kwargs)
+        if self._boom:
+            raise RuntimeError("bedrock exploded")
+        return {"retrievalResults": self._results}
+
+
+def _kb_result(text, uri):
+    return {"content": {"text": text}, "location": {"s3Location": {"uri": uri}}}
+
+
+def test_retrieve_concatenates_passages_with_sources():
+    client = FakeKBRuntime(
+        results=[
+            _kb_result("Robert is a TurtleBot 4.", "s3://guidemate-kb-docs/robert.md"),
+            _kb_result("Robert maps indoor spaces.", "s3://guidemate-kb-docs/robert.md"),
+        ]
+    )
+    out = retrieve_passages("who is robert", "A1NIQYZ0KQ", client=client)
+    assert "Robert is a TurtleBot 4." in out
+    assert "Robert maps indoor spaces." in out
+    assert "s3://guidemate-kb-docs/robert.md" in out
+    # kb_id + top_k propagated into the request
+    assert client.calls[0]["knowledgeBaseId"] == "A1NIQYZ0KQ"
+    cfg = client.calls[0]["retrievalConfiguration"]["vectorSearchConfiguration"]
+    assert cfg["numberOfResults"] == 4
+
+
+def test_retrieve_defaults_kb_id_from_env(monkeypatch):
+    monkeypatch.delenv("GUIDEMATE_KB_ID", raising=False)
+    client = FakeKBRuntime(results=[_kb_result("x", "s3://b/k")])
+    retrieve_passages("q", client=client)
+    # falls back to the default KB id when neither arg nor env is set
+    assert client.calls[0]["knowledgeBaseId"] == "A1NIQYZ0KQ"
+
+
+def test_retrieve_env_kb_id_overrides_default(monkeypatch):
+    monkeypatch.setenv("GUIDEMATE_KB_ID", "ENVKB123")
+    client = FakeKBRuntime(results=[_kb_result("x", "s3://b/k")])
+    retrieve_passages("q", client=client)
+    assert client.calls[0]["knowledgeBaseId"] == "ENVKB123"
+
+
+def test_retrieve_missing_source_uses_placeholder():
+    client = FakeKBRuntime(results=[{"content": {"text": "orphan passage"}}])
+    out = retrieve_passages("q", "A1NIQYZ0KQ", client=client)
+    assert "orphan passage" in out
+    assert "unknown-source" in out
+
+
+def test_retrieve_empty_results_message():
+    out = retrieve_passages("nothing", "A1NIQYZ0KQ", client=FakeKBRuntime(results=[]))
+    assert out == "no relevant knowledge found"
+
+
+def test_retrieve_error_is_swallowed():
+    out = retrieve_passages("boom", "A1NIQYZ0KQ", client=FakeKBRuntime(boom=True))
+    assert out == "knowledge base unavailable"
+
+
+@pytest.mark.skipif(
+    os.environ.get("GUIDEMATE_LIVE_KB") != "1",
+    reason="set GUIDEMATE_LIVE_KB=1 to exercise the real Bedrock KB retrieval",
+)
+def test_live_kb_retrieve_finds_robert():
+    """Env-gated live retrieval against the real KB (seeded with the Robert doc)."""
+    out = retrieve_passages("who is Robert", "A1NIQYZ0KQ")
+    assert isinstance(out, str) and out
+    assert "Robert" in out
+    print("live retrieve_passages ->", out)
 
 
 @pytest.mark.skipif(
