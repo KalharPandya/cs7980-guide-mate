@@ -1,4 +1,5 @@
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi import FastAPI
@@ -8,6 +9,10 @@ from itsdangerous import TimestampSigner
 from guidemate_agent import admin
 from guidemate_agent.observability import Observability
 from guidemate_msgs.messages import Ack
+
+_HEALTH_JS = (
+    Path(__file__).resolve().parent.parent / "static" / "admin" / "health.js"
+)
 
 
 class FakeRegistry:
@@ -83,3 +88,31 @@ def test_health_returns_rings_and_robots(monkeypatch):
         robot_ids = [r["robot_id"] for r in body["robots"]]
         assert robot_ids == ["turtlebot468", "turtlebot436"]
         assert body["robots"][0]["presence"] == "online"
+
+
+# --- XSS regression guard -------------------------------------------------
+# errors[].message is str(exc) and can echo the UNAUTHENTICATED /ws/chat user's
+# raw input; robot gates come from a spoofable MQTT heartbeat. health.js renders
+# them into innerHTML, so every untrusted field MUST pass through esc() before
+# interpolation. Assert-at-source (grepping the JS) rather than at-render because
+# there is no JS runtime in the pytest env; this fails loudly if a future edit
+# reintroduces a raw `${untrusted}` in an innerHTML string.
+def test_health_js_escapes_untrusted_fields():
+    src = _HEALTH_JS.read_text(encoding="utf-8")
+    assert "function esc(" in src, "esc() helper must exist"
+    # The highest-risk field (error message) must be esc()-wrapped, never raw.
+    assert "esc(e.message)" in src
+    assert "${e.message}" not in src
+    assert "${e.where}" not in src
+    # Robot/command identifiers and gates text likewise go through esc().
+    assert "esc(r.robot_id)" in src
+    assert "${r.robot_id}" not in src
+    assert "esc(gatesTextHealth(r.gates))" in src
+    assert "${gatesTextHealth(" not in src
+
+
+def test_health_js_stops_polling_on_tab_away():
+    # The 3s interval must be clearable so it only runs while the tab is visible.
+    src = _HEALTH_JS.read_text(encoding="utf-8")
+    assert "stopHealthPolling" in src
+    assert "clearInterval" in src

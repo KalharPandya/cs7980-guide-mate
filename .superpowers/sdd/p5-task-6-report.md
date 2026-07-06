@@ -79,9 +79,43 @@ be the exception.
   (`commands[0].robot_id == "turtlebot468"`, `latencies[0].bedrock_ms == 700.0`,
   `errors[0].where == "chat"`) and that `robots` is multi-robot (two configured
   robot_ids both appear, in `cfg.robot_ids` order).
+- `test_health_js_escapes_untrusted_fields` (code-review follow-up) — greps
+  `health.js` at source (no JS runtime in the pytest env) to assert the `esc()`
+  helper exists and the untrusted fields are wrapped (`esc(e.message)`,
+  `esc(r.robot_id)`, `esc(gatesTextHealth(r.gates))` present) with NO raw
+  `${e.message}`/`${e.where}`/`${r.robot_id}`/`${gatesTextHealth(` interpolation
+  left in an innerHTML string. Fails loudly if a future edit reintroduces raw
+  interpolation of an untrusted field.
+- `test_health_js_stops_polling_on_tab_away` (code-review follow-up) — asserts
+  `health.js` defines `stopHealthPolling` and calls `clearInterval`, guarding the
+  interval-leak fix.
 
-Full suite: `PYTHONPATH= .venv/bin/pytest -q` → 329 passed, 17 skipped (all green,
-no regressions).
+Full suite: `PYTHONPATH= .venv/bin/pytest -q` → 331 passed, 17 skipped (all green,
+no regressions; +2 from the two code-review guard tests above).
+
+### Code-review follow-up (Needs-fixes → fixed)
+**IMPORTANT — stored/second-order XSS in `health.js` (fixed).** The four render
+blocks interpolated untrusted fields straight into `.innerHTML`: `errors[].message`
+(which is `str(exc)` and can echo an UNAUTHENTICATED `/ws/chat` user's raw input),
+the gates text (`commands[].gates` / `robots[].gates` via `gatesTextHealth`, forgeable
+via a spoofed MQTT heartbeat), plus ids/states/where/robot_id. Because the admin page
+can fire the kill switch and rewrite the system prompt, markup executing in the admin's
+browser is privilege-relevant, not cosmetic. **Fix:** added an unmissable `esc(s)`
+helper (escapes `& < > " '`) with a prominent SECURITY header comment stating the rule
+("NO raw `${value}` inside an innerHTML string; every dynamic field wrapped in esc()"),
+and wrapped EVERY interpolated dynamic field — message, where, gates text, robot_id,
+presence, battery, turn/cmd/session ids, states, total_ms/bedrock_ms — in `esc()`. The
+only unwrapped interpolations left are `fmtAge()` (returns fixed `"Ns ago"`/`"—"`
+literals) and the fixed `sim`/`real` literal. The route itself returns JSON (inherently
+safe); the DOM sink is where the escaping belongs. A source-grep pytest
+(`test_health_js_escapes_untrusted_fields`) locks this in.
+
+**MINOR — polling interval leak (fixed).** `startHealthPolling` set a 3s
+`setInterval` that never cleared, so it kept polling for the life of the page after
+the first Health visit. **Fix:** added `window.stopHealthPolling()` (clears the timer,
+nulls the id) and wired `admin.js`'s tab-switch handler to call it whenever any tab
+other than Health is selected — so the interval runs only while the Health tab is
+visible. Guarded by `test_health_js_stops_polling_on_tab_away`.
 
 ### Brief-vs-reality adaptations
 1. **Route path**: brief's stub assumed `router = APIRouter(prefix="/admin")` and
