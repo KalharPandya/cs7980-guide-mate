@@ -146,6 +146,21 @@ def status(request: Request, _: bool = Depends(admin_required)) -> dict:
     return {"robots": [reg.get_status(rid) for rid in cfg.robot_ids]}
 
 
+# --- health (Task 6: admin Health tab) ------------------------------------
+# Merges the in-process observability ring buffers (Observability.snapshot():
+# {commands, latencies, errors} — Phase 5 Task 3) with the same per-robot
+# get_status() the /status route above already uses, over the real
+# cfg.robot_ids list (never hardcoded to turtlebot468).
+@router.get("/health")
+def health(request: Request, _: bool = Depends(admin_required)) -> dict:
+    obs = getattr(request.app.state, "observability", None)
+    snap = obs.snapshot() if obs is not None else {"commands": [], "latencies": [], "errors": []}
+    reg = request.app.state.registry
+    cfg = request.app.state.config
+    snap["robots"] = [reg.get_status(rid) for rid in cfg.robot_ids]
+    return snap
+
+
 # --- kill switch (one-way-to-safe) --------------------------------------
 class KillBody(BaseModel):
     robot_id: str

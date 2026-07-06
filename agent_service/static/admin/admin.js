@@ -64,6 +64,13 @@ document.querySelectorAll(".tabs button").forEach((btn) => {
     if (tab === "robot") { loadRobots(); reloadAssignEvents(); }
     if (tab === "knowledge") loadKb();
     if (tab === "maps") loadMapsTab();
+    // Health polls on a 3s interval only while its tab is visible: start on
+    // entering, stop on leaving (any other tab) so it doesn't poll forever.
+    if (tab === "health") {
+      if (window.startHealthPolling) window.startHealthPolling();
+    } else if (window.stopHealthPolling) {
+      window.stopHealthPolling();
+    }
   });
 });
 

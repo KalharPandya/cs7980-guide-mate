@@ -27,6 +27,7 @@
       <button data-tab="robot">Robot</button>
       <button data-tab="knowledge">Knowledge</button>
       <button data-tab="maps">Maps</button>
+      <button data-tab="health">Health</button>
     </nav>
 
     <div id="tab-flags" class="tab">
@@ -112,9 +113,37 @@
            can't run from this panel). From the Linux box:</p>
         <pre>./scripts/upload_map_from_pi.sh turtlebot468</pre>
       </details>
+    <div id="tab-health" class="tab" hidden>
+      <h2>Health</h2>
+      <p class="hint">Auto-refreshes every 3s. Robot list is the real configured robot_ids.</p>
+
+      <h3>Robot presence</h3>
+      <table id="health-robots-table">
+        <thead><tr><th>robot</th><th>presence</th><th>last heartbeat</th><th>battery</th><th>gates</th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <h3>Last 10 commands</h3>
+      <table id="health-commands-table">
+        <thead><tr><th>turn</th><th>robot</th><th>cmd</th><th>acks</th><th>rtt</th><th>gates</th><th>mode</th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <h3>Bedrock latency (per turn)</h3>
+      <table id="health-latency-table">
+        <thead><tr><th>turn</th><th>latency</th><th>session</th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <h3>Errors</h3>
+      <table id="health-errors-table">
+        <thead><tr><th>where</th><th>message</th><th>when</th></tr></thead>
+        <tbody></tbody>
+      </table>
     </div>
   </section>
 
   <script src="admin.js"></script>
+  <script src="health.js"></script>
 </body>
 </html>
