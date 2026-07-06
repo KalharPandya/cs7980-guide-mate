@@ -9,8 +9,10 @@ tested autonomously*, plus the scope deltas approved 2026-07-05 (evening).
 ## TL;DR
 Fully autonomous end-to-end build from the Linux box: vertical slice first (chat → agent →
 MQTT → bridge dry-run on the Pi → ack), then widen phase by phase to KB + admin panel,
-Transcribe/Polly voice chat with synced emotes, an S3 maps tab, and a scripted production
-deployment on **EC2 t3.large** behind Caddy auto-TLS (`<eip>.nip.io`). Everything is tested
+**multi-user sessions with an admin-approved physical-companion flow** (open chat for all,
+one robot-connected session at a time), Transcribe/Polly voice chat with synced emotes, an
+S3 maps tab, and a scripted production deployment on **EC2 t3.large** behind Caddy
+auto-TLS (`<eip>.nip.io`). Everything is tested
 with the robot **docked and motion-locked** (dry-run + shadow `motion_enabled=false` + dock
 guard — three independent locks). Physical-motion validation is explicitly out of scope.
 
@@ -25,6 +27,10 @@ guard — three independent locks). Physical-motion validation is explicitly out
 | HTTPS | Caddy reverse proxy, auto-TLS via Let's Encrypt on a free `<elastic-ip>.nip.io` hostname (mic requires a secure origin). Nothing needed from the user. |
 | Maps | **Static S3 maps tab in scope**: upload the last saved map from the Pi to S3, render in an admin Maps tab; wired so live snapshots plug in when mapping resumes. |
 | Mapping stack | **BFS explorer / depth fusion / SLAM are parked.** The bridge depends only on base bringup (Create 3 battery/dock topics + `cmd_vel` sink). |
+| Multi-user sessions | **In scope** (added 2026-07-05, late): open/free chat for all users; per-session intake (name + "comfortable around Physical AI Dogs?"); session id + intake in browser localStorage; **Start new session** button clears it. Agent knows the user's name. |
+| Physical-companion flow | **In scope**: user requests a physical companion from the chat UI → pending request in the admin panel → admin approves → that session is bound to the robot. **Exactly one robot-connected session at a time.** Admin can abort the ongoing robot session, or approve another request (aborting the current one). Non-connected sessions get *virtual* emotes (avatar animation only); the connected session also drives the physical robot. |
+| Session store | **SQLite on a persistent Docker volume** (already in the stack for flags): sessions, intake answers, chat history, companion requests, robot-session lock. Intake info used only for personalization + approval context. Admin can browse all chat histories. DynamoDB is the documented swap if durability across instance rebuilds is ever needed. |
+| Admin robot commands | Admin can send direct robot commands (`dock`, `stop`, primitives) from the panel — same command channel, **same bridge safety locks** (dock/undock are motion → refused while `motion_enabled=false`; verified via dry-run/refusal paths only in this plan). |
 
 ## Network topology (governs all verification)
 The Linux box has **tunneled, one-way** access to NUwave: SSH out to the Pi works; nothing
@@ -83,16 +89,24 @@ cs7980-guide-mate/
 4. **Chat API** — REST + WebSocket; returns `{reply_text, emote}`; emote-sync gating.
 5. **Event layer** — persistent MQTT-over-WSS (IAM/SigV4); subscribes `/status`, publishes
    `/cmd`; robot events + APScheduler trigger agent turns without a user message.
-6. **Feature-flag store** — SQLite; agent-tier flags (mute, emotes off, motion tools off,
-   persona off) checked every turn.
+6. **App store (SQLite, volume-persisted)** — agent-tier feature flags (mute, emotes
+   off, motion tools off, persona off; checked every turn) + sessions, intake answers,
+   chat history, companion requests, and the single robot-session lock.
 7. **KB manager** — upload → S3 → `StartIngestionJob` → sync status (KB `A1NIQYZ0KQ`,
    data source `OT8JLH57TE`).
 8. **Speech backend** — Transcribe streaming (mic→text) + Polly neural (dog voice out).
-9. **Chat UI (`/`)** — dog avatar, bubbles over WS, mic button, audio playback,
-   battery/dock/motion-lock status chip, emote indicator.
+9. **Chat UI (`/`)** — intake screen (name + comfort question) on first visit; dog
+   avatar, bubbles over WS, mic button, audio playback, battery/dock/motion-lock status
+   chip, emote indicator (virtual for everyone; physical too when robot-connected);
+   **Request physical companion** button with request-state banner
+   (pending/approved/denied/aborted); **Start new session** (clears localStorage).
 10. **Admin UI (`/admin`)** — single-token auth; tabs: agent flags, robot-tier flags +
-    kill switch (writes Device Shadow), live robot status, KB manage, **Maps**.
-11. **Dockerfile + compose** — app + Caddy; identical artifact locally and on EC2.
+    kill switch (writes Device Shadow), live robot status, KB manage, **Maps**,
+    **Requests** (pending companion requests with intake context → approve/deny),
+    **Sessions** (all users' chat histories, read-only), **Robot session** (who's
+    connected, abort, reassign, direct commands like `dock`/`stop`).
+11. **Dockerfile + compose** — app + Caddy; identical artifact locally and on EC2;
+    named volume for SQLite persistence.
 
 **`src/guide_mate_bridge/`** (Pi; additive)
 12. **Bridge node** — AWS IoT Device SDK (existing `Turtlebot-468` X.509 cert, client id
@@ -131,6 +145,25 @@ cs7980-guide-mate/
 24. **S3 maps tab** — install step uploads the Pi's last saved map (PNG + timestamp) to
     S3; admin Maps tab renders it; upload path designed so live snapshots plug in later.
 
+**Sessions & companion flow** (in `agent_service/`)
+25. **Session layer** — anonymous session id (UUID) minted at intake (name + comfort
+    question), mirrored in localStorage; server-side record in SQLite; the agent's
+    system context includes the user's name; **Start new session** clears localStorage
+    and mints a fresh id (old record kept server-side for admin history).
+26. **Companion request flow** — chat-UI request → `pending` row (with intake context)
+    → admin approve/deny → on approve, the session acquires the **robot lock** (single
+    holder; enforced server-side). Robot tools (`send_emote` physical path,
+    `run_motion`) are offered to the model **only** for the lock-holding session;
+    everyone else stays virtual-emote-only.
+27. **Admin robot-session controls** — abort the ongoing robot session (releases the
+    lock, notifies that user's UI); approve a different request (aborts current, then
+    binds the new session); direct commands (`dock`, `stop`, any primitive) published on
+    the same `/cmd` channel — subject to the bridge's full safety layer like any other
+    command (dock/undock = motion → refused while locked; dry-run/refusal verification
+    only in this plan).
+28. **Chat-history viewer** — admin Sessions tab lists all sessions (name, intake
+    answers, timestamps, robot-connected badge) with read-only transcripts.
+
 ## Build phases (vertical slice → widen)
 Riskiest integrations are proven first; every phase ends green before the next starts.
 
@@ -139,10 +172,11 @@ Riskiest integrations are proven first; every phase ends green before the next s
 | **0 — Foundations** | Components 1–2 + test harness | Kinematic unit tests pass; trajectory PNGs visually correct |
 | **1 — The slice** | Minimal agent (persona + `send_emote`) → REST chat → MQTT → bridge on Pi (systemd, `dry_run=true`) → plain chat page | curl "do a happy wiggle" → dog reply + Pi log shows computed `cmd_vel` sequence + `"simulated": true` ack round-trip. Checklist items **1, 3** |
 | **2 — Robot truth** | Telemetry (15), shadow reconcile + dock guard (14), `get_status`/`run_motion`/`stop` tools | Battery/dock visible via `/status`; `desired→reported` reconciles and survives bridge restart; refusal paths (`docked`, `motion_disabled`) verified. Checklist items **2, 4, 5** |
-| **3 — Knowledge + admin** | Components 6, 7, 10 (flags/status/KB tabs) | Flag flip removes tool mid-session; KB answer grounded in uploaded doc; kill switch flips shadow |
-| **4 — Voice + UI** | Components 8, 9 + emote sync; polish admin | Playwright fake-mic e2e: voice in → transcript → reply + synced emote ack → Polly audio out |
-| **5 — Autonomy + maps** | Autonomy hook (events + APScheduler) + component 24 | Synthetic low-battery event triggers an unprompted agent turn (checklist item **6**); map renders in admin |
-| **6 — Production** | Components 11, 17–19 | Full Playwright suite green against `https://<eip>.nip.io`; one URL for chat, one for admin |
+| **3 — Knowledge + admin base** | Components 6 (flags part), 7, 10 (flags/status/KB tabs) | Flag flip removes tool mid-session; KB answer grounded in uploaded doc; kill switch flips shadow |
+| **4 — Sessions + companion flow** | Components 6 (sessions part), 25–28 + UI intake/request states | Two Playwright browsers: A requests, admin approves → A drives (dry-run) emotes while B stays virtual; admin reassigns to B → A's UI shows aborted, B drives; admin `dock` command refused (`motion_disabled`) — lock exclusivity + refusal proven |
+| **5 — Voice + UI polish** | Components 8, 9 + emote sync; polish admin | Playwright fake-mic e2e: voice in → transcript → reply + synced emote ack → Polly audio out |
+| **6 — Autonomy + maps** | Autonomy hook (events + APScheduler) + component 24 | Synthetic low-battery event triggers an unprompted agent turn (checklist item **6**); map renders in admin |
+| **7 — Production** | Components 11, 17–19 | Full Playwright suite green against `https://<eip>.nip.io`; one URL for chat, one for admin |
 
 ## Testing strategy
 | Layer | Tool | Robot needed? |
@@ -152,6 +186,7 @@ Riskiest integrations are proven first; every phase ends green before the next s
 | Bridge logic | pytest with fake MQTT + fake rclpy; then real IoT Core from the Linux box | no |
 | E2E chain | real service ↔ IoT Core ↔ real bridge on the Pi, dry-run | docked, zero motion |
 | UI + speech | Playwright + fake-mic WAV (Polly-synthesized) | docked (emote acks simulated) |
+| Sessions / companion flow | Playwright multi-browser (user A + user B + admin): request → approve → exclusivity → abort/reassign → localStorage reset | docked (dry-run) |
 | Production | same Playwright suite vs the nip.io URL | docked |
 
 **Three independent motion locks** stand throughout: shadow `motion_enabled=false`
