@@ -27,7 +27,7 @@ import threading
 import time
 from typing import Callable, Optional, Tuple
 
-from guidemate_msgs.choreography import TwistStep, build
+from guidemate_msgs.choreography import MAX_LINEAR, TwistStep, build
 from guidemate_msgs.jsonlog import log_extra
 from guidemate_msgs.messages import Ack, Command
 
@@ -48,23 +48,41 @@ class ChoreographyRunner:
         self,
         publish_ack: Callable[[Ack], None],
         safety: Optional[SafetyState] = None,
-        dry_run: bool = True,
+        dry_run=True,
         publish_twist: Optional[Callable[[TwistStep], None]] = None,
         publish_hz: float = 10.0,
         sleep: Callable[[float], None] = time.sleep,
         motion_gate: Optional[Callable[[Command], "Tuple[bool, str]"]] = None,
         run_action: Optional[Callable[[str], "Tuple[bool, str]"]] = None,
+        max_speed=None,
     ) -> None:
         self._publish_ack = publish_ack
         self._safety = safety
+        # dry_run may be a bool OR a zero-arg callable. Task-4 obligation D (LIVE
+        # dry-run): the realdrive path re-reads it at dispatch time so a shadow flip
+        # to dry_run=true mid-run is honored — never a stale ctor snapshot.
         self._dry_run = dry_run
         self._publish_twist = publish_twist
         self._publish_hz = publish_hz
         self._sleep = sleep
         self._motion_gate = motion_gate
         self._run_action = run_action
+        # max_speed may be a float OR a zero-arg callable OR None (-> MAX_LINEAR).
+        # Task-4 obligation: the realdrive build() must apply the shadow's dynamic
+        # max_speed clamp (like the legacy path did), read live at dispatch time.
+        self._max_speed = max_speed
         self._abort = threading.Event()
         self._abort_reason = "aborted"
+
+    def _is_dry_run(self) -> bool:
+        dr = self._dry_run
+        return bool(dr() if callable(dr) else dr)
+
+    def _max_speed_value(self) -> float:
+        ms = self._max_speed
+        if ms is None:
+            return MAX_LINEAR
+        return float(ms() if callable(ms) else ms)
 
     # ---- kill-switch -------------------------------------------------------
     def abort(self, reason: str = "aborted") -> None:
@@ -148,7 +166,7 @@ class ChoreographyRunner:
         steps: Optional[list] = None
         if not is_action:
             try:
-                steps = build(cmd)
+                steps = build(cmd, max_speed=self._max_speed_value())
             except ValueError as exc:
                 self._publish_ack(Ack(cmd_id=cmd.cmd_id, state="failed", reason=str(exc)))
                 return
@@ -157,8 +175,8 @@ class ChoreographyRunner:
         # every fresh command starts un-aborted.
         self._abort.clear()
 
-        # ---- dry-run path: log, never publish / never act ----
-        if self._dry_run:
+        # ---- dry-run path: log, never publish / never act (evaluated LIVE) ----
+        if self._is_dry_run():
             if is_action:
                 log.info(
                     "DRY-RUN action %s", cmd.name, extra=log_extra(cmd_id=cmd.cmd_id)
@@ -173,14 +191,25 @@ class ChoreographyRunner:
             self._publish_ack(Ack(cmd_id=cmd.cmd_id, state="done", simulated=True))
             return
 
+        # ---- FAIL-CLOSED (default-deny): never drive unguarded ----
+        # Task-4 obligation C: a real (non-dry-run) command with NO command-aware gate
+        # wired must be REFUSED, never executed. Reaching the drive/action paths without
+        # a gate would be motion without the shadow lock + dock-guard exemption matrix.
+        if self._motion_gate is None:
+            if self._publish_twist is not None:
+                self._publish_twist(_ZERO)   # belt + braces: wheels stopped
+            self._publish_ack(
+                Ack(cmd_id=cmd.cmd_id, state="failed", reason="motion gate unwired")
+            )
+            return
+
         # ---- command-aware gate (shadow lock + dock-guard exemption matrix) ----
-        if self._motion_gate is not None:
-            permitted, reason = self._motion_gate(cmd)
-            if not permitted:
-                if self._publish_twist is not None:
-                    self._publish_twist(_ZERO)   # safety: make sure the wheels are stopped
-                self._publish_ack(Ack(cmd_id=cmd.cmd_id, state="failed", reason=reason))
-                return
+        permitted, reason = self._motion_gate(cmd)
+        if not permitted:
+            if self._publish_twist is not None:
+                self._publish_twist(_ZERO)   # safety: make sure the wheels are stopped
+            self._publish_ack(Ack(cmd_id=cmd.cmd_id, state="failed", reason=reason))
+            return
 
         # ---- Create 3 ROS action path (undock/dock) — never twists ----
         if is_action:

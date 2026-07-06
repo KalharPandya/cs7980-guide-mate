@@ -36,6 +36,14 @@ ssh "${SSH_HOST}" "mkdir -p /home/ubuntu/certs && \
   ([ -f ${CA} ] || curl -fsSL https://www.amazontrust.com/repository/AmazonRootCA1.pem -o ${CA})"
 
 echo ">> Render + install the systemd unit via sudo tee"
+# HARD SAFETY BAN: the rendered unit MUST NEVER set GUIDEMATE_ENABLE_MOTION. Real
+# cmd_vel/dock motion sinks are sim/436 only; the bridge additionally refuses that env
+# on robot 468 (assert_motion_identity_safe -> SystemExit). Abort the install if the
+# template ever grows a motion opt-in (defence in depth alongside the unit test).
+if grep -qE '^[[:space:]]*Environment=GUIDEMATE_ENABLE_MOTION' "${UNIT_SRC}"; then
+  echo "FATAL: ${UNIT_SRC} sets GUIDEMATE_ENABLE_MOTION — motion is banned on robot 468" >&2
+  exit 1
+fi
 sed -e "s#@ROBOT_ID@#${ROBOT_ID}#g" \
     -e "s#@THING_NAME@#${THING_NAME}#g" \
     -e "s#@ROS_ENABLED@#${ROS_ENABLED}#g" \
