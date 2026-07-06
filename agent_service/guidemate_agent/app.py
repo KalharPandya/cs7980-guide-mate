@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -13,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from guidemate_msgs.jsonlog import setup
+from guidemate_msgs.metrics import emit_metric
 
 from guidemate_agent import admin, sessions
 from guidemate_agent.config import Config
@@ -87,6 +89,28 @@ def healthz() -> dict:
     return {"ok": True}
 
 
+@app.get("/readyz")
+def readyz() -> JSONResponse:
+    """Readiness probe: mqtt (RobotRegistry link) + dynamo (ConfigStore reachable).
+
+    Both checks are best-effort and never raise — an unreachable dependency
+    just flips its check to False rather than 500ing the probe.
+    """
+    registry = getattr(app.state, "registry", None)
+    try:
+        mqtt_ok = bool(registry is not None and registry.is_connected)
+    except Exception:  # noqa: BLE001 — readiness must never raise
+        mqtt_ok = False
+    try:
+        store = getattr(app.state, "store", None)
+        dynamo_ok = store is not None and store.get_flags() is not None
+    except Exception:  # noqa: BLE001 — readiness must never raise
+        dynamo_ok = False
+    checks = {"mqtt": mqtt_ok, "dynamo": dynamo_ok}
+    ready = all(checks.values())
+    return JSONResponse({"ready": ready, "checks": checks}, status_code=200 if ready else 503)
+
+
 @app.post("/api/session")
 def create_session(req: SessionRequest) -> dict:
     return {"session_id": sessions.create_session(req.name, req.comfortable)}
@@ -97,11 +121,22 @@ def chat(req: ChatRequest) -> JSONResponse:
     # Legacy message-only path unchanged. With a session_id, DogAgent.chat
     # resolves name/history/robot binding and persists both messages itself;
     # app.py only threads the id through (validating it first).
-    if req.session_id is None:
-        return JSONResponse(app.state.agent.chat(req.message))
-    if sessions.get_session(req.session_id) is None:
-        raise HTTPException(status_code=404, detail="unknown session")
-    return JSONResponse(app.state.agent.chat(req.message, session_id=req.session_id))
+    t0 = time.perf_counter()
+    try:
+        if req.session_id is None:
+            result = app.state.agent.chat(req.message)
+        else:
+            if sessions.get_session(req.session_id) is None:
+                raise HTTPException(status_code=404, detail="unknown session")
+            result = app.state.agent.chat(req.message, session_id=req.session_id)
+    except HTTPException:
+        raise
+    except Exception:
+        emit_metric("ErrorCount", 1)
+        raise
+    finally:
+        emit_metric("TurnLatencyMs", (time.perf_counter() - t0) * 1000.0, "Milliseconds")
+    return JSONResponse(result)
 
 
 @app.post("/api/session/{session_id}/request-companion")

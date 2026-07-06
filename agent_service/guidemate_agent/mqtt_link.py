@@ -65,6 +65,13 @@ class RobotRegistry:
         self._waiters: dict[str, tuple[threading.Event, list[Ack]]] = {}
         self._conn = connection
 
+    @property
+    def is_connected(self) -> bool:
+        """Cheap readiness signal for /readyz: True once connect() has built
+        (and not torn down) the underlying MQTT connection. Doesn't ping the
+        broker — just reflects whether connect() succeeded."""
+        return self._conn is not None
+
     def _build_connection(self):
         return mqtt_connection_builder.websockets_with_default_aws_signing(
             endpoint=self._endpoint,

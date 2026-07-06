@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
 from typing import Optional
 
@@ -17,6 +18,7 @@ from strands import Agent, tool
 from strands.models import BedrockModel
 
 from guidemate_msgs.messages import Command
+from guidemate_msgs.metrics import emit_metric
 
 from guidemate_agent.store import DEFAULT_FLAGS
 
@@ -49,6 +51,23 @@ NEUTRAL_PROMPT = (
 PERSONA = PERSONA_BASE + " " + EMOTE_INSTRUCTION + " " + MOTION_INSTRUCTION
 
 _OFFLINE = "robot did not respond — I'm probably napping offline"
+
+
+def _usage_from_result(result) -> Optional[tuple[int, int]]:
+    """Pull (input_tokens, output_tokens) out of a Strands AgentResult, or None.
+
+    Guarded so a missing/odd-shaped `metrics.accumulated_usage` (or a plain str
+    result, as returned by the test fakes) never crashes a turn — metrics are
+    best-effort, never load-bearing.
+    """
+    metrics = getattr(result, "metrics", None)
+    usage = getattr(metrics, "accumulated_usage", None) if metrics is not None else None
+    if not usage:
+        return None
+    try:
+        return int(usage["inputTokens"]), int(usage["outputTokens"])
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 class DogAgent:
@@ -167,7 +186,14 @@ class DogAgent:
             return "virtual emote played (avatar only — not connected to a robot)"
         if target is None:
             return _OFFLINE
+        t0 = time.perf_counter()
         acks = self._registry.send_command(target, Command(type="emote", name=name))
+        emit_metric(
+            "AckRoundTripMs",
+            (time.perf_counter() - t0) * 1000.0,
+            "Milliseconds",
+            {"robot_id": target},
+        )
         captured["acks"].extend(a.model_dump() for a in acks)
         if not acks:
             return _OFFLINE
@@ -182,7 +208,14 @@ class DogAgent:
             cmd = Command(type="motion", name=name)
         except ValidationError:
             return "unknown trick — I only know 'circle' and 'spin'"
+        t0 = time.perf_counter()
         acks = self._registry.send_command(target, cmd)
+        emit_metric(
+            "AckRoundTripMs",
+            (time.perf_counter() - t0) * 1000.0,
+            "Milliseconds",
+            {"robot_id": target},
+        )
         captured["acks"].extend(a.model_dump() for a in acks)
         return self._describe_acks(acks)
 
@@ -338,6 +371,10 @@ class DogAgent:
         agent = Agent(model=model, system_prompt=system_prompt, tools=tools)
         result = agent(message)
         reply_text = str(result)
+        usage = _usage_from_result(result)
+        if usage is not None:
+            emit_metric("BedrockInputTokens", usage[0])
+            emit_metric("BedrockOutputTokens", usage[1])
 
         if session_id is not None:
             from guidemate_agent import sessions
