@@ -14,6 +14,7 @@ from guidemate_msgs.jsonlog import setup
 from guidemate_agent.config import Config
 from guidemate_agent.dog_agent import DogAgent
 from guidemate_agent.mqtt_link import RobotRegistry
+from guidemate_agent.store import ConfigStore
 
 log = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -35,11 +36,16 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001 — chat still works if robots are unreachable
         log.exception("registry connect failed — robots unreachable, chat still works")
     app.state.registry = registry
+    # ConfigStore is read fresh each turn inside DogAgent.chat() so admin flag
+    # flips (mute / tool gating / persona) take effect on the very next message.
+    store = ConfigStore(region=cfg.region)
+    app.state.store = store
     app.state.agent = DogAgent(
         registry=registry,
         model_id=cfg.model_id,
         robot_ids=cfg.robot_ids,
         region=cfg.region,
+        store=store,
     )
     yield
 
