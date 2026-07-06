@@ -25,6 +25,11 @@ class FakeRobotRegistry:
     def connect(self) -> None:
         return None
 
+    @property
+    def is_connected(self) -> bool:
+        # No real MQTT link, but the fake registry is always "up" for demos/tests.
+        return True
+
     def get_status(self, robot_id: str) -> dict:
         return {
             "robot_id": robot_id,
