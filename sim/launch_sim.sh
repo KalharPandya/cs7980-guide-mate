@@ -45,6 +45,20 @@ export DISPLAY="${DISPLAY:-:0}"
 HEADLESS=true
 [[ "$GUI" == "--gui" ]] && HEADLESS=false
 
+# Refuse to launch over a stale/orphaned sim. A duplicate Gazebo instance tanks the
+# real-time factor (measured RTF 0.49 with orphans vs 0.94 clean), and the bridge's
+# wall-clock-timed choreography then under-delivers sim time — a "circle" becomes a
+# half-loop (P8-T6 root cause: closure 0.998 m ~= the diameter). Kill the old sim by
+# PID first (never pkill -f). NOTE: 'parameter_bridge' exceeds the kernel's 15-char
+# comm limit, so match the truncated name.
+STALE="$(pgrep -x ruby; pgrep -x parameter_bridg)" || true
+if [[ -n "$STALE" ]]; then
+  echo "FATAL: a Gazebo/sim instance is already running (pids: ${STALE//$'\n'/ })." >&2
+  echo "Orphaned sims halve the real-time factor and break timed choreography." >&2
+  echo "Kill them by PID (never pkill -f), then relaunch." >&2
+  exit 1
+fi
+
 echo "== launching ${SIM_LAUNCH_PKG} ${SIM_LAUNCH_FILE} (headless=$HEADLESS) =="
 # shellcheck disable=SC2086
 ros2 launch "$SIM_LAUNCH_PKG" "$SIM_LAUNCH_FILE" \

@@ -106,6 +106,7 @@ class _RosSpy:
         from nav_msgs.msg import Odometry
         from rclpy.node import Node
         from rclpy.qos import qos_profile_sensor_data
+        from rosgraph_msgs.msg import Clock
 
         rclpy.init(args=None)
         self._rclpy = rclpy
@@ -113,6 +114,7 @@ class _RosSpy:
         self.odom = []           # list[(x, y, yaw)]
         self.cmd_vel = []        # list[(t, vx, wz)]
         self.docked = None       # latest /dock_status .is_docked (None until first msg)
+        self.sim_clock = None    # latest /clock in sim seconds (for the RTF precheck)
         self.node.create_subscription(Odometry, facts["SIM_ODOM_TOPIC"], self._on_odom, 10)
         self.node.create_subscription(Twist, facts["SIM_CMD_VEL_TOPIC"], self._on_cmd, 10)
         # /dock_status is published BEST_EFFORT (sensor QoS) by the sim; a default
@@ -121,6 +123,7 @@ class _RosSpy:
         self.node.create_subscription(
             DockStatus, facts["SIM_DOCK_STATUS_TOPIC"], self._on_dock, qos_profile_sensor_data
         )
+        self.node.create_subscription(Clock, "/clock", self._on_clock, qos_profile_sensor_data)
         self._facts = facts
         self._stop = threading.Event()
         self._spin = threading.Thread(target=self._spin_loop, daemon=True)
@@ -143,6 +146,17 @@ class _RosSpy:
 
     def _on_dock(self, msg):
         self.docked = bool(msg.is_docked)
+
+    def _on_clock(self, msg):
+        self.sim_clock = msg.clock.sec + msg.clock.nanosec * 1e-9
+
+    def measure_rtf(self, window_s: float = 3.0) -> float:
+        """Sim-time/wall-time real-time factor over a short window."""
+        _wait_for(lambda: self.sim_clock is not None, 15, "first /clock message")
+        w0, s0 = time.time(), self.sim_clock
+        time.sleep(window_s)
+        w1, s1 = time.time(), self.sim_clock
+        return (s1 - s0) / (w1 - w0)
 
     def close(self):
         self._stop.set()
@@ -214,6 +228,8 @@ def test_dock_guard_and_undock_lifecycle_over_iot(registry, spy, iot_data):
     _, term = _send(registry, "motion", "circle", timeout_s=15.0)
     assert term is not None and term.state == "failed", term
     assert term.reason == "docked", term.reason
+    print(f"\n[evidence] dock-guard: docked circle refused state={term.state} "
+          f"reason={term.reason}")
 
     # (b) DOCKED -> "stop" is exempt (always safe) -> done.
     _, term = _send(registry, "stop", "stop", timeout_s=15.0)
@@ -224,6 +240,8 @@ def test_dock_guard_and_undock_lifecycle_over_iot(registry, spy, iot_data):
     _, term = _send(registry, "motion", "undock", timeout_s=60.0)
     assert term is not None and term.state == "done", term
     _wait_for(lambda: spy.docked is False, 45, "IoT undock -> is_docked False")
+    print(f"[evidence] undock over IoT: ack state={term.state}, "
+          f"/dock_status is_docked True->False")
 
     # (d) UNDOCKED -> the same class of twist is now permitted -> done.
     _, term = _send(registry, "motion", "spin", timeout_s=40.0)
@@ -235,6 +253,20 @@ def test_dock_guard_and_undock_lifecycle_over_iot(registry, spy, iot_data):
 # ================================================================================
 def test_circle_closes_and_turns_full(registry, spy, iot_data):
     _confirm_undocked(spy)  # undocked by test 1 (or an earlier run); circle needs undocked
+
+    # PRECONDITION — real-time factor. The bridge executor times choreography in
+    # WALL-clock while the robot integrates velocity in SIM time, so a degraded RTF
+    # under-delivers the arc: at RTF~0.5 (measured with orphaned duplicate Gazebo
+    # instances loading the box) a circle nets only half a loop and "closure" lands
+    # at the DIAMETER (the P8-T6 0.998 m failure). Fail loud + early with the real
+    # cause instead of a misleading closure number. Clean single-sim RTF here: ~0.94.
+    rtf = spy.measure_rtf()
+    assert rtf >= 0.85, (
+        f"sim real-time factor {rtf:.2f} < 0.85 — the wall-clock-timed choreography "
+        "cannot deliver a full circle in sim time. Check for orphaned Gazebo/sim "
+        "processes (kill by PID, never pkill -f) and relaunch ./sim/launch_sim.sh"
+    )
+
     _set_shadow(iot_data, motion_enabled=True, dry_run=False)
 
     # Warm-up: the sim's diff-drive controller under-tracks the FIRST commanded rotation
@@ -251,6 +283,8 @@ def test_circle_closes_and_turns_full(registry, spy, iot_data):
     time.sleep(0.5)  # let trailing /odom land
     end = spy.odom[-1]
     closure = math.hypot(end[0] - start[0], end[1] - start[1])
+    print(f"\n[evidence] rtf={rtf:.3f} circle closure={closure:.3f} m "
+          f"start=({start[0]:.3f},{start[1]:.3f}) end=({end[0]:.3f},{end[1]:.3f})")
     assert closure < 0.15, f"circle did not close: {closure:.3f} m"
 
     yaws = [o[2] for o in spy.odom[i0:]]
@@ -262,6 +296,7 @@ def test_circle_closes_and_turns_full(registry, spy, iot_data):
         while d < -math.pi:
             d += 2 * math.pi
         net += d
+    print(f"[evidence] circle net_yaw={net:.3f} rad over {len(yaws)} odom samples")
     assert abs(net) >= 5.5, f"net yaw only {net:.2f} rad (want >= 5.5)"
 
 
@@ -299,6 +334,7 @@ def test_kill_switch_zeros_cmd_vel_within_1s(registry, spy, iot_data):
     )
     assert zero_t is not None, f"no zero cmd_vel after kill; samples={after[:8]}"
     latency = zero_t - kill_t
+    print(f"\n[evidence] kill-switch cmd_vel zeroed {latency:.3f}s after shadow flip")
     assert latency <= 1.0, f"kill-switch zeroed cmd_vel in {latency:.3f}s (> 1.0s)"
 
     term = _terminal(acks_out.get("acks") or [])
