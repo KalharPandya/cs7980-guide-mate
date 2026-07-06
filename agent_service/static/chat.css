@@ -631,6 +631,172 @@ label { font-weight: 800; font-size: 14.5px; }
 .toast.hidden { opacity: 0; pointer-events: none; transform: translate(-50%, 8px); display: block !important; }
 
 /* ============================================================================
+   WAVE-2 — in-app navigation + Wayfinding / Arsenal / Map views
+   The chat DOM is untouched; these wrappers swap the four Moses sections.
+   ========================================================================== */
+
+/* ---- segmented tab nav (tablist) --------------------------------------- */
+.view-nav {
+  display: flex;
+  gap: 2px;
+  padding: 6px 12px 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.view-tab {
+  appearance: none; cursor: pointer;
+  flex: 1 1 0; min-width: 0; min-height: 44px;
+  border: none; background: none;
+  color: var(--muted);
+  font: inherit; font-size: 15px; font-weight: 800;
+  padding: 10px 8px;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+  border-radius: 6px 6px 0 0;
+  white-space: nowrap;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.view-tab:hover { color: var(--text); background: var(--surface-soft); }
+.view-tab.is-active { color: var(--text); border-bottom-color: var(--primary); }
+.view-tab:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+
+/* ---- view container + panels ------------------------------------------- */
+.views { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.view { flex: 1; min-height: 0; }
+.view[hidden] { display: none !important; }
+#view-chat { display: flex; flex-direction: column; min-height: 0; }
+.view-pad { overflow-y: auto; }
+.view-inner {
+  width: 100%;
+  max-width: 720px; margin: 0 auto;
+  padding: 18px 18px calc(26px + env(safe-area-inset-bottom));
+}
+.view-head { margin-bottom: 16px; }
+.view-title { font-size: 24px; font-weight: 900; letter-spacing: -0.025em; margin: 0 0 4px; }
+.view-sub { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.45; }
+.view-foot { margin: 18px 0 0; }
+.field-label {
+  display: block; margin-bottom: 6px;
+  font-size: 12px; font-weight: 800; letter-spacing: 0.06em;
+  color: var(--muted); text-transform: uppercase;
+}
+.subhead {
+  font-size: 12px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted); margin: 20px 0 8px;
+}
+.empty-note { color: var(--muted); font-weight: 700; margin: 0; }
+
+/* ---- map viewport (shared by Wayfinding + Map) ------------------------- */
+.map-viewport {
+  position: relative;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-soft);
+  display: grid; place-items: center;
+  min-height: 200px; overflow: auto;
+  padding: 12px;
+}
+.map-viewport-lg { min-height: 320px; }
+.map-img {
+  max-width: 100%; height: auto; display: block;
+  border-radius: var(--r-sm); background: #ffffff;
+}
+/* `display:block` above would otherwise beat the UA `[hidden]` rule and leak the
+   img (as broken-image alt text) into the empty state — keep hidden authoritative. */
+.map-img[hidden] { display: none !important; }
+.map-img.zoom-actual { max-width: none; }
+.map-empty { text-align: center; padding: 20px 16px; }
+.map-empty-ico { font-size: 32px; display: block; margin-bottom: 8px; }
+.map-empty-title { font-weight: 900; font-size: 16px; margin: 0 0 4px; color: var(--text); }
+.map-empty-lede { margin: 0; font-size: 14px; color: var(--muted); }
+.map-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px 14px; margin-top: 12px; flex-wrap: wrap; }
+.map-meta { font-size: 13px; }
+.btn-sm { min-height: 38px; font-size: 14px; padding: 0 14px; }
+
+/* ---- Wayfinding -------------------------------------------------------- */
+.wf-map { min-height: 180px; margin-bottom: 16px; }
+.wf-form { margin: 0 0 4px; }
+.wf-row { display: flex; gap: 8px; align-items: center; }
+.wf-row .text-input { flex: 1; }
+.wf-row .send { flex-shrink: 0; }
+.wf-directions-body {
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-soft);
+  padding: 14px 16px; min-height: 64px;
+  font-size: 16px; line-height: 1.5;
+}
+.wf-directions-body.is-loading { color: var(--muted); font-weight: 700; }
+.wf-help { margin-top: 22px; }
+
+/* ---- Agent Arsenal ----------------------------------------------------- */
+.arsenal-list { display: grid; gap: 10px; }
+.arsenal-row {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 14px 16px; min-height: 58px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); box-shadow: var(--shadow-sm);
+}
+.arsenal-ico {
+  width: 36px; height: 36px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border-radius: var(--r-sm); background: var(--surface-soft);
+  font-size: 19px;
+}
+.arsenal-text { flex: 1 1 190px; min-width: 0; }
+.arsenal-name { font-weight: 900; font-size: 15.5px; }
+.arsenal-desc { margin: 2px 0 0; font-size: 13.5px; color: var(--muted); line-height: 1.4; }
+.arsenal-row .pill { margin-left: auto; flex-shrink: 0; }
+
+/* ---- status pills (label + colour, NEVER colour-only) ------------------ */
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 26px; padding: 3px 11px;
+  border-radius: var(--r-pill);
+  font-size: 13px; font-weight: 800; letter-spacing: 0.01em;
+  border: 1px solid var(--border);
+  background: var(--surface-soft); color: var(--text);
+  white-space: nowrap;
+}
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: 0 0 auto; }
+.pill-ok    { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, var(--border)); background: color-mix(in srgb, var(--success) 12%, var(--surface)); }
+.pill-warn  { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 40%, var(--border)); background: color-mix(in srgb, var(--warning) 12%, var(--surface)); }
+.pill-route { color: var(--route);   border-color: color-mix(in srgb, var(--route) 40%, var(--border));   background: color-mix(in srgb, var(--route) 12%, var(--surface)); }
+.pill-muted { color: var(--muted); }
+
+/* ---- KB source / provenance chips (under grounded dog replies) --------- */
+.bubble-sources { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 6px; }
+.source-chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  min-height: 26px; padding: 3px 11px;
+  border: 1px solid var(--border); border-radius: var(--r-pill);
+  background: var(--surface); color: var(--muted);
+  font: inherit; font-size: 12.5px; font-weight: 800;
+  text-decoration: none;
+}
+.source-chip::before {
+  content: ""; width: 7px; height: 7px; border-radius: 2px;
+  background: var(--route); flex: 0 0 auto;
+}
+a.source-chip:hover { color: var(--text); border-color: var(--muted); }
+.source-chip .source-label { color: var(--muted); font-weight: 700; }
+.source-chip .source-title { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+
+/* ---- empty-thread greeting (desktop no longer looks empty; nit b) ------- */
+.thread-empty {
+  margin: auto; text-align: center;
+  max-width: 380px; padding: 24px 16px;
+  color: var(--muted);
+}
+.thread-empty-mark {
+  display: grid; place-items: center;
+  width: 76px; height: 76px; margin: 0 auto 14px;
+  border-radius: 50%; background: var(--surface);
+  border: 3px solid #000000; box-shadow: var(--shadow-sm); overflow: hidden;
+}
+.thread-empty-mark img { width: 70%; height: 70%; object-fit: contain; display: block; }
+.thread-empty-title { font-size: 21px; font-weight: 900; color: var(--text); margin: 0 0 6px; }
+.thread-empty-lede { margin: 0; font-size: 15px; line-height: 1.5; }
+
+/* ============================================================================
    Focus + accessibility
    ========================================================================== */
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -649,6 +815,23 @@ label { font-weight: 800; font-size: 14.5px; }
   .mic { padding: 0 12px; gap: 6px; }
   .text-input { padding: 0 14px; }
   .quick-actions { padding-bottom: 2px; }
+}
+
+/* ============================================================================
+   Mobile / tablet (<1024px) — nit (a): once a conversation exists the stacked
+   rail (banner + big avatar stage + quick actions) pushed the thread + composer
+   below the first viewport. Collapse the avatar stage to a compact strip so the
+   thread and composer are reachable/visible sooner. The avatar (+ emote classes)
+   stays in the DOM, just smaller — the emote/audio-sync contract is untouched.
+   ========================================================================== */
+@media (max-width: 1023px) {
+  #chat.has-conversation .stage { padding: 8px 18px 0; }
+  #chat.has-conversation .stage-card { flex-direction: row; align-items: center; gap: 12px; padding: 10px 14px; }
+  #chat.has-conversation .avatar-mark { width: 52px; height: 52px; border-width: 2px; }
+  #chat.has-conversation .stage-caption { margin: 0; }
+  #chat.has-conversation .quick-actions { padding-top: 8px; }
+  /* The non-chat views scroll internally; keep their content within the column. */
+  .view-inner { max-width: 640px; }
 }
 
 /* ============================================================================
@@ -716,6 +899,15 @@ label { font-weight: 800; font-size: 14.5px; }
   .messages { padding: 20px 22px; }
   .bubble { max-width: min(80%, 620px); font-size: 16px; }
   .composer { border-radius: 0; }
+
+  /* Nav aligns to the same 1180px content band as the top identity bar; tabs
+     read as real tabs (auto width) rather than stretched segments. */
+  .view-nav { padding-inline: max(24px, calc((100% - 1180px) / 2)); padding-top: 4px; }
+  .view-tab { flex: 0 0 auto; padding: 12px 18px; }
+  /* Non-chat views get a comfortable centered reading column. */
+  .view-pad .view-inner { max-width: 900px; padding: 30px 24px 40px; }
+  .wf-map { min-height: 260px; }
+  .map-viewport-lg { min-height: 440px; }
 
   /* Bigger, more obviously-tappable voice control on desktop. */
   .mic { min-height: 50px; padding: 0 18px; font-size: 15px; }
