@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Robert the Robot Dog</title>
+</head>
+<body>
+  <h1>Robert the Robot Dog</h1>
+  <div id="messages" style="border:1px solid #ccc;padding:8px;min-height:200px;margin-bottom:8px;"></div>
+  <form id="chat-form">
+    <input id="message" autocomplete="off" placeholder="Say something to Robert..." style="width:70%" />
+    <button type="submit">Send</button>
+  </form>
+  <script>
+    const messages = document.getElementById("messages");
+    const form = document.getElementById("chat-form");
+    const input = document.getElementById("message");
+
+    function add(role, text) {
+      const p = document.createElement("p");
+      p.textContent = role + ": " + text;
+      messages.appendChild(p);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      add("You", text);
+      input.value = "";
+      try {
+        const resp = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text }),
+        });
+        const data = await resp.json();
+        let line = data.reply_text || "(no reply)";
+        if (data.emote) line += "  [emote: " + data.emote + "]";
+        if (data.robot && data.robot.length) {
+          const last = data.robot[data.robot.length - 1];
+          line += "  [ack: " + last.state + (last.simulated ? " (simulated)" : "") + "]";
+        }
+        add("Robert", line);
+      } catch (err) {
+        add("Robert", "(error: " + err + ")");
+      }
+    });
+  </script>
+</body>
+</html>
