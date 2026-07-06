@@ -9,7 +9,17 @@ dependencies = [
     "strands-agents",
     "awsiotsdk",
     "boto3",
+    "itsdangerous",
+    "python-multipart",
     "guidemate-msgs",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "httpx",
+    "playwright",
+    "pytest-playwright",
 ]
 
 [build-system]
