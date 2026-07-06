@@ -36,3 +36,37 @@
 ## Not done (out of scope per task)
 - No real EC2 launch (Task 7, controller-run).
 - `scripts/setup_observability.sh` referenced by the launch banner is a separate task's deliverable.
+
+---
+
+## Follow-up (VPC-aware launch fix) — 2026-07-05
+
+**Blocker:** account 852373397000 / us-west-2 has **NO default VPC** (only non-default
+`vpc-0657dd5b506f043a9`). The original `describe-vpcs --filters Name=isDefault,Values=true`
+returned nothing, so `VPC_ID` came back empty/`None` → `create-security-group` and
+`run-instances` would have failed.
+
+**Fix (launch_ec2.sh only; teardown.sh looks the SG up by group-name with no vpc-id filter,
+so it does NOT reference SG-by-VPC and needed no change):**
+1. **VPC resolution order:** `GUIDEMATE_VPC_ID` env override → default VPC if one exists →
+   if exactly ONE VPC exists, use it → else fail listing all VPCs.
+2. **Public-subnet resolution:** `GUIDEMATE_SUBNET_ID` env override → else scan the VPC's
+   subnets for one whose route table (explicit association, else the VPC main table) has a
+   `0.0.0.0/0` route to an `igw-*`; prefer `MapPublicIpOnLaunch=true` (a public-routed but
+   non-auto-assign subnet is a fallback) → else fail with the subnet list + guidance.
+3. Threaded through: `create-security-group --vpc-id ${VPC_ID}` (already present), and
+   `run-instances --subnet-id ${SUBNET_ID} --associate-public-ip-address` (needed for the
+   EIP association + outbound pulls in a non-default VPC).
+4. `--plan` now prints the resolved VPC + subnet and the subnet/public-IP flags in the
+   run-instances note.
+
+**Real `--plan` dry run (read-only, verified):**
+- Resolve VPC → `no default VPC; using the only VPC vpc-0657dd5b506f043a9`.
+- Resolve PUBLIC subnet → `public subnet subnet-0e8b386d25f67d9a7`
+  (both subnets in the VPC are explicitly associated to `rtb-0da8005ecb82217d9`, which has
+  `0.0.0.0/0 -> igw-04987548bc6ed1c4c`, and both are `MapPublicIpOnLaunch=true`; the loop
+  picks the first, `subnet-0e8b386d25f67d9a7` in us-west-2a).
+- run-instances plan note now includes `--subnet-id subnet-0e8b386d25f67d9a7
+  --associate-public-ip-address`. Exit 0, no resources created.
+
+**`bash -n`:** `launch_ec2.sh` OK, `teardown.sh` OK.

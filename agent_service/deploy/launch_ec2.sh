@@ -39,9 +39,73 @@ if [ -n "${EXISTING}" ]; then
   exit 1
 fi
 
-echo ">> Default VPC"
-VPC_ID="$(q ec2 describe-vpcs --filters Name=isDefault,Values=true \
-  --query 'Vpcs[0].VpcId' --output text)"
+echo ">> Resolve VPC (env override -> default VPC -> sole VPC -> fail)"
+if [ -n "${GUIDEMATE_VPC_ID:-}" ]; then
+  VPC_ID="${GUIDEMATE_VPC_ID}"
+  echo "   using GUIDEMATE_VPC_ID=${VPC_ID}"
+else
+  VPC_ID="$(q ec2 describe-vpcs --filters Name=isDefault,Values=true \
+    --query 'Vpcs[0].VpcId' --output text 2>/dev/null || true)"
+  if [ "${VPC_ID}" = "None" ] || [ -z "${VPC_ID}" ]; then
+    # No default VPC (this sandbox account has none). Use the sole VPC if unambiguous.
+    ALL_VPCS="$(q ec2 describe-vpcs --query 'Vpcs[].VpcId' --output text)"
+    VPC_COUNT="$(echo ${ALL_VPCS} | wc -w)"
+    if [ "${VPC_COUNT}" -eq 1 ]; then
+      VPC_ID="${ALL_VPCS}"
+      echo "   no default VPC; using the only VPC ${VPC_ID}"
+    else
+      echo "!! No default VPC and ${VPC_COUNT} VPCs exist. Set GUIDEMATE_VPC_ID to one of:" >&2
+      q ec2 describe-vpcs --query 'Vpcs[].{VpcId:VpcId,Cidr:CidrBlock,IsDefault:IsDefault}' \
+        --output table >&2
+      exit 1
+    fi
+  else
+    echo "   using default VPC ${VPC_ID}"
+  fi
+fi
+
+echo ">> Resolve PUBLIC subnet (env override -> 0.0.0.0/0->igw route, prefer MapPublicIpOnLaunch)"
+if [ -n "${GUIDEMATE_SUBNET_ID:-}" ]; then
+  SUBNET_ID="${GUIDEMATE_SUBNET_ID}"
+  echo "   using GUIDEMATE_SUBNET_ID=${SUBNET_ID}"
+else
+  # Subnets with no explicit route-table association fall through to the VPC main table.
+  MAIN_RTB="$(q ec2 describe-route-tables \
+    --filters "Name=vpc-id,Values=${VPC_ID}" "Name=association.main,Values=true" \
+    --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null || true)"
+  SUBNET_ID=""
+  FALLBACK_SUBNET=""   # public route but MapPublicIpOnLaunch=false; used only if no better one
+  for sn in $(q ec2 describe-subnets --filters "Name=vpc-id,Values=${VPC_ID}" \
+      --query 'Subnets[].SubnetId' --output text); do
+    RTB="$(q ec2 describe-route-tables \
+      --filters "Name=association.subnet-id,Values=${sn}" \
+      --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null || true)"
+    if [ "${RTB}" = "None" ] || [ -z "${RTB}" ]; then RTB="${MAIN_RTB}"; fi
+    [ -z "${RTB}" ] && continue
+    IGW="$(q ec2 describe-route-tables --route-table-ids "${RTB}" \
+      --query "RouteTables[0].Routes[?DestinationCidrBlock=='0.0.0.0/0'].GatewayId | [0]" \
+      --output text 2>/dev/null || true)"
+    case "${IGW}" in
+      igw-*)
+        MAPS="$(q ec2 describe-subnets --subnet-ids "${sn}" \
+          --query 'Subnets[0].MapPublicIpOnLaunch' --output text)"
+        if [ "${MAPS}" = "True" ]; then SUBNET_ID="${sn}"; break; fi
+        [ -z "${FALLBACK_SUBNET}" ] && FALLBACK_SUBNET="${sn}"
+        ;;
+    esac
+  done
+  [ -z "${SUBNET_ID}" ] && SUBNET_ID="${FALLBACK_SUBNET}"
+  if [ -z "${SUBNET_ID}" ]; then
+    echo "!! No PUBLIC subnet (a 0.0.0.0/0 route to an igw-*) found in ${VPC_ID}." >&2
+    echo "   Existing subnets in this VPC:" >&2
+    q ec2 describe-subnets --filters "Name=vpc-id,Values=${VPC_ID}" \
+      --query 'Subnets[].{SubnetId:SubnetId,AZ:AvailabilityZone,MapPublicIpOnLaunch:MapPublicIpOnLaunch}' \
+      --output table >&2
+    echo "   Set GUIDEMATE_SUBNET_ID, or provision IGW + public subnet before launching." >&2
+    exit 1
+  fi
+  echo "   public subnet ${SUBNET_ID}"
+fi
 
 echo ">> Security group ${SG_NAME}"
 SG_ID="$(q ec2 describe-security-groups \
@@ -106,7 +170,9 @@ echo "   AMI ${AMI_ID}"
 
 if [ "$PLAN" -eq 1 ]; then
   echo ">> Render user-data + launch ${INSTANCE_TYPE} (skipped in plan)"
-  plan_note "ec2 run-instances --image-id ${AMI_ID} --instance-type ${INSTANCE_TYPE} --iam-instance-profile Name=${PROFILE_NAME} --security-group-ids ${SG_ID} --user-data file://<rendered> --tag-specifications ...Name=${INSTANCE_NAME},project=guidemate-poc"
+  echo "   Resolved VPC    : ${VPC_ID}"
+  echo "   Resolved subnet : ${SUBNET_ID} (public)"
+  plan_note "ec2 run-instances --image-id ${AMI_ID} --instance-type ${INSTANCE_TYPE} --iam-instance-profile Name=${PROFILE_NAME} --security-group-ids ${SG_ID} --subnet-id ${SUBNET_ID} --associate-public-ip-address --user-data file://<rendered> --tag-specifications ...Name=${INSTANCE_NAME},project=guidemate-poc"
   plan_note "ec2 wait instance-running --instance-ids <new-iid>"
   plan_note "ec2 associate-address --instance-id <new-iid> --allocation-id ${ALLOC_ID}"
   echo ""
@@ -127,6 +193,7 @@ echo ">> Launch ${INSTANCE_TYPE}"
 IID="$(q ec2 run-instances --image-id "${AMI_ID}" --instance-type "${INSTANCE_TYPE}" \
   --iam-instance-profile "Name=${PROFILE_NAME}" \
   --security-group-ids "${SG_ID}" \
+  --subnet-id "${SUBNET_ID}" --associate-public-ip-address \
   --user-data "file://${UD}" \
   --tag-specifications \
     "ResourceType=instance,Tags=[{Key=project,Value=guidemate-poc},{Key=Name,Value=${INSTANCE_NAME}}]" \
