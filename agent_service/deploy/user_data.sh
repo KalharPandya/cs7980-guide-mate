@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# EC2 bootstrap for the guide-mate dog-agent (AL2023). Runs once at first boot.
+set -euxo pipefail
+exec > >(tee /var/log/guidemate-bootstrap.log) 2>&1
+
+REGION="@@REGION@@"
+DOMAIN="@@DOMAIN@@"
+ADMIN_PW="@@ADMIN_PW@@"
+REPO="@@REPO@@"
+BRANCH="@@BRANCH@@"
+
+# --- Docker + Compose v2 plugin ---
+dnf install -y docker git
+systemctl enable --now docker
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -SL "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64" \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+# --- CloudWatch agent: memory + disk (system metrics; containers log via awslogs) ---
+dnf install -y amazon-cloudwatch-agent
+cat > /opt/aws/amazon-cloudwatch-agent/etc/guidemate-cwagent.json <<'CWCFG'
+{
+  "agent": {"metrics_collection_interval": 60},
+  "metrics": {
+    "namespace": "GuideMate/EC2",
+    "append_dimensions": {"InstanceId": "${aws:InstanceId}"},
+    "metrics_collected": {
+      "mem": {"measurement": [{"name": "mem_used_percent", "rename": "MemUsedPercent"}]},
+      "disk": {"measurement": [{"name": "used_percent", "rename": "DiskUsedPercent"}], "resources": ["/"]}
+    }
+  }
+}
+CWCFG
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/guidemate-cwagent.json
+
+# --- App: clone repo, write env, bring the prod stack up ---
+install -d -m 755 /opt
+git clone --branch "${BRANCH}" "${REPO}" /opt/guidemate
+IOT_ENDPOINT="$(aws iot describe-endpoint --endpoint-type iot:Data-ATS --region "${REGION}" --query endpointAddress --output text)"
+
+umask 077
+cat > /etc/guidemate.env <<ENV
+GUIDEMATE_DOMAIN=${DOMAIN}
+GUIDEMATE_ROBOTS=turtlebot468
+GUIDEMATE_MODEL_ID=us.anthropic.claude-sonnet-4-6
+AWS_REGION=${REGION}
+GUIDEMATE_IOT_ENDPOINT=${IOT_ENDPOINT}
+GUIDEMATE_ADMIN_PASSWORD=${ADMIN_PW}
+ENV
+
+cd /opt/guidemate/agent_service
+docker compose --env-file /etc/guidemate.env -f compose.yaml -f compose.prod.yaml up -d --build
+echo "guidemate bootstrap complete"
