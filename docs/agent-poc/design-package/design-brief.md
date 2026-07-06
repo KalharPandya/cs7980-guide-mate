@@ -1,152 +1,134 @@
-# GuideMate Echo - Design Brief
+# Moses - Design Brief
 
 ## One-Line Product Definition
 
-GuideMate is the accessible web interface for a TurtleBot 4 campus guide robot. Echo is the
-robot's friendly visual identity inside the webapp.
+Moses is a Northeastern Vancouver concierge AI that helps students and visitors
+ask questions, find places, request help, and when appropriate use a robot as
+one tool in a larger assistance system.
 
 ## Selected Visual Direction
 
-Use **Echo as TurtleBot Pal**:
+Use the accepted **A/B approach**:
 
-- Compact robot-dog mascot on a TurtleBot-inspired base.
-- Rounded white shell, dark glass face, cyan/teal LED expression.
-- Teal-blue ring motif for responsiveness and the "Echo" name.
-- Small enough to work as a status avatar, not a giant hero illustration.
+- **A: Black-framed Husky + Moses** for app headers, chat surfaces, compact product
+  identity, and everyday UI.
+- **B: Black hero + red accent** for splash screens, login, onboarding, and
+  moments where Moses should feel ceremonial, confident, and King
+  Husky-inspired.
 
-Avoid:
-
-- Fur dog styling.
-- Amazon/Alexa/Echo hardware resemblance.
-- Purple gradients.
-- Beige/tan soft SaaS palette.
-- Dark sci-fi robot dashboard.
-- Toy-store cuteness.
+The identity should be welcoming and accessible like the earlier companion
+direction, but grounded in a concierge expert: capable, campus-aware, calm under
+pressure, and knowledgeable about Northeastern history and services.
 
 ## Brand Roles
 
 | Element | Role |
 |---|---|
-| GuideMate | Product/system name |
-| Echo | Robot mascot and assistant identity |
-| TurtleBot Pal | Visual direction for Echo |
-| Teal ring | Ready/helpful/privacy-safe state |
-| Blue route | Navigation/wayfinding state |
-| Red stop | Safety-critical stop/error state |
+| Moses | Product and agent name |
+| Husky head mark | Moses-facing app mark and personality signal |
+| Northeastern Vancouver lockup | Campus affiliation and credibility layer |
+| Red `#C8102E` | Northeastern anchor and primary brand accent |
+| Black mark frame | App-header identity treatment on white surfaces |
+| Black hero stage | Expert, confident splash/login language |
+| Robot/TurtleBot | One physical capability in Moses's toolkit |
 
 ## Theme
 
-The visual system deliberately keeps Echo friendly but lets GuideMate read as a campus
-service. The interface should not look like a toy, a sci-fi robot console, or an Amazon
-voice assistant clone.
+The system uses official-feeling Northeastern colors without pretending the
+student project is an approved public Northeastern product.
 
-### Light Theme
+### Light App Theme
 
-- Background: `#F7F9FC`
+- Background: `#F7F7F7`
 - Surface: `#FFFFFF`
-- Text: `#101828`
-- Muted text: `#667085`
-- Border: `#D9E2EC`
-- Primary: `#129C9C`
+- Text: `#000000`
+- Muted text: `#5B6170`
+- Border: `#D9D9D9`
+- Primary: `#C8102E`
+- Primary text: `#FFFFFF`
 - Route: `#1F6FEB`
 - Success: `#168A4A`
 - Warning: `#B76B00`
-- Danger: `#D92D20`
+- Danger: `#C8102E`
 
-### Dark Theme
+### Black Hero Theme
 
-- Background: `#0B1220`
-- Surface: `#111B2E`
-- Soft surface: `#172033`
-- Text: `#F7FAFC`
-- Muted text: `#D0D7E2`
-- Border: `#2E4056`
-- Primary: `#7EE7FF`
+- Background: `#000000`
+- Surface: `#111111`
+- Soft surface: `#1D1D1D`
+- Text: `#FFFFFF`
+- Muted text: `#D6D6D6`
+- Border: `#343434`
+- Primary: `#C8102E`
+- Primary text: `#FFFFFF`
 - Route: `#58A6FF`
 - Success: `#6DDC91`
 - Warning: `#F5B83D`
-- Danger: `#FF9A91`
+- Danger: `#FF6B6B`
 
 ## Typography
 
 Preferred stack:
 
 ```css
-Inter, Atkinson Hyperlegible, system-ui, sans-serif
+"Real Head Pro", "FF Real Head", Lato, Arial, sans-serif
 ```
 
-Use Inter for product polish when available. Use Atkinson Hyperlegible as the accessibility
-reference because its letterforms distinguish similar characters clearly. Use system UI as
-the fallback so the webapp still feels native on personal devices.
+Use a heavy, compact display treatment for **Moses**. Use Lato/Arial-style body
+copy for readable campus-service text. The product should feel bold and
+institutional, but not like a dense university policy page.
 
 Type rules:
 
 - Body text: 18 px preferred, 16 px minimum.
 - Body line height: 1.5.
-- Heading line height: 1.2.
-- Left aligned text only.
+- Large Moses wordmark: tight, bold, left-aligned.
 - No justified paragraphs.
 - No icon-only buttons; pair icons with visible labels.
 
 ## Why These Choices
 
-### Why TurtleBot Pal
+### Why Moses
 
-The physical platform is TurtleBot 4, so the mascot should acknowledge the robot's real
-shape instead of pretending GuideMate is a humanoid or a furry dog. The TurtleBot Pal
-direction makes Echo recognizable as a small mobile robot while still giving it a friendly
-face and emote states.
+Moses gives the agent a real name and a campus personality. It connects to the
+current King Husky identity while leaving room for a capable AI concierge rather
+than a generic helper bot.
 
-### Why Echo
+### Why A for App Surfaces
 
-Echo is the responding doggo inside the webapp. The name fits the interaction pattern:
-users ask for help and Echo responds with text, status, routes, and safe robot actions. The
-ring motif nods to responsiveness without copying Amazon Echo hardware or Alexa branding.
+The black-framed Husky + Moses treatment is compact, friendly, and legible in
+small headers. On white surfaces, the black frame gives the mark better balance
+than a red frame, while red remains available for action and affiliation cues.
 
-### Why Teal, Blue, and Red
+### Why B for Hero Moments
 
-- Teal is the main GuideMate action color because it reads as calm, helpful, and safe.
-- Blue is reserved for route/navigation state so wayfinding has a consistent visual cue.
-- Red is reserved for Stop, error, and safety-critical actions.
-- Amber is used for warnings such as slow movement, pending approval, or degraded service.
+The black stage makes Moses feel more expert and ceremonial. The red-framed
+Husky mark keeps the hero from becoming a generic dark AI dashboard and gives
+the splash/login surface a clear Northeastern signal.
 
-This separates meanings by function instead of decoration. Status should still include text
-labels because the UI cannot rely on color alone.
+### Why the Vancouver Lockup Is Separate
 
-### Why White-First Light Theme
-
-The webapp is expected to run on users' personal phones in public campus spaces. A white,
-high-contrast light theme keeps maps, directions, forms, and chat readable under normal
-lighting and avoids the heavy "robot dashboard" feel.
-
-### Why Deep Blue-Black Dark Theme
-
-The dark theme uses deep blue-black rather than pure black to reduce glare while preserving
-contrast. Cyan replaces teal as the primary action color in dark mode so controls remain
-visible and distinct from muted surfaces.
-
-### Why Echo Is Not Always Large
-
-Echo should anchor the product identity, but the core tasks are finding places, reading
-directions, stopping motion, and getting human help. The mascot appears large on landing or
-empty states, then shrinks to an avatar/status role inside chat and wayfinding.
+The Northeastern Vancouver mark should establish affiliation and credibility.
+Moses should remain the product identity. Keeping them separate avoids a fake
+combined university logo and leaves a clearer path for later Brand Review.
 
 ## Core Screens
 
 ### Landing / Consent
 
-Purpose: confirm the user is in the right place, collect minimal session identity, and show
-privacy before Start.
+Purpose: confirm the user is in the Northeastern Vancouver context, collect
+minimal session identity, and show privacy before Start.
 
 Required UI:
 
-- GuideMate logo and Echo avatar.
+- Black hero treatment with Moses mark and product name.
+- Northeastern Vancouver lockup as affiliation.
 - Name field.
 - Email field if the build requires user memory or staff handoff.
 - Privacy strip: cameras help navigation only; no face recognition.
 - Optional memory checkbox, unchecked by default.
 - Start button.
-- Visible pointperson alternative.
+- Visible human help alternative.
 
 ### Main Chat
 
@@ -154,11 +136,12 @@ Purpose: complete the interaction by text without requiring voice.
 
 Required UI:
 
+- Black-framed Husky + Moses app header.
 - Persistent text input.
-- GuideMate/Echo message history.
-- Quick actions: Find a room, Bathrooms, Talk to a person, Stop.
+- Moses message history.
+- Quick actions: Find a room, Campus services, Talk to a person, Stop.
 - Inline source/provenance labels for factual answers.
-- Live robot status label.
+- Live robot/status label when a physical agent is involved.
 
 ### Wayfinding
 
@@ -169,38 +152,25 @@ Required UI:
 - Static/high-contrast map.
 - Turn-by-turn text.
 - Self-guided and Robot guide modes.
-- Lost Echo action.
-- Persistent Stop.
+- Lost / need help action.
+- Persistent Stop when robot motion can be active.
 - Clear robot status.
 
-### Robot Status
+### Agent Arsenal
 
-Purpose: make robot state legible and safety actions obvious.
-
-Required UI:
-
-- Battery.
-- Dock state.
-- Motion state.
-- Dry-run/locked state.
-- Stop robot now.
-- Self-guided fallback.
-
-### Pointperson Handoff
-
-Purpose: make the human fallback explicit and privacy-respecting.
+Purpose: make clear that Moses is more than the robot.
 
 Required UI:
 
-- Pointperson location.
-- What-to-share choices.
-- Default option to share nothing.
-- Handoff note.
-- Back to chat.
+- Knowledge/search status.
+- Map/wayfinding status.
+- Human handoff availability.
+- Robot availability as one tool.
+- Safety/dry-run state.
 
 ### Admin / Operator
 
-Purpose: operational control, not companion branding.
+Purpose: operational control, not mascot branding.
 
 Required UI:
 
@@ -214,18 +184,20 @@ Required UI:
 
 ## Asset Usage Rules
 
-- Use `guidemate-echo-logo-light.svg` on light backgrounds.
-- Use `guidemate-echo-logo-dark.svg` on dark backgrounds.
-- Use `echo-mark.svg` for app icon, favicon, small header avatar, and status chips.
-- Use `echo-turtlebot-pal.svg` sparingly on landing or empty states.
-- Use `echo-emotes.svg` as source material for avatar states.
+- Use `assets/logo/moses-husky-head.svg` as the Moses mark in headers and
+  status chips.
+- Use a black mark frame for app surfaces.
+- Use a red outline mark frame on black hero surfaces.
+- Use `assets/affiliation/northeastern-vancouver-lockup.png` only as an
+  affiliation/context layer.
+- Do not create a merged Moses + official Northeastern logo without approval.
 - Use labelled controls; do not make icon-only buttons.
 
 ## Implementation Notes
 
 - Use `tokens.json` as the source for Tailwind/shadcn theme values.
 - Use `themes.css` for documentation prototypes or quick static pages.
-- Keep radius at 8-16 px for most cards. Larger radius is reserved for phone frames,
-  mascot art containers, and app marks.
+- Keep radius at 8 px or less for app cards unless the real UI pattern needs a
+  larger touch-friendly pill.
 - Body text should be at least 16 px, preferably 18 px.
 - Touch targets should be at least 44 px.
