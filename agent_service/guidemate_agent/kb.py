@@ -84,6 +84,14 @@ def retrieve_passages(
     return "\n\n".join(blocks)
 
 
+def _safe_error(exc: Exception) -> str:
+    """Non-leaky error string for API responses: the full message is logged
+    server-side by callers, but callers/clients only ever see the exception's
+    class name so AWS error details (bucket names, ARNs, request ids, ...)
+    never reach a response body."""
+    return f"{exc.__class__.__name__} (see logs)"
+
+
 class KBManager:
     """Admin-side KB document management: S3 docs + Bedrock ingestion jobs."""
 
@@ -134,7 +142,7 @@ class KBManager:
             self._s3.put_object(Bucket=self._bucket, Key=key, Body=data)
         except _AWS_ERRORS as exc:
             logger.warning("KBManager.upload failed for %s: %s", key, exc)
-            return {"ok": False, "error": str(exc)}
+            return {"ok": False, "error": _safe_error(exc)}
         return {"ok": True}
 
     def delete(self, key: str) -> dict:
@@ -142,7 +150,7 @@ class KBManager:
             self._s3.delete_object(Bucket=self._bucket, Key=key)
         except _AWS_ERRORS as exc:
             logger.warning("KBManager.delete failed for %s: %s", key, exc)
-            return {"ok": False, "error": str(exc)}
+            return {"ok": False, "error": _safe_error(exc)}
         return {"ok": True}
 
     def start_ingestion(self) -> dict:
@@ -152,7 +160,7 @@ class KBManager:
             )
         except _AWS_ERRORS as exc:
             logger.warning("KBManager.start_ingestion failed: %s", exc)
-            return {"ok": False, "error": str(exc)}
+            return {"ok": False, "error": _safe_error(exc)}
         return {"ok": True, "job_id": resp["ingestionJob"]["ingestionJobId"]}
 
     def latest_job_status(self) -> dict:
@@ -165,7 +173,7 @@ class KBManager:
             )
         except _AWS_ERRORS as exc:
             logger.warning("KBManager.latest_job_status failed: %s", exc)
-            return {"status": "ERROR", "error": str(exc)}
+            return {"status": "ERROR", "error": _safe_error(exc)}
         jobs = resp.get("ingestionJobSummaries", [])
         if not jobs:
             return {"status": "NONE"}

@@ -11,8 +11,10 @@ from pydantic import BaseModel
 
 from guidemate_msgs.jsonlog import setup
 
+from guidemate_agent import admin
 from guidemate_agent.config import Config
 from guidemate_agent.dog_agent import DogAgent
+from guidemate_agent.kb import KBManager
 from guidemate_agent.mqtt_link import RobotRegistry
 from guidemate_agent.store import ConfigStore
 
@@ -40,6 +42,14 @@ async def lifespan(app: FastAPI):
     # flips (mute / tool gating / persona) take effect on the very next message.
     store = ConfigStore(region=cfg.region)
     app.state.store = store
+    # Config + KB manager are read by the admin API (status / kill-switch / KB).
+    app.state.config = cfg
+    app.state.kb = KBManager(
+        bucket=cfg.kb_bucket,
+        kb_id=cfg.kb_id,
+        data_source_id=cfg.kb_data_source,
+        region=cfg.region,
+    )
     app.state.agent = DogAgent(
         registry=registry,
         model_id=cfg.model_id,
@@ -51,6 +61,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.include_router(admin.router)
 
 
 @app.get("/healthz")
