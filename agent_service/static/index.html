@@ -4,134 +4,74 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Robert the Robot Dog</title>
-  <style>
-    #avatar { font-size: 48px; display: inline-block; }
-    #avatar.wiggle { animation: wig 0.5s ease-in-out 3; }
-    @keyframes wig { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-15deg); }
-      75% { transform: rotate(15deg); } }
-    .banner { padding: 6px; margin: 8px 0; border: 1px solid #999; }
-  </style>
+  <link rel="stylesheet" href="/chat.css" />
 </head>
 <body>
-  <h1>Robert the Robot Dog</h1>
+  <main class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="paw">🐾</span>
+        <h1>Robert</h1>
+      </div>
+      <div id="status-chip" class="chip chip-virtual" title="connection status">
+        <span id="status-mode">virtual</span>
+      </div>
+    </header>
 
-  <div id="intake">
-    <p>What's your name, and are you comfortable around Physical AI Dogs?</p>
-    <input id="name" placeholder="Your name" autocomplete="off" />
-    <label><input type="checkbox" id="comfortable" /> I'm comfortable around Physical AI Dogs</label>
-    <button id="start">Start chatting</button>
-  </div>
+    <!-- Intake gate: collected once, mints the real session row so the
+         companion-request + status-poll endpoints work from message one. -->
+    <section id="intake" class="card intake">
+      <p class="intake-lead">What's your name, and are you comfortable around Physical AI Dogs?</p>
+      <input id="name" class="text-input" placeholder="Your name" autocomplete="off" />
+      <label class="check-row">
+        <input type="checkbox" id="comfortable" />
+        I'm comfortable around Physical AI Dogs
+      </label>
+      <button id="start" class="send" type="button">Start chatting</button>
+    </section>
 
-  <div id="chat" hidden>
-    <span id="avatar">🐶</span>
-    <span id="emote-label"></span>
-    <div id="companion-status" class="banner">Virtual dog (avatar only)</div>
-    <button id="request-companion">Request physical companion</button>
-    <button id="new-session">Start new session</button>
-    <div id="messages" style="border:1px solid #ccc;padding:8px;min-height:200px;margin:8px 0;"></div>
-    <form id="chat-form">
-      <input id="message" autocomplete="off" placeholder="Say something to Robert..." style="width:70%" />
-      <button type="submit">Send</button>
-    </form>
-  </div>
+    <div id="chat" hidden>
+      <section id="companion-banner" class="banner" aria-live="polite">
+        <span id="companion-status">Virtual dog (avatar only)</span>
+        <button id="request-companion" class="banner-btn" type="button">Request physical companion</button>
+      </section>
 
-  <script>
-    const $ = (id) => document.getElementById(id);
-    let sessionId = localStorage.getItem("guidemate_session_id");
-    let userName = localStorage.getItem("guidemate_name") || "";
+      <section class="stage">
+        <div id="avatar" class="avatar">
+          <!-- Pure inline SVG dog. Emote classes on #avatar drive the CSS animations,
+               triggered in JS at the moment reply audio starts playing (not on arrival). -->
+          <svg viewBox="0 0 120 120" width="140" height="140" aria-hidden="true">
+            <g class="dog-body">
+              <ellipse cx="60" cy="92" rx="34" ry="18" class="dog-shadow" />
+              <path class="dog-ear ear-left" d="M34 40 q-14 6 -8 30 q10 -6 14 -18 z" />
+              <path class="dog-ear ear-right" d="M86 40 q14 6 8 30 q-10 -6 -14 -18 z" />
+              <circle cx="60" cy="56" r="30" class="dog-head" />
+              <circle cx="50" cy="52" r="4.5" class="dog-eye" />
+              <circle cx="70" cy="52" r="4.5" class="dog-eye" />
+              <ellipse cx="60" cy="66" rx="7" ry="5" class="dog-snout" />
+              <circle cx="60" cy="63" r="3.2" class="dog-nose" />
+            </g>
+          </svg>
+          <span id="emote-label" class="emote-label"></span>
+        </div>
+      </section>
 
-    function showChat() { $("intake").hidden = true; $("chat").hidden = false; }
-    function add(role, text) {
-      const p = document.createElement("p");
-      p.textContent = role + ": " + text;
-      $("messages").appendChild(p);
-      $("messages").scrollTop = $("messages").scrollHeight;
-    }
+      <section id="messages" class="messages" aria-live="polite"></section>
 
-    if (sessionId) { showChat(); startPolling(); }
-
-    $("start").addEventListener("click", async () => {
-      const name = $("name").value.trim() || "friend";
-      const comfortable = $("comfortable").checked;
-      const resp = await fetch("/api/session", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, comfortable }),
-      });
-      sessionId = (await resp.json()).session_id;
-      userName = name;
-      localStorage.setItem("guidemate_session_id", sessionId);
-      localStorage.setItem("guidemate_name", name);
-      showChat();
-      startPolling();
-    });
-
-    $("new-session").addEventListener("click", () => {
-      // Clear only the LOCAL mirror -> the intake screen reappears. The old
-      // session survives server-side (its transcript / lock are untouched).
-      localStorage.removeItem("guidemate_session_id");
-      localStorage.removeItem("guidemate_name");
-      location.reload();
-    });
-
-    $("request-companion").addEventListener("click", async () => {
-      await fetch(`/api/session/${sessionId}/request-companion`, { method: "POST" });
-      $("companion-status").textContent = "Request pending admin approval…";
-    });
-
-    $("chat-form").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const text = $("message").value.trim();
-      if (!text) return;
-      add("You", text);
-      $("message").value = "";
-      try {
-        const resp = await fetch("/api/chat", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: sessionId, message: text }),
-        });
-        const data = await resp.json();
-        let line = data.reply_text || "(no reply)";
-        if (data.emote) {
-          $("emote-label").textContent = "[emote: " + data.emote + "]";
-          $("avatar").classList.remove("wiggle");
-          void $("avatar").offsetWidth;      // restart the animation
-          $("avatar").classList.add("wiggle");
-        }
-        if (data.robot && data.robot.length) {
-          const last = data.robot[data.robot.length - 1];
-          line += "  [physical ack: " + last.state +
-                  (last.simulated ? " (simulated)" : "") + "]";
-        } else if (data.emote) {
-          line += "  [virtual emote]";
-        }
-        add("Robert", line);
-      } catch (err) {
-        add("Robert", "(error: " + err + ")");
-      }
-    });
-
-    function startPolling() {
-      async function poll() {
-        if (!sessionId) return;
-        try {
-          const s = await (await fetch(`/api/session/${sessionId}/state`)).json();
-          const banner = $("companion-status");
-          if (s.robot_id) {
-            banner.textContent = "Connected to " + s.robot_id + " 🐕 (physical)";
-          } else if (s.request_status === "pending") {
-            banner.textContent = "Request pending admin approval…";
-          } else if (s.request_status === "denied") {
-            banner.textContent = "Request denied by admin.";
-          } else if (s.request_status === "aborted") {
-            banner.textContent = "Session disconnected by admin — back to virtual.";
-          } else {
-            banner.textContent = "Virtual dog (avatar only)";
-          }
-        } catch (err) { /* keep polling */ }
-      }
-      poll();
-      setInterval(poll, 3000);
-    }
-  </script>
+      <form id="chat-form" class="composer">
+        <button id="mic" class="mic" type="button" aria-label="Push to talk">
+          <span class="mic-glyph">🎙️</span>
+          <span class="mic-level"><span id="mic-level-bar"></span></span>
+        </button>
+        <input id="message" class="text-input" autocomplete="off"
+               placeholder="Say something to Robert…" />
+        <button type="submit" class="send">Send</button>
+        <button id="new-session" class="ghost" type="button" title="Start a new session">New session</button>
+      </form>
+    </div>
+  </main>
+  <audio id="player" hidden></audio>
+  <div id="toast" class="toast hidden" role="alert"></div>
+  <script src="/chat.js"></script>
 </body>
 </html>
