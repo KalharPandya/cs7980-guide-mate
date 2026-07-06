@@ -117,6 +117,12 @@ def _update_session(session_id: str, **attrs) -> None:
 
 def create_request(session_id: str) -> str:
     session = get_session(session_id) or {}
+    if session.get("request_status") == "pending":
+        existing = [
+            r for r in list_pending_requests() if r.get("session_id") == session_id
+        ]
+        if existing:
+            return existing[0]["request_id"]
     request_id = new_id()
     _table(TABLE_REQUESTS).put_item(
         Item={

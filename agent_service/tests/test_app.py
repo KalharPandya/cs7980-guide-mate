@@ -86,3 +86,191 @@ def test_admin_ui_served_and_router_mounted(monkeypatch):
         monkeypatch.delenv("GUIDEMATE_FAKE_ROBOT", raising=False)
         monkeypatch.delenv("GUIDEMATE_ADMIN_PASSWORD", raising=False)
         importlib.reload(appmod)
+
+
+# =====================================================================
+# Phase-4 Task 5: session + companion HTTP API + GUIDEMATE_FAKE_ROBOT wiring.
+#
+# ADAPTATION (merged reality wins over the brief): the brief's /api/chat drafts
+# app.py loading history / appending messages / passing user_name+history+
+# robot_id to the agent. In the merged tree DogAgent.chat(message, session_id=,
+# robot_id=) resolves name/history/robot binding AND persists both messages
+# INTERNALLY (Task 4). So app.py just threads session_id through, and these
+# tests exercise the real DogAgent with Bedrock faked (the _FakeStrands pattern
+# from test_dog_agent) rather than the brief's user_name-passing _FakeAgent.
+# =====================================================================
+import guidemate_agent.app as appmod
+from guidemate_agent import dog_agent, sessions
+
+
+class _RecordingAgent:
+    """Records chat() calls; matches the merged DogAgent.chat signature exactly.
+
+    Used for the pure pass-through tests (no Bedrock, no session resolution)."""
+
+    def __init__(self):
+        self.calls = []
+
+    def chat(self, message, session_id=None, robot_id=None):
+        self.calls.append(
+            {"message": message, "session_id": session_id, "robot_id": robot_id}
+        )
+        reply = {"reply_text": "woof", "emote": "happy", "robot": [], "turn_id": "t"}
+        if session_id is not None:
+            reply["session_id"] = session_id
+        return reply
+
+
+class _FakeStrands:
+    """strands.Agent stand-in: records how it was built and invokes send_emote
+    when called, so publish / no-publish is observable through the registry."""
+
+    last = None
+
+    def __init__(self, model=None, system_prompt=None, tools=None):
+        self.system_prompt = system_prompt
+        self.tools = list(tools or [])
+        self.tool_names = [t.tool_name for t in self.tools]
+        type(self).last = self
+
+    def __call__(self, message):
+        self.message = message
+        for t in self.tools:
+            if t.tool_name == "send_emote":
+                t("happy")
+        return "woof woof"
+
+
+def _fake_bedrock(monkeypatch):
+    monkeypatch.setattr(dog_agent, "Agent", _FakeStrands)
+    monkeypatch.setattr(dog_agent, "BedrockModel", lambda **kw: None)
+
+
+def _fake_client(monkeypatch):
+    """TestClient over the real app with the in-memory fake robot registry."""
+    monkeypatch.setenv("GUIDEMATE_FAKE_ROBOT", "1")
+    return TestClient(appmod.app)
+
+
+def test_create_session_returns_id_and_initial_state(monkeypatch, ddb):
+    with _fake_client(monkeypatch) as client:
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        assert sid
+        state = client.get(f"/api/session/{sid}/state").json()
+        assert state["request_status"] == "none"
+        assert state["robot_id"] is None
+
+
+def test_chat_threads_session_id_through(monkeypatch, ddb):
+    with _fake_client(monkeypatch) as client:
+        fake = _RecordingAgent()
+        client.app.state.agent = fake
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        resp = client.post("/api/chat", json={"session_id": sid, "message": "hello"})
+        assert resp.status_code == 200
+        assert resp.json()["reply_text"] == "woof"
+        assert fake.calls[0]["session_id"] == sid       # session threaded through
+        # legacy no-session call still works and passes session_id=None
+        legacy = client.post("/api/chat", json={"message": "hi"})
+        assert legacy.status_code == 200
+        assert fake.calls[-1]["session_id"] is None
+
+
+def test_chat_unknown_session_is_404(monkeypatch, ddb):
+    with _fake_client(monkeypatch) as client:
+        client.app.state.agent = _RecordingAgent()
+        resp = client.post("/api/chat", json={"session_id": "nope", "message": "hi"})
+        assert resp.status_code == 404
+
+
+def test_chat_virtual_session_records_messages_no_publish(monkeypatch, ddb):
+    _fake_bedrock(monkeypatch)
+    with _fake_client(monkeypatch) as client:
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        resp = client.post("/api/chat", json={"session_id": sid, "message": "hello"})
+        assert resp.status_code == 200
+        assert resp.json()["reply_text"] == "woof woof"
+        # both user + dog messages persisted by the real DogAgent
+        msgs = sessions.get_messages(sid)
+        assert [m["role"] for m in msgs] == ["user", "dog"]
+        # no robot bound -> virtual: nothing published, motion + get_status withheld
+        assert client.app.state.registry.sent == []
+        assert "run_motion" not in _FakeStrands.last.tool_names
+        assert "get_status" not in _FakeStrands.last.tool_names
+
+
+def test_chat_physical_session_publishes_to_bound_robot(monkeypatch, ddb):
+    _fake_bedrock(monkeypatch)
+    with _fake_client(monkeypatch) as client:
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        sessions.approve_request(sessions.create_request(sid), "turtlebot468")
+        resp = client.post("/api/chat", json={"session_id": sid, "message": "wiggle"})
+        assert resp.status_code == 200
+        # physical path: emote published to the bound robot, get_status offered
+        assert ("turtlebot468", "emote", "happy") in client.app.state.registry.sent
+        assert "get_status" in _FakeStrands.last.tool_names
+
+
+def test_request_companion_sets_pending_state(monkeypatch, ddb):
+    with _fake_client(monkeypatch) as client:
+        client.app.state.agent = _RecordingAgent()
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        r = client.post(f"/api/session/{sid}/request-companion")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["status"] == "pending"
+        assert body["request_id"]
+        state = client.get(f"/api/session/{sid}/state").json()
+        assert state["request_status"] == "pending"
+        assert state["robot_id"] is None
+
+
+def test_request_companion_unknown_session_is_404(monkeypatch, ddb):
+    with _fake_client(monkeypatch) as client:
+        client.app.state.agent = _RecordingAgent()
+        assert client.post("/api/session/nope/request-companion").status_code == 404
+
+
+def test_state_unknown_session_is_404(monkeypatch, ddb):
+    with _fake_client(monkeypatch) as client:
+        client.app.state.agent = _RecordingAgent()
+        assert client.get("/api/session/nope/state").status_code == 404
+
+
+def test_request_companion_twice_is_idempotent(monkeypatch, ddb):
+    with _fake_client(monkeypatch) as client:
+        client.app.state.agent = _RecordingAgent()
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        first = client.post(f"/api/session/{sid}/request-companion").json()
+        second = client.post(f"/api/session/{sid}/request-companion").json()
+        assert first["request_id"] == second["request_id"]
+        assert second["status"] == "pending"
+        pending = [r for r in sessions.list_pending_requests() if r["session_id"] == sid]
+        assert len(pending) == 1
+
+
+def test_fake_registry_records_sent_and_refuses_motion():
+    from guidemate_agent.fakes import FakeRobotRegistry
+    from guidemate_msgs.messages import Command
+
+    reg = FakeRobotRegistry(["turtlebot468"])
+    # emote -> simulated success, recorded in .sent
+    reg.send_command("turtlebot468", Command(type="emote", name="happy"))
+    assert reg.sent[-1] == ("turtlebot468", "emote", "happy")
+    # undock -> motion-locked refusal (received then failed), still recorded
+    acks = reg.send_command("turtlebot468", Command(type="motion", name="undock"))
+    assert reg.sent[-1] == ("turtlebot468", "motion", "undock")
+    assert [a.state for a in acks] == ["received", "failed"]
+    assert "motion_disabled" in acks[-1].reason

@@ -84,8 +84,11 @@ class DogAgent:
             names.append("send_emote")
         if physical and flags.get("motion_tools_enabled", True):
             names.extend(["run_motion", "stop"])
-        # get_status is a read-only truth tool with no flag — always available.
-        names.append("get_status")
+        # get_status is a read-only truth tool with no flag, but it is still
+        # PHYSICAL-only: a virtual/unbound session must not read another robot's
+        # live status. The legacy no-session path is physical=True and keeps it.
+        if physical:
+            names.append("get_status")
         if flags.get("kb_enabled", True):
             names.append("retrieve_kb")
         return names
