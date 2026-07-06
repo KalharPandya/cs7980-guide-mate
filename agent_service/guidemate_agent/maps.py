@@ -1,10 +1,12 @@
 """S3 map storage helpers + local PGM->PNG conversion for the admin Maps tab.
 
-Standalone module (Phase-6 Task 4 scope). Deliberately kept OUT of
-agent_service: the admin Maps tab endpoint (Phase-6 Task 5) owns wiring
-`fetch_map_png`/`fetch_map_meta` into the FastAPI app and may re-home or
-re-import this module at that point. `scripts/upload_map_from_pi.sh` is the
-only current consumer (via PYTHONPATH=scripts).
+Re-homed into the `guidemate_agent` package by Phase-6 Task 5 (it started as a
+standalone `scripts/maps.py` in Task 4): the admin Maps tab endpoints
+(`agent_service/guidemate_agent/admin.py`) import `fetch_map_png` /
+`fetch_map_meta` directly from here now that the package is the consumer.
+`scripts/upload_map_from_pi.sh` and `scripts/test_maps.py` import it the same
+way (the package is editable-installed into `.venv`, so no PYTHONPATH hack is
+needed for either the CLI script or its tests).
 """
 from __future__ import annotations
 

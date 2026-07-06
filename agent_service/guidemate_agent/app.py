@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
+import boto3
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -74,6 +75,10 @@ async def lifespan(app: FastAPI):
         data_source_id=cfg.kb_data_source,
         region=cfg.region,
     )
+    # Admin Maps tab: streams map PNGs from the (public-access-blocked) maps
+    # bucket through the app's own IAM role -- see guidemate_agent.maps +
+    # admin.get_map/get_map_meta.
+    app.state.s3 = boto3.client("s3", region_name=cfg.region)
     app.state.agent = DogAgent(
         registry=registry,
         model_id=cfg.model_id,

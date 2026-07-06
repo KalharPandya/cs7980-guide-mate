@@ -19,12 +19,14 @@ from typing import Optional
 
 import boto3
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
+from fastapi.responses import JSONResponse
 from itsdangerous import BadSignature, SignatureExpired, TimestampSigner
 from pydantic import BaseModel, ValidationError
 
 from guidemate_msgs.messages import Command, new_cmd_id
 
 from guidemate_agent import sessions
+from guidemate_agent.maps import fetch_map_meta, fetch_map_png
 from guidemate_agent.store import DEFAULT_FLAGS
 
 log = logging.getLogger(__name__)
@@ -348,6 +350,28 @@ def synthetic_event(
         raise HTTPException(status_code=400, detail=f"unknown synthetic event type {payload.type!r}")
     fired = engine.on_status_event({"robot_id": robot_id, "data": data})
     return {"fired": fired, "session_id": engine.session_id}
+
+
+# --- maps (Task 5: admin Maps tab) ----------------------------------------
+# Bytes are streamed through boto3 (app.state.s3, created in app.py's
+# lifespan) using the app's own IAM role -- the maps bucket blocks public
+# access, so there is no presigned/public URL for the page to fetch instead.
+@router.get("/map/{robot_id}")
+def get_map(robot_id: str, request: Request, _: bool = Depends(admin_required)) -> Response:
+    try:
+        png = fetch_map_png(request.app.state.s3, robot_id)
+    except Exception:  # noqa: BLE001 -- missing key (or any read failure) -> no map yet
+        raise HTTPException(status_code=404, detail="no map uploaded for this robot yet")
+    return Response(content=png, media_type="image/png")
+
+
+@router.get("/map/{robot_id}/meta.json")
+def get_map_meta(robot_id: str, request: Request, _: bool = Depends(admin_required)) -> JSONResponse:
+    try:
+        meta = fetch_map_meta(request.app.state.s3, robot_id)
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=404, detail="no map metadata for this robot yet")
+    return JSONResponse(meta)
 
 
 @router.post("/robot/{robot_id}/command")
