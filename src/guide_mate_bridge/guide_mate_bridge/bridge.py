@@ -17,6 +17,7 @@ from guide_mate_bridge.executor import ChoreographyRunner
 from guide_mate_bridge.iot_client import IotClient
 from guide_mate_bridge.safety import SafetyState
 from guide_mate_bridge.shadow import ShadowSync
+from guide_mate_bridge.telemetry import HeartbeatPublisher, Telemetry
 
 log = logging.getLogger(__name__)
 
@@ -125,6 +126,17 @@ def main() -> None:
     shadow = ShadowSync(client=client, thing_name=thing_name, safety=safety)
     shadow.start()
 
+    telemetry = Telemetry(
+        safety=safety,
+        namespace=os.environ.get("GUIDEMATE_ROS_NAMESPACE", robot_id),
+        enabled=_truthy(os.environ.get("GUIDEMATE_ROS", "0")),
+    )
+    telemetry.start()
+    heartbeat = HeartbeatPublisher(
+        client=client, robot_id=robot_id, safety=safety, telemetry=telemetry
+    )
+    heartbeat.start()
+
     stop_event = threading.Event()
 
     def _on_signal(signum, frame):
@@ -135,7 +147,10 @@ def main() -> None:
     log.info("bridge connected", extra=log_extra(robot_id=robot_id))
     stop_event.wait()
     log.info("shutting down gracefully", extra=log_extra(robot_id=robot_id))
-    _graceful_shutdown(client=client, shadow=shadow, robot_id=robot_id)
+    _graceful_shutdown(
+        client=client, shadow=shadow, robot_id=robot_id,
+        telemetry=telemetry, heartbeat=heartbeat,
+    )
 
 
 if __name__ == "__main__":
