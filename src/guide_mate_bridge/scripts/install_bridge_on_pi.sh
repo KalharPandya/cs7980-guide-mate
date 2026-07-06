@@ -6,6 +6,8 @@ set -euo pipefail
 
 SSH_HOST="${SSH_HOST:-guidemate}"
 ROBOT_ID="${ROBOT_ID:-turtlebot468}"
+THING_NAME="${THING_NAME:-Turtlebot-468}"
+ROS_ENABLED="${ROS_ENABLED:-1}"
 PI_REPO="/home/ubuntu/cs7980-guide-mate"
 PI_VENV="/home/ubuntu/guidemate-venv"
 CERT="${PI_REPO}/Turtlebot-468.cert.pem"
@@ -35,6 +37,8 @@ ssh "${SSH_HOST}" "mkdir -p /home/ubuntu/certs && \
 
 echo ">> Render + install the systemd unit via sudo tee"
 sed -e "s#@ROBOT_ID@#${ROBOT_ID}#g" \
+    -e "s#@THING_NAME@#${THING_NAME}#g" \
+    -e "s#@ROS_ENABLED@#${ROS_ENABLED}#g" \
     -e "s#@IOT_ENDPOINT@#${ENDPOINT}#g" \
     -e "s#@CERT@#${CERT}#g" \
     -e "s#@KEY@#${KEY}#g" \
@@ -42,8 +46,8 @@ sed -e "s#@ROBOT_ID@#${ROBOT_ID}#g" \
     "${UNIT_SRC}" \
   | ssh "${SSH_HOST}" "sudo tee /etc/systemd/system/guidemate-bridge.service >/dev/null"
 
-echo ">> daemon-reload + enable --now (additive; no other service touched)"
-ssh "${SSH_HOST}" "sudo systemctl daemon-reload && sudo systemctl enable --now guidemate-bridge.service"
+echo ">> daemon-reload + enable + restart (additive; picks up the new unit + code)"
+ssh "${SSH_HOST}" "sudo systemctl daemon-reload && sudo systemctl enable guidemate-bridge.service && sudo systemctl restart guidemate-bridge.service"
 
-echo ">> Recent logs (expect 'connected' + online event)"
-ssh "${SSH_HOST}" "journalctl -u guidemate-bridge -n 30 --no-pager"
+echo ">> Recent logs (expect 'bridge connected', 'shadow reconciled', heartbeat lines)"
+ssh "${SSH_HOST}" "journalctl -u guidemate-bridge -n 40 --no-pager"

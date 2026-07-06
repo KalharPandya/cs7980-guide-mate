@@ -8,14 +8,21 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/cs7980-guide-mate
 Environment=GUIDEMATE_ROBOT_ID=@ROBOT_ID@
+Environment=GUIDEMATE_THING_NAME=@THING_NAME@
 Environment=GUIDEMATE_DRY_RUN=1
+Environment=GUIDEMATE_ROS=@ROS_ENABLED@
 Environment=GUIDEMATE_IOT_ENDPOINT=@IOT_ENDPOINT@
 Environment=GUIDEMATE_CERT=@CERT@
 Environment=GUIDEMATE_KEY=@KEY@
 Environment=GUIDEMATE_CA=@CA@
-ExecStart=/home/ubuntu/guidemate-venv/bin/python -m guide_mate_bridge.bridge
+# The telemetry rclpy node needs the robot's ROS env (Humble + turtlebot4 Discovery
+# Server config). ROS_SUPER_CLIENT=True so the node discovers the boot-service graph
+# (/etc/turtlebot4/setup.bash sets it False for non-tty shells).
+ExecStart=/bin/bash -c 'source /opt/ros/humble/setup.bash && source /etc/turtlebot4/setup.bash && export ROS_SUPER_CLIENT=True && exec /home/ubuntu/guidemate-venv/bin/python -m guide_mate_bridge.bridge'
 Restart=on-failure
 RestartSec=5
+# Give the graceful SIGTERM path (offline event + final reported + disconnect) time.
+TimeoutStopSec=15
 
 [Install]
 WantedBy=multi-user.target
