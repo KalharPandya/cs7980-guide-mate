@@ -6,7 +6,11 @@
 #   ./launch_ec2.sh          # for real: create/reuse resources, launch, associate EIP
 #   ./launch_ec2.sh --plan   # dry run: run the READ-ONLY discovery/idempotency
 #                            # lookups for real, but only PRINT the mutations
-#                            # (no create/run/allocate/associate; no secret generated)
+#                            # (no create/run/allocate/associate)
+#
+# The admin password is NEVER generated or handled here: user_data.sh mints it
+# on the instance and stores it in SSM Parameter Store (/guidemate/admin-password,
+# SecureString). Retrieve it with the command printed in the final banner.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -17,7 +21,6 @@ AWS="${AWS:-aws}"
 REGION="${AWS_REGION:-us-west-2}"
 REPO="${GUIDEMATE_REPO:-https://github.com/KalharPandya/cs7980-guide-mate.git}"
 BRANCH="${GUIDEMATE_BRANCH:-kalhar/dog-agent-poc}"
-TAG="project=guidemate-poc"
 SG_NAME="guidemate-poc-sg"
 INSTANCE_NAME="guidemate-poc-ec2"
 EIP_NAME="guidemate-poc-eip"
@@ -123,7 +126,11 @@ if [ "${SG_ID}" = "None" ] || [ -z "${SG_ID}" ]; then
   fi
 fi
 MYIP="$(curl -s https://checkip.amazonaws.com | tr -d '[:space:]')"
-for pair in "80:0.0.0.0/0" "443:0.0.0.0/0" "22:${MYIP}/32"; do
+if [ -z "${MYIP}" ]; then
+  echo "!! checkip returned empty; SSH (22) ingress rule will be skipped." >&2
+  echo "   Set the 22/32 rule manually or re-run once checkip resolves." >&2
+fi
+for pair in "80:0.0.0.0/0" "443:0.0.0.0/0" ${MYIP:+"22:${MYIP}/32"}; do
   PORT="${pair%%:*}"; CIDR="${pair##*:}"
   if [ "$PLAN" -eq 1 ]; then
     plan_note "ec2 authorize-security-group-ingress --group-id ${SG_ID} --protocol tcp --port ${PORT} --cidr ${CIDR}"
@@ -155,12 +162,8 @@ fi
 DOMAIN="$(echo "${EIP}" | tr '.' '-').nip.io"
 echo "   EIP ${EIP} -> ${DOMAIN}"
 
-echo ">> Admin password (generated; printed once, never committed)"
-if [ "$PLAN" -eq 1 ]; then
-  ADMIN_PW="<generated-at-launch:openssl rand -hex 16>"
-else
-  ADMIN_PW="$(openssl rand -hex 16)"
-fi
+echo ">> Admin password: generated ON THE INSTANCE by user_data.sh (never here)"
+echo "   stored in SSM Parameter Store as /guidemate/admin-password (SecureString)"
 
 echo ">> Latest AL2023 AMI"
 AMI_ID="$(q ssm get-parameter \
@@ -183,7 +186,6 @@ fi
 echo ">> Render user-data"
 UD="$(mktemp)"
 sed -e "s#@@DOMAIN@@#${DOMAIN}#g" \
-    -e "s#@@ADMIN_PW@@#${ADMIN_PW}#g" \
     -e "s#@@REGION@@#${REGION}#g" \
     -e "s#@@REPO@@#${REPO}#g" \
     -e "s#@@BRANCH@@#${BRANCH}#g" \
@@ -211,7 +213,10 @@ cat <<DONE
   guide-mate production launched
   Instance : ${IID}
   URL      : https://${DOMAIN}   (Caddy TLS provisions in ~1-2 min)
-  Admin PW : ${ADMIN_PW}   <-- save this now; not stored anywhere else
+  Admin PW : generated on-instance; stored in SSM Parameter Store.
+             Retrieve (after bootstrap finishes, ~2-3 min) with:
+               aws ssm get-parameter --name /guidemate/admin-password \\
+                 --with-decryption --query Parameter.Value --output text --region ${REGION}
 ------------------------------------------------------------
   Next:
     scripts/setup_observability.sh          # dashboard + alarms (pass the instance id)

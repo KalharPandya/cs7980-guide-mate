@@ -70,3 +70,41 @@ so it does NOT reference SG-by-VPC and needed no change):**
   --associate-public-ip-address`. Exit 0, no resources created.
 
 **`bash -n`:** `launch_ec2.sh` OK, `teardown.sh` OK.
+
+---
+
+## Security hardening (deploy secrets) — 2026-07-05
+
+Security-review findings fixed in `agent_service/deploy/`.
+
+**Critical — admin password was embedded in EC2 user-data** (API-readable via
+`ec2:DescribeInstanceAttribute` for the instance lifetime). Fixed:
+- `launch_ec2.sh` no longer generates a password or substitutes `@@ADMIN_PW@@` — the
+  variable, the generation block, and the sed substitution are gone (grep `ADMIN` in
+  `launch_ec2.sh` = 0 hits). Final banner now tells the operator to retrieve it via
+  `aws ssm get-parameter --name /guidemate/admin-password --with-decryption ...`.
+- `user_data.sh` mints it **on the instance** (`ADMIN_PW="$(openssl rand -hex 16)"`),
+  seeds the env file with `install -m 600 /dev/null /etc/guidemate.env` then appends, and
+  pushes it to **SSM Parameter Store** as a SecureString
+  (`aws ssm put-parameter --name /guidemate/admin-password --type SecureString --overwrite`).
+
+**Important — xtrace leaked the password to a world-readable log.** `user_data.sh`
+`set -euxo pipefail` → `set -euo pipefail` (no `x`), plus `chmod 640
+/var/log/guidemate-bootstrap.log` right after the `exec … tee` line.
+
+**Important — `teardown.sh` terminated on bare invocation.** Now requires `--yes`; a bare
+run (or `--keep-eip` alone) prints what WOULD be deleted and exits 1. Unknown args exit 2.
+
+**Minors:** teardown SG lookup gained `Name=tag:project,Values=guidemate-poc`; `launch_ec2.sh`
+warns (and skips the 22/32 rule) if `checkip` returns empty; unused `TAG` var removed.
+
+**Docs:** `docs/agent-poc/access-ground-truth.md` Phase-7 section documents the SSM
+SecureString parameter + retrieval command and the teardown `--yes` gate.
+
+**Verification:**
+- `bash -n`: `launch_ec2.sh` OK, `user_data.sh` OK, `teardown.sh` OK.
+- `./launch_ec2.sh --plan` (real, read-only): resolves VPC `vpc-0657dd5b506f043a9` +
+  public subnet `subnet-0e8b386d25f67d9a7`, exit 0, no password value anywhere in output
+  (only the informational "generated ON THE INSTANCE / stored in SSM" lines).
+- `grep '@@ADMIN' agent_service/deploy` = 0 hits; `grep ADMIN launch_ec2.sh` = 0 hits.
+- `./teardown.sh` (bare) prints dry-run and exits 1; `--bogus` exits 2.
