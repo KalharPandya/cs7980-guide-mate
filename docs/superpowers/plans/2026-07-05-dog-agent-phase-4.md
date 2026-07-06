@@ -4,7 +4,7 @@
 
 **Goal:** Turn the single-user chat into a multi-user, session-aware system with an admin-approved *physical-companion* flow: every visitor takes a named intake, chats with per-session history, and can request the physical robot; exactly one session at a time holds the robot lock and drives real (dry-run) emotes while everyone else gets *virtual* avatar-only emotes; the admin approves/denies/aborts/reassigns from the admin panel.
 
-**Architecture:** A new self-contained DynamoDB session layer (`agent_service/guidemate_agent/sessions.py`) owns sessions, per-session messages, companion requests, and the **atomic per-robot lock** (conditional write on `guidemate-config`). The FastAPI app grows session + companion endpoints and a 3-second polling `state` endpoint (no WebSocket for this flow). `DogAgent.chat` gains a user name, last-10-message history, and lock-gated robot tools — physical when the session holds the lock, virtual otherwise. The admin router grows requests/sessions/robot-control endpoints, and the admin UI grows Requests/Sessions tabs plus a Robot tab. A `GUIDEMATE_FAKE_ROBOT=1` fake registry lets the Playwright 3-context e2e run against **real DynamoDB** without a live bridge.
+**Architecture:** A new self-contained DynamoDB session layer (`agent_service/guidemate_agent/sessions.py`) owns sessions, per-session messages, companion requests, and the **atomic per-robot lock** (conditional write on `guidemate-config`). The FastAPI app grows session + companion endpoints and a 3-second polling `state` endpoint (no WebSocket for this flow). `DogAgent.chat` gains a user name, last-10-message history, and lock-gated robot tools — physical when the session holds the lock, virtual otherwise. The admin router grows requests/sessions/robot-control endpoints, and the admin UI grows Requests/Sessions tabs plus a Robot tab. Assignment changes additionally fire best-effort `undock`/`dock` motion commands at the (un)bound robot — on 468 these are **refused** (docked / motion-locked) and the refusal acks are surfaced in the admin Robot tab; bridge-side *execution* of undock/dock is Phase 8 scope. A `GUIDEMATE_FAKE_ROBOT=1` fake registry lets the Playwright 3-context e2e run against **real DynamoDB** without a live bridge.
 
 **Tech Stack:** Python 3.10, boto3 (DynamoDB resource), pydantic v2, FastAPI + uvicorn, Strands (Bedrock `us.anthropic.claude-sonnet-4-6`), moto (offline DynamoDB for unit TDD), Playwright (pytest-playwright, Chromium) for the e2e.
 
@@ -17,7 +17,8 @@ Every task's requirements implicitly include this section.
 - **TDD**: write the failing test first, run it red, implement the minimum, run it green, then commit — every task.
 - **Commit after every task** with a `Kalhar:` message prefix. **NEVER** add any Claude/AI/co-author line or `Co-Authored-By`. Do not push (the user pushes).
 - **Never `pkill -f`** anything on the Pi (gotcha #6 — it self-matches the shell). This plan never kills robot processes.
-- **Robot 468 stays docked and motion-locked**: nothing here publishes real motion; the bridge/fake stays in dry-run, the Device Shadow is **not touched**, and no `cmd_vel` is ever published. Direct `dock` commands from the admin panel are exercised **only through their refusal path**.
+- **Robot 468 stays docked and motion-locked**: nothing here publishes real motion; the bridge/fake stays in dry-run, the Device Shadow is **not touched**, and no `cmd_vel` is ever published. Direct `dock` commands from the admin panel **and the assignment-triggered `undock`/`dock` commands** are exercised **only through their refusal path** — the refusal ack IS the test evidence; show it in the admin UI, don't hide it.
+- **Shared schema is frozen** for the parallel phases with **one sanctioned exception** (spec delta, commit 91d9bcb): adding `"dock"`/`"undock"` to `_MOTION_NAMES` in `shared/guidemate_msgs/guidemate_msgs/messages.py` (Task 3). No other change to `shared/guidemate_msgs` is permitted in Phase 4.
 - **No credentials or IoT endpoints committed** to the repo. IoT data endpoint is discovered at runtime via `aws iot describe-endpoint --endpoint-type iot:Data-ATS`. Cert/key files stay out of git.
 - **On-Pi work over SSH is additive only** — this plan does not touch the Pi.
 - **Every new AWS resource** is tagged `guidemate-poc` and documented in `docs/agent-poc/access-ground-truth.md`. (Phase 4 creates no new AWS resource — the four DynamoDB tables already exist from Phase 3's `scripts/create_dynamo_tables.py`.)
@@ -32,6 +33,7 @@ Every task's requirements implicitly include this section.
 - **Phase 3 → `static/admin/`**: a tabbed admin UI shell (Flags / Robot / KB tabs). Task 6 **adds** Requests and Sessions tabs and extends the Robot tab, following the existing tab pattern.
 - **Phase 2 → `RobotRegistry`**: `registry.get_status(robot_id) -> dict` including heartbeat + safety gates; `registry.send_command(robot_id, cmd: Command, timeout_s=5.0) -> list[Ack]` (already present from Phase 0-1). `DogAgent` already exposes `run_motion` / `stop` / `get_status` tools (Phase 2). Task 4 wraps tool registration with lock gating without removing Phase 2's tools.
 - **Config partition key:** the robot lock is stored in `guidemate-config` under a partition-key value `robot_lock#<robot_id>`. `sessions.CONFIG_PK` (default `"key"`) **must equal** the partition-key *attribute name* that `scripts/create_dynamo_tables.py` gave `guidemate-config`. Verify once with `aws dynamodb describe-table --table-name guidemate-config --query 'Table.KeySchema'` and set `CONFIG_PK` to match before running the e2e.
+- **Spec delta (commit 91d9bcb) — assignment-triggered dock/undock:** approve/reassign publish `Command(type="motion", name="undock")` to the newly bound robot (fire-and-forget with ack capture for admin display); abort/reassign-away/release publish `Command(type="motion", name="dock")` best-effort. **Bridge-side execution** of undock/dock (Create 3 ROS dock actions + the dock-guard exemption for undock/dock/stop) is **Phase 8 scope** — Phase 4 only *sends* the commands and *displays* outcomes. On robot 468 today these commands are refused (`docked` / `motion_disabled`, or the executor's "unknown choreography" failed ack, depending on which layer rejects first) — that refusal ack **is** the test evidence.
 
 ---
 
@@ -39,10 +41,13 @@ Every task's requirements implicitly include this section.
 
 ```
 cs7980-guide-mate/
+├── shared/guidemate_msgs/
+│   ├── guidemate_msgs/messages.py # MODIFY (Task 3) — add "dock"/"undock" to _MOTION_NAMES (sanctioned)
+│   └── tests/test_messages.py     # MODIFY (Task 3) — dock/undock round-trip test
 ├── agent_service/
 │   ├── guidemate_agent/
-│   │   ├── sessions.py            # NEW (Tasks 1-3) — session/message/request/lock store
-│   │   ├── fake_robot.py          # NEW (Task 5) — GUIDEMATE_FAKE_ROBOT registry
+│   │   ├── sessions.py            # NEW (Tasks 1-3) — session/message/request/lock store + assign events
+│   │   ├── fake_robot.py          # NEW (Task 5) — GUIDEMATE_FAKE_ROBOT registry (records commands)
 │   │   ├── dog_agent.py           # MODIFY (Task 4) — user_name + history + lock-gated tools
 │   │   ├── app.py                 # MODIFY (Task 5) — session + companion endpoints, fake wiring
 │   │   └── admin.py               # MODIFY (Task 6) — requests/sessions/robot-control routes
@@ -53,7 +58,7 @@ cs7980-guide-mate/
 │       ├── conftest.py            # NEW (Task 1) — moto `ddb` fixture (tables + dummy creds)
 │       ├── test_sessions.py       # NEW (Task 1) — sessions + messages
 │       ├── test_locks.py          # NEW (Task 2) — requests + atomic robot lock
-│       ├── test_orchestration.py  # NEW (Task 3) — approve/deny/abort/reassign
+│       ├── test_orchestration.py  # NEW (Task 3) — approve/deny/abort/reassign + undock/dock events
 │       ├── test_dog_agent.py      # MODIFY (Task 4) — virtual vs physical emote, prompt builder
 │       ├── test_app.py            # MODIFY (Task 5) — session/companion API
 │       ├── test_admin.py          # MODIFY (Task 6) — admin request/robot routes (or NEW if Phase 3 had none)
@@ -500,27 +505,89 @@ git commit -m "Kalhar: companion requests + atomic per-robot lock in sessions.py
 
 ---
 
-## Task 3: Approve / deny / abort / reassign orchestration (`sessions.py`)
+## Task 3: Approve / deny / abort / reassign orchestration + assignment-triggered undock/dock (`sessions.py`)
 
 **Files:**
 - Modify: `agent_service/guidemate_agent/sessions.py`
-- Test: `agent_service/tests/test_orchestration.py`
+- Modify: `shared/guidemate_msgs/guidemate_msgs/messages.py` (the **one sanctioned** shared-schema change: add `"dock"`/`"undock"` to `_MOTION_NAMES`)
+- Test: `shared/guidemate_msgs/tests/test_messages.py` (append), `agent_service/tests/test_orchestration.py`
 
 **Interfaces:**
-- Consumes: everything from Tasks 1-2.
+- Consumes: everything from Tasks 1-2; `Command` (shared schema); a `registry` object with `send_command(robot_id, cmd, timeout_s=5.0) -> list[Ack]` (Phase 0-1 `RobotRegistry`, or Task 5's `FakeRobotRegistry`).
 - Produces:
+  - Schema: `_MOTION_NAMES = ("circle", "spin", "dock", "undock")` in `shared/guidemate_msgs/guidemate_msgs/messages.py` — `Command(type="motion", name="dock"/"undock")` now validates.
   - `get_session_state(session_id) -> dict` — `{"request_status": str, "robot_id": Optional[str]}` where `robot_id` uses `robot_for_session` (authoritative). This backs `GET /api/session/{id}/state`.
-  - `_bind_robot(robot_id, session_id) -> Optional[str]` — internal: if another session holds the lock, release it and mark that previous holder **aborted** (`request_status="aborted"`, `robot_id` cleared), then acquire the lock for `session_id` and bind it (`robot_id=robot_id`, `request_status="approved"`). Returns the aborted previous `session_id` (or `None`).
-  - `approve_request(request_id, robot_id) -> dict` — `{"session_id", "aborted_session_id"}`; sets the request `status="approved"` and binds its session via `_bind_robot`.
-  - `deny_request(request_id) -> None` — request `status="denied"`, session `request_status="denied"`.
-  - `abort_robot(robot_id) -> Optional[str]` — release the lock, mark the holder aborted, return the freed `session_id` (or `None`).
-  - `reassign_robot(robot_id, session_id) -> Optional[str]` — `_bind_robot` to a chosen session (used by the Robot tab even when that session never filed a request); returns the aborted previous holder.
+  - `_send_assignment_command(registry, robot_id, name) -> dict` — internal: best-effort publish of `Command(type="motion", name=name)` (`name` ∈ `("undock","dock")`); never raises; records + returns the event dict.
+  - `_record_assign_event(robot_id, action, acks) -> dict` — internal: appends `{action, ts, acks, refused}` to the per-robot event list in `guidemate-config` (item `{CONFIG_PK: "robot_assign_events#<robot_id>", "events_json": <JSON str>}`, capped to the last 10; acks stored JSON-serialized to avoid DynamoDB float restrictions).
+  - `get_assign_events(robot_id) -> list[dict]` — the recorded events, oldest-first; backs the admin Robot tab display (Task 6).
+  - `_bind_robot(robot_id, session_id, registry=None) -> Optional[str]` — internal: if another session holds the lock, release it, mark that previous holder **aborted** (`request_status="aborted"`, `robot_id` cleared), and publish a best-effort **`dock`**; then acquire the lock for `session_id`, bind it (`robot_id=robot_id`, `request_status="approved"`), and publish a best-effort **`undock`**. Returns the aborted previous `session_id` (or `None`).
+  - `approve_request(request_id, robot_id, registry=None) -> dict` — `{"session_id", "aborted_session_id"}`; sets the request `status="approved"` and binds its session via `_bind_robot` (which fires the undock).
+  - `deny_request(request_id) -> None` — request `status="denied"`, session `request_status="denied"`. No robot command.
+  - `abort_robot(robot_id, registry=None) -> Optional[str]` — release the lock, mark the holder aborted, publish a best-effort **`dock`**, return the freed `session_id` (or `None`).
+  - `reassign_robot(robot_id, session_id, registry=None) -> Optional[str]` — `_bind_robot` to a chosen session (used by the Robot tab even when that session never filed a request); returns the aborted previous holder. Fires `dock` (for the old holder) then `undock` (for the new one).
+- **Phase 8 boundary (spec delta, commit 91d9bcb):** bridge-side *execution* of `undock`/`dock` (Create 3 ROS dock actions + the dock-guard exemption for undock/dock/stop) is **Phase 8 scope**. Phase 4 only *sends* these commands and *displays* their outcomes. On robot 468 today they **will be refused** (`docked` / `motion_disabled` from the Phase 2 safety layer, or the executor's "unknown choreography" failed ack) — that refusal is expected and is the surfaced evidence, not an error to hide.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write the failing schema test (dock/undock become valid motion names)**
+
+Append to `shared/guidemate_msgs/tests/test_messages.py`:
+```python
+def test_motion_accepts_dock_and_undock_roundtrip():
+    for name in ("dock", "undock"):
+        cmd = Command(type="motion", name=name)
+        restored = Command.model_validate_json(cmd.model_dump_json())
+        assert restored == cmd
+        assert restored.type == "motion"
+        assert restored.name == name
+```
+
+- [ ] **Step 2: Run the schema test to verify it fails**
+
+Run: `cd ~/cs7980-guide-mate && .venv/bin/python -m pytest shared/guidemate_msgs/tests/test_messages.py -q`
+Expected: FAIL — `ValidationError: motion name must be one of ('circle', 'spin'), got 'dock'`.
+
+- [ ] **Step 3: Make the sanctioned schema change**
+
+In `shared/guidemate_msgs/guidemate_msgs/messages.py`, change the motion-names line:
+```python
+_MOTION_NAMES = ("circle", "spin")
+```
+to:
+```python
+# "dock"/"undock" added for the assignment-triggered dock/undock flow (spec delta,
+# commit 91d9bcb). The choreography library has NO dock/undock sequence — the bridge
+# executor's build() raises ValueError for them, acking `failed` ("unknown
+# choreography"), and the Phase 2 safety layer refuses them as motion while locked.
+# Bridge-side EXECUTION (Create 3 dock actions + dock-guard exemption) is Phase 8.
+_MOTION_NAMES = ("circle", "spin", "dock", "undock")
+```
+
+- [ ] **Step 4: Run the full shared suite to verify green (choreography untouched)**
+
+Run: `cd ~/cs7980-guide-mate && .venv/bin/python -m pytest shared/guidemate_msgs/tests -q`
+Expected: PASS (all shared tests, including the new round-trip). The choreography tests still pass because their `PRIMITIVES` dict does not include dock/undock; `build()` intentionally has no dock/undock branch (Phase 8).
+
+- [ ] **Step 5: Write the failing orchestration tests**
 
 `agent_service/tests/test_orchestration.py`:
 ```python
+from guidemate_msgs.messages import Ack
+
 from guidemate_agent import sessions
+
+
+class RecordingRegistry:
+    """Registry stand-in that records every command and refuses them all
+    (matching robot 468's motion-locked reality for dock/undock)."""
+
+    def __init__(self):
+        self.sent = []
+
+    def send_command(self, robot_id, cmd, timeout_s=5.0):
+        self.sent.append((robot_id, cmd.type, cmd.name))
+        return [
+            Ack(cmd_id=cmd.cmd_id, state="received"),
+            Ack(cmd_id=cmd.cmd_id, state="failed", reason="motion_disabled (docked)"),
+        ]
 
 
 def test_approve_binds_session_and_lock(ddb):
@@ -575,18 +642,76 @@ def test_reassign_without_prior_request(ddb):
     assert aborted == a
     assert sessions.robot_for_session(b) == "turtlebot468"
     assert sessions.get_session_state(a) == {"request_status": "aborted", "robot_id": None}
+
+
+# ------- assignment-triggered undock/dock (spec delta, commit 91d9bcb) -------
+def test_approve_publishes_undock_and_records_refusal(ddb):
+    reg = RecordingRegistry()
+    sid = sessions.create_session("Ada", True)
+    rid = sessions.create_request(sid)
+    sessions.approve_request(rid, "turtlebot468", registry=reg)
+    assert reg.sent == [("turtlebot468", "motion", "undock")]
+    events = sessions.get_assign_events("turtlebot468")
+    assert events[-1]["action"] == "undock"
+    assert events[-1]["refused"] is True
+    assert events[-1]["acks"][-1]["reason"] == "motion_disabled (docked)"
+
+
+def test_abort_publishes_dock(ddb):
+    reg = RecordingRegistry()
+    sid = sessions.create_session("Ada", True)
+    sessions.approve_request(sessions.create_request(sid), "turtlebot468", registry=reg)
+    sessions.abort_robot("turtlebot468", registry=reg)
+    assert reg.sent[-1] == ("turtlebot468", "motion", "dock")
+    assert [e["action"] for e in sessions.get_assign_events("turtlebot468")] == [
+        "undock", "dock"
+    ]
+
+
+def test_reassign_publishes_dock_then_undock(ddb):
+    reg = RecordingRegistry()
+    a = sessions.create_session("A", True)
+    b = sessions.create_session("B", True)
+    sessions.approve_request(sessions.create_request(a), "turtlebot468", registry=reg)
+    reg.sent.clear()
+    sessions.reassign_robot("turtlebot468", b, registry=reg)
+    assert reg.sent == [
+        ("turtlebot468", "motion", "dock"),      # unassign the old holder
+        ("turtlebot468", "motion", "undock"),    # assign the new one
+    ]
+
+
+def test_no_registry_records_undelivered_event(ddb):
+    # Best-effort: orchestration must work (and record) even with no registry.
+    sid = sessions.create_session("Ada", True)
+    sessions.approve_request(sessions.create_request(sid), "turtlebot468")
+    events = sessions.get_assign_events("turtlebot468")
+    assert events[-1]["action"] == "undock"
+    assert events[-1]["acks"] == []
+    assert events[-1]["refused"] is False
+    assert sessions.robot_for_session(sid) == "turtlebot468"
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [ ] **Step 6: Run the tests to verify they fail**
 
 Run: `cd ~/cs7980-guide-mate && .venv/bin/python -m pytest agent_service/tests/test_orchestration.py -q`
 Expected: FAIL — `AttributeError: module 'guidemate_agent.sessions' has no attribute 'approve_request'`.
 
-- [ ] **Step 3: Append the orchestration functions to `sessions.py`**
+- [ ] **Step 7: Append the orchestration functions to `sessions.py`**
 
-Add to the end of `agent_service/guidemate_agent/sessions.py`:
+First add two imports to the top of `agent_service/guidemate_agent/sessions.py` (below the existing imports):
+```python
+import json
+
+from guidemate_msgs.messages import Command
+```
+
+Then add to the end of the file:
 ```python
 # ------------------------------------------------------------ orchestration ----
+ASSIGN_EVENTS_KEEP = 10
+
+
 def get_session_state(session_id: str) -> dict:
     session = get_session(session_id) or {}
     return {
@@ -599,26 +724,71 @@ def _mark_session_aborted(session_id: str) -> None:
     _update_session(session_id, request_status="aborted", robot_id=None)
 
 
-def _bind_robot(robot_id: str, session_id: str) -> Optional[str]:
+# ---- assignment-triggered undock/dock (spec delta, commit 91d9bcb) ----
+# Phase 4 only SENDS these and records the outcome; bridge-side execution
+# (Create 3 dock actions + dock-guard exemption) is Phase 8. On robot 468 the
+# expected outcome is a refusal ack — that is evidence, not an error.
+def _record_assign_event(robot_id: str, action: str, acks: list) -> dict:
+    event = {
+        "action": action,                       # "undock" | "dock"
+        "ts": _now_iso(),
+        "acks": [a.model_dump() for a in acks],
+        "refused": bool(acks) and acks[-1].state == "failed",
+    }
+    key = {CONFIG_PK: f"robot_assign_events#{robot_id}"}
+    item = _table(TABLE_CONFIG).get_item(Key=key).get("Item")
+    events = json.loads(item["events_json"]) if item else []
+    events.append(event)
+    events = events[-ASSIGN_EVENTS_KEEP:]
+    # Stored as a JSON string: sidesteps DynamoDB's float restriction on ack
+    # fields (e.g. battery) and keeps the item a single small attribute.
+    new_item = dict(key)
+    new_item["events_json"] = json.dumps(events)
+    _table(TABLE_CONFIG).put_item(Item=new_item)
+    return event
+
+
+def get_assign_events(robot_id: str) -> list[dict]:
+    key = {CONFIG_PK: f"robot_assign_events#{robot_id}"}
+    item = _table(TABLE_CONFIG).get_item(Key=key).get("Item")
+    return json.loads(item["events_json"]) if item else []
+
+
+def _send_assignment_command(registry, robot_id: str, name: str) -> dict:
+    """Best-effort dock/undock on (un)assignment. Never raises."""
+    acks = []
+    if registry is not None:
+        try:
+            acks = registry.send_command(
+                robot_id, Command(type="motion", name=name)
+            )
+        except Exception:  # noqa: BLE001 — best-effort by design
+            acks = []
+    return _record_assign_event(robot_id, name, acks)
+
+
+def _bind_robot(robot_id: str, session_id: str, registry=None) -> Optional[str]:
     aborted = None
     holder = get_lock_holder(robot_id)
     if holder and holder != session_id:
         release_robot_lock(robot_id)
         _mark_session_aborted(holder)
+        _send_assignment_command(registry, robot_id, "dock")     # unassign -> dock
         aborted = holder
     if not acquire_robot_lock(robot_id, session_id):
         # Lost a race (or same session re-binding): reset and take it.
         release_robot_lock(robot_id)
         acquire_robot_lock(robot_id, session_id)
     _update_session(session_id, robot_id=robot_id, request_status="approved")
+    _send_assignment_command(registry, robot_id, "undock")       # assign -> undock
     return aborted
 
 
-def approve_request(request_id: str, robot_id: str) -> dict:
+def approve_request(request_id: str, robot_id: str, registry=None) -> dict:
     req = get_request(request_id)
     if not req:
         raise KeyError(f"no such request {request_id}")
-    aborted = _bind_robot(robot_id, req["session_id"])
+    aborted = _bind_robot(robot_id, req["session_id"], registry=registry)
     _set_request_status(request_id, "approved")
     return {"session_id": req["session_id"], "aborted_session_id": aborted}
 
@@ -631,29 +801,31 @@ def deny_request(request_id: str) -> None:
     _update_session(req["session_id"], request_status="denied")
 
 
-def abort_robot(robot_id: str) -> Optional[str]:
+def abort_robot(robot_id: str, registry=None) -> Optional[str]:
     holder = get_lock_holder(robot_id)
     release_robot_lock(robot_id)
     if holder:
         _mark_session_aborted(holder)
+        _send_assignment_command(registry, robot_id, "dock")     # unassign -> dock
     return holder
 
 
-def reassign_robot(robot_id: str, session_id: str) -> Optional[str]:
-    return _bind_robot(robot_id, session_id)
+def reassign_robot(robot_id: str, session_id: str, registry=None) -> Optional[str]:
+    return _bind_robot(robot_id, session_id, registry=registry)
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 8: Run the tests to verify they pass**
 
 Run: `cd ~/cs7980-guide-mate && .venv/bin/python -m pytest agent_service/tests/test_orchestration.py -q`
-Expected: PASS (5 passed).
+Expected: PASS (9 passed).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 cd ~/cs7980-guide-mate
-git add agent_service/guidemate_agent/sessions.py agent_service/tests/test_orchestration.py
-git commit -m "Kalhar: approve/deny/abort/reassign companion orchestration in sessions.py"
+git add shared/guidemate_msgs/guidemate_msgs/messages.py shared/guidemate_msgs/tests/test_messages.py \
+  agent_service/guidemate_agent/sessions.py agent_service/tests/test_orchestration.py
+git commit -m "Kalhar: companion orchestration + assignment-triggered undock/dock (schema: dock/undock motion names)"
 ```
 
 ---
@@ -917,7 +1089,7 @@ git commit -m "Kalhar: DogAgent gains user name, history, and lock-gated virtual
 **Interfaces:**
 - Consumes: `sessions.*` (Tasks 1-3), `DogAgent.chat` (Task 4), `Config` (Phase 0-1), `RobotRegistry` (Phase 0-1).
 - Produces:
-  - `class FakeRobotRegistry(robot_ids)` — drop-in for `RobotRegistry` used when `GUIDEMATE_FAKE_ROBOT=1`: `connect()` no-op; `send_command(robot_id, cmd, timeout_s=5.0)` returns simulated `received→done` acks for emotes / `circle` / `spin` / `stop`, and a `received` + `failed(reason="motion_disabled")` pair for `dock`/`undock`; `get_status(robot_id)` returns a canned docked/motion-locked status.
+  - `class FakeRobotRegistry(robot_ids)` — drop-in for `RobotRegistry` used when `GUIDEMATE_FAKE_ROBOT=1`: `connect()` no-op; `send_command(robot_id, cmd, timeout_s=5.0)` **records every command in `self.sent`** (list of `(robot_id, type, name)` — the e2e's evidence that the assignment undock was actually sent) and returns simulated `received→done` acks for emotes / `circle` / `spin` / `stop`, and a `received` + `failed(reason="motion_disabled …")` pair for `dock`/`undock` (matching robot 468's motion-locked refusal); `get_status(robot_id)` returns a canned docked/motion-locked status.
   - New endpoints on the existing `app`:
     - `POST /api/session {name, comfortable}` → `{"session_id": str}`.
     - `POST /api/chat {message, session_id?}` → `DogAgent.chat` JSON. When `session_id` is present: appends the user message, loads the last 10 prior messages as history, resolves the bound robot via `sessions.robot_for_session`, calls the agent with `user_name`/`history`/`robot_id`, then appends the dog reply.
@@ -1009,8 +1181,9 @@ Expected: FAIL — no `/api/session` route (404) / `GUIDEMATE_FAKE_ROBOT` unhand
 """In-process fake robot registry for e2e/demo without a live bridge.
 
 Enabled by GUIDEMATE_FAKE_ROBOT=1. Emotes and circle/spin/stop return simulated
-success; dock/undock return the bridge's motion-locked refusal so the admin
-'dock' control can be exercised through its refusal path only.
+success; dock/undock return the bridge's motion-locked refusal so both the admin
+'dock' control and the assignment-triggered undock/dock are exercised through
+their refusal path only. Every command is recorded in `self.sent`.
 """
 from __future__ import annotations
 
@@ -1018,17 +1191,17 @@ from datetime import datetime, timezone
 
 from guidemate_msgs.messages import Ack
 
-_SIMULATED = {("emote",), ("motion", "circle"), ("motion", "spin"), ("stop", "stop")}
-
 
 class FakeRobotRegistry:
     def __init__(self, robot_ids: list[str]) -> None:
         self._robot_ids = robot_ids
+        self.sent: list[tuple] = []      # (robot_id, cmd.type, cmd.name)
 
     def connect(self) -> None:
         return None
 
     def send_command(self, robot_id, cmd, timeout_s: float = 5.0) -> list[Ack]:
+        self.sent.append((robot_id, cmd.type, cmd.name))
         if cmd.type == "motion" and cmd.name in ("dock", "undock"):
             return [
                 Ack(cmd_id=cmd.cmd_id, state="received"),
@@ -1152,13 +1325,14 @@ git commit -m "Kalhar: session + companion HTTP API + GUIDEMATE_FAKE_ROBOT regis
 - Consumes: Phase 3's `router` (`APIRouter`) + `admin_required` dependency; `sessions.*` (Tasks 1-3); `request.app.state.registry` (Task 5). `Command` (Phase 0-1).
 - Produces (all `Depends(admin_required)`), added to the existing router:
   - `GET  /admin/api/requests` → `sessions.list_pending_requests()`.
-  - `POST /admin/api/requests/{request_id}/approve {robot_id}` → `sessions.approve_request(...)`.
+  - `POST /admin/api/requests/{request_id}/approve {robot_id}` → `sessions.approve_request(..., registry=request.app.state.registry)` — the bind fires the assignment `undock` (Task 3); its refusal ack lands in the assign-events log.
   - `POST /admin/api/requests/{request_id}/deny` → `{"ok": True}`.
   - `GET  /admin/api/sessions` → `sessions.list_sessions()`.
   - `GET  /admin/api/sessions/{session_id}/messages` → `sessions.get_messages(session_id)`.
-  - `POST /admin/api/robot/{robot_id}/abort` → `{"freed_session_id": ...}`.
-  - `POST /admin/api/robot/{robot_id}/reassign {session_id}` → `{"aborted_session_id": ...}`.
-  - `POST /admin/api/robot/{robot_id}/command {type, name}` → `{"refused": bool, "acks": [...]}` — builds `Command(type, name)`; if it fails schema validation (e.g. `dock`, which is motion and blocked while locked) it returns a synthesized `failed`/`motion_disabled` refusal without publishing; otherwise it publishes via the registry and reports the acks.
+  - `POST /admin/api/robot/{robot_id}/abort` → `{"freed_session_id": ...}` — passes the registry so the unassign fires the best-effort `dock`.
+  - `POST /admin/api/robot/{robot_id}/reassign {session_id}` → `{"aborted_session_id": ...}` — passes the registry (`dock` for the old holder, `undock` for the new).
+  - `GET  /admin/api/robot/{robot_id}/assign-events` → `sessions.get_assign_events(robot_id)` — the undock/dock attempts with their acks/refusals; rendered by the Robot tab.
+  - `POST /admin/api/robot/{robot_id}/command {type, name}` → `{"refused": bool, "acks": [...]}` — builds `Command(type, name)`. `dock`/`undock` now **validate** (Task 3 schema change) and are published via the registry, whose `failed` refusal ack comes back (`refused=True`) — show it. Commands that fail schema validation entirely get a synthesized `failed` refusal without publishing.
 
 **Note on the router prefix:** Phase 3 mounts the router; assume it carries the `/admin` prefix so the paths above resolve as written. If Phase 3 mounted it with `prefix="/admin"`, define the routes below with the sub-paths only (`/api/requests`, ...). Match the existing routes in `admin.py` — read one to see whether they already include `/admin`.
 
@@ -1213,9 +1387,25 @@ def test_dock_command_is_refused(monkeypatch, ddb):
     appmod, client = _admin_client(monkeypatch, ddb)
     with client:
         out = client.post("/admin/api/robot/turtlebot468/command",
-                          json={"type": "dock", "name": "dock"}).json()
+                          json={"type": "motion", "name": "dock"}).json()
         assert out["refused"] is True
         assert "motion" in out["acks"][-1]["reason"].lower()
+
+
+def test_approve_fires_undock_and_event_is_visible(monkeypatch, ddb):
+    appmod, client = _admin_client(monkeypatch, ddb)
+    with client:
+        sid = sessions.create_session("Ada", True)
+        rid = sessions.create_request(sid)
+        client.post(f"/admin/api/requests/{rid}/approve",
+                    json={"robot_id": "turtlebot468"})
+        # The fake registry recorded the assignment undock...
+        assert ("turtlebot468", "motion", "undock") in client.app.state.registry.sent
+        # ...and its refusal is visible where the Robot tab reads it.
+        events = client.get("/admin/api/robot/turtlebot468/assign-events").json()
+        assert events[-1]["action"] == "undock"
+        assert events[-1]["refused"] is True
+        assert "motion_disabled" in events[-1]["acks"][-1]["reason"]
 
 
 def test_sessions_transcript(monkeypatch, ddb):
@@ -1265,8 +1455,11 @@ def admin_list_requests(_=Depends(admin_required)) -> list:
 
 
 @router.post("/admin/api/requests/{request_id}/approve")
-def admin_approve(request_id: str, body: _ApproveBody, _=Depends(admin_required)) -> dict:
-    return sessions.approve_request(request_id, body.robot_id)
+def admin_approve(request_id: str, body: _ApproveBody, request: Request,
+                  _=Depends(admin_required)) -> dict:
+    # Binding fires the assignment undock (best-effort; refusal recorded).
+    return sessions.approve_request(request_id, body.robot_id,
+                                    registry=request.app.state.registry)
 
 
 @router.post("/admin/api/requests/{request_id}/deny")
@@ -1286,14 +1479,25 @@ def admin_session_messages(session_id: str, _=Depends(admin_required)) -> list:
 
 
 @router.post("/admin/api/robot/{robot_id}/abort")
-def admin_abort_robot(robot_id: str, _=Depends(admin_required)) -> dict:
-    return {"freed_session_id": sessions.abort_robot(robot_id)}
+def admin_abort_robot(robot_id: str, request: Request,
+                      _=Depends(admin_required)) -> dict:
+    # Unassign fires a best-effort dock (refusal recorded).
+    return {"freed_session_id": sessions.abort_robot(
+        robot_id, registry=request.app.state.registry)}
 
 
 @router.post("/admin/api/robot/{robot_id}/reassign")
-def admin_reassign_robot(robot_id: str, body: _ReassignBody,
+def admin_reassign_robot(robot_id: str, body: _ReassignBody, request: Request,
                          _=Depends(admin_required)) -> dict:
-    return {"aborted_session_id": sessions.reassign_robot(robot_id, body.session_id)}
+    # Fires dock (old holder) then undock (new holder), both best-effort.
+    return {"aborted_session_id": sessions.reassign_robot(
+        robot_id, body.session_id, registry=request.app.state.registry)}
+
+
+@router.get("/admin/api/robot/{robot_id}/assign-events")
+def admin_assign_events(robot_id: str, _=Depends(admin_required)) -> list:
+    """Assignment-triggered undock/dock attempts + their acks/refusals."""
+    return sessions.get_assign_events(robot_id)
 
 
 @router.post("/admin/api/robot/{robot_id}/command")
@@ -1302,15 +1506,16 @@ def admin_robot_command(robot_id: str, body: _RobotCommandBody, request: Request
     try:
         cmd = Command(type=body.type, name=body.name)
     except ValidationError:
-        # dock/undock (and any non-choreography command) are motion and refused
-        # while motion is locked — surface the refusal without publishing.
+        # Unknown command shape — synthesize a refusal without publishing.
+        # (dock/undock DO validate since Task 3's schema change; they are
+        # published below and the robot/fake returns the real refusal ack.)
         return {
             "refused": True,
             "acks": [{
                 "cmd_id": new_cmd_id(),
                 "state": "failed",
-                "reason": (f"blocked: {body.type}/{body.name} is a motion command, "
-                           "refused while motion is locked"),
+                "reason": (f"blocked: {body.type}/{body.name} is not a valid "
+                           "command; nothing published"),
             }],
         }
     acks = request.app.state.registry.send_command(robot_id, cmd)
@@ -1321,7 +1526,7 @@ def admin_robot_command(robot_id: str, body: _RobotCommandBody, request: Request
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `cd ~/cs7980-guide-mate && .venv/bin/python -m pytest agent_service/tests/test_admin.py -q`
-Expected: PASS (4 passed). If the login POST 404s, read `admin.py` for Phase 3's real login path/body and update `_admin_client` + the e2e helper (Task 7) to match.
+Expected: PASS (5 passed). If the login POST 404s, read `admin.py` for Phase 3's real login path/body and update `_admin_client` + the e2e helper (Task 7) to match.
 
 - [ ] **Step 5: Add the Requests + Sessions tabs and Robot controls to the admin UI**
 
@@ -1349,6 +1554,10 @@ Modify `agent_service/static/admin/index.html`, following the existing tab patte
 <button id="robot-dock">Send dock (expect refusal)</button>
 <button id="robot-stop">Send stop</button>
 <div id="robot-command-result"></div>
+<h3>Assignment undock/dock attempts</h3>
+<!-- Auto-refreshes every 3 s; refusals shown deliberately (they ARE the
+     Phase 4 evidence — bridge-side execution is Phase 8). -->
+<pre id="assign-event">No assignment commands yet.</pre>
 
 <script>
   const ROBOT_ID = "turtlebot468";
@@ -1420,9 +1629,25 @@ Modify `agent_service/static/admin/index.html`, following the existing tab patte
       (out.refused ? "REFUSED: " : "OK: ") + (last ? last.reason || last.state : "");
   }
   document.getElementById("robot-dock")?.addEventListener("click",
-    () => sendRobotCommand("dock", "dock"));
+    () => sendRobotCommand("motion", "dock"));
   document.getElementById("robot-stop")?.addEventListener("click",
     () => sendRobotCommand("stop", "stop"));
+  async function reloadAssignEvents() {
+    try {
+      const evs = await (await fetch(`/admin/api/robot/${ROBOT_ID}/assign-events`)).json();
+      document.getElementById("assign-event").textContent = evs.length
+        ? evs.map((e) => {
+            const last = e.acks[e.acks.length - 1];
+            const outcome = e.refused
+              ? "REFUSED — " + (last.reason || last.state)
+              : (last ? last.state : "no ack (robot unreachable)");
+            return `${e.ts}  ${e.action}: ${outcome}`;
+          }).join("\n")
+        : "No assignment commands yet.";
+    } catch (err) { /* keep polling */ }
+  }
+  reloadAssignEvents();
+  setInterval(reloadAssignEvents, 3000);
 </script>
 ```
 
@@ -1454,7 +1679,7 @@ git commit -m "Kalhar: admin request/session/robot-control endpoints + admin UI 
 
 **Interfaces:**
 - Consumes: all API from Tasks 5-6; `GUIDEMATE_FAKE_ROBOT=1`; the admin login route (Phase 3).
-- Produces: a full chat page with intake, per-session chat, a companion request banner, virtual/physical emote display, 3-second `state` polling, and a Start-new-session button — and a gated Playwright 3-context e2e proving lock exclusivity, reassign/abort within 6 s, and dock refusal.
+- Produces: a full chat page with intake, per-session chat, a companion request banner, virtual/physical emote display, 3-second `state` polling, and a Start-new-session button — and a gated Playwright 3-context e2e proving lock exclusivity, reassign/abort within 6 s, dock refusal, **and that the assignment-triggered undock attempt + its refusal ack are visible on the admin Robot tab** (fake robot records the undock; the refusal is deliberate evidence — bridge-side execution is Phase 8).
 
 - [ ] **Step 1: Rewrite the chat page `static/index.html`**
 
@@ -1710,6 +1935,25 @@ def test_companion_flow_exclusivity_reassign_abort_and_dock_refusal(service, bro
     admin.request.post(base + f"/admin/api/requests/{rid}/approve",
                        data={"robot_id": "turtlebot468"})
 
+    # The approve fired an assignment undock; its refusal is recorded and
+    # exposed where the admin Robot tab reads it (spec delta 91d9bcb).
+    events = admin.request.get(
+        base + "/admin/api/robot/turtlebot468/assign-events").json()
+    assert events[-1]["action"] == "undock"
+    assert events[-1]["refused"] is True
+    assert "motion_disabled" in events[-1]["acks"][-1]["reason"]
+
+    # ...and it renders on the admin Robot tab (auto-refreshing panel; the
+    # cookie set via admin.request rides this page too).
+    admin_page = admin.new_page()
+    admin_page.goto(base + "/admin")
+    admin_page.wait_for_function(
+        "() => { const el = document.getElementById('assign-event');"
+        " return el && el.textContent.includes('undock')"
+        " && el.textContent.includes('REFUSED'); }",
+        timeout=8000,
+    )
+
     # A now drives the physical robot: acks visible.
     page_a.wait_for_selector("text=Connected to turtlebot468", timeout=8000)
     _send(page_a, "wiggle again")
@@ -1726,10 +1970,18 @@ def test_companion_flow_exclusivity_reassign_abort_and_dock_refusal(service, bro
     # A's UI shows aborted within ~6 s (2 polls).
     page_a.wait_for_selector("text=disconnected by admin", timeout=6500)
 
-    # Admin dock command is refused.
+    # The reassign fired dock (A's unassign) then undock (B's assign),
+    # both recorded — refusals expected and shown.
+    events = admin.request.get(
+        base + "/admin/api/robot/turtlebot468/assign-events").json()
+    assert [e["action"] for e in events[-2:]] == ["dock", "undock"]
+
+    # Admin direct dock command is refused (valid motion command since the
+    # Task 3 schema change; the fake/bridge refuses it while motion-locked).
     out = admin.request.post(base + "/admin/api/robot/turtlebot468/command",
-                             data={"type": "dock", "name": "dock"}).json()
+                             data={"type": "motion", "name": "dock"}).json()
     assert out["refused"] is True
+    assert "motion" in out["acks"][-1]["reason"].lower()
 
     for c in (ctx_a, ctx_b, admin):
         c.close()
@@ -1744,7 +1996,7 @@ Expected: FAIL initially if the chat page or admin login route isn't wired — t
 
 Prereq: the four DynamoDB tables exist (Phase 3 `scripts/create_dynamo_tables.py`) and `sessions.CONFIG_PK` matches `guidemate-config`'s partition-key attribute name.
 Run: `cd ~/cs7980-guide-mate && GUIDEMATE_INTEGRATION=1 .venv/bin/python -m pytest agent_service/tests/integration/test_companion_e2e.py -q`
-Expected: PASS (1 passed). This proves lock exclusivity (A physical while B virtual), reassign→abort surfacing on A's UI within 6 s, and the dock refusal — the Phase 4 exit criteria.
+Expected: PASS (1 passed). This proves lock exclusivity (A physical while B virtual), reassign→abort surfacing on A's UI within 6 s, the assignment-triggered undock attempt + its refusal ack visible on the admin Robot tab (and the reassign's dock/undock pair recorded), and the admin dock-command refusal — the Phase 4 exit criteria.
 
 - [ ] **Step 5: Run the full default suite (gated tests skipped)**
 
@@ -1763,12 +2015,13 @@ git commit -m "Kalhar: chat UI intake/request/virtual-emote + Playwright 3-conte
 
 ## Phase 4 exit checklist (verify before declaring done)
 
-- [ ] `sessions.py` unit tests green offline via moto: `.venv/bin/python -m pytest agent_service/tests/test_sessions.py agent_service/tests/test_locks.py agent_service/tests/test_orchestration.py -q`.
+- [ ] Shared schema tests green after the sanctioned dock/undock addition: `.venv/bin/python -m pytest shared/guidemate_msgs/tests -q` (round-trip passes; choreography tests untouched — `build()` still has no dock/undock branch, by design until Phase 8).
+- [ ] `sessions.py` unit tests green offline via moto (incl. undock-on-approve, dock-on-unassign, dock+undock on reassign, best-effort-without-registry): `.venv/bin/python -m pytest agent_service/tests/test_sessions.py agent_service/tests/test_locks.py agent_service/tests/test_orchestration.py -q`.
 - [ ] `DogAgent` gates physical vs virtual emotes and offers robot tools only when locked: `.venv/bin/python -m pytest agent_service/tests/test_dog_agent.py -q`.
-- [ ] Session + companion API and admin endpoints green: `.venv/bin/python -m pytest agent_service/tests/test_app.py agent_service/tests/test_admin.py -q`.
-- [ ] Playwright 3-context e2e passes with `GUIDEMATE_FAKE_ROBOT=1` + real DynamoDB: A drives the robot (dry-run acks) while B stays virtual; admin reassign shows "disconnected by admin" on A within 6 s; admin dock command is refused.
+- [ ] Session + companion API and admin endpoints green (incl. the approve-fires-undock event test): `.venv/bin/python -m pytest agent_service/tests/test_app.py agent_service/tests/test_admin.py -q`.
+- [ ] Playwright 3-context e2e passes with `GUIDEMATE_FAKE_ROBOT=1` + real DynamoDB: A drives the robot (dry-run acks) while B stays virtual; the approve's undock attempt + refusal ack shows on the admin Robot tab; admin reassign shows "disconnected by admin" on A within 6 s and records the dock/undock pair; admin dock command is refused.
 - [ ] `sessions.CONFIG_PK` verified against `aws dynamodb describe-table --table-name guidemate-config`.
-- [ ] Robot 468 untouched; no shadow writes; no real `cmd_vel`; dock exercised through refusal only.
+- [ ] Robot 468 untouched; no shadow writes; no real `cmd_vel`; dock/undock (assignment-triggered and direct) exercised through refusal only — bridge-side execution is Phase 8.
 
 ---
 
