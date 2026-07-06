@@ -12,6 +12,11 @@ RUN pip install /app/shared/guidemate_msgs
 # The service.
 COPY agent_service /app/agent_service
 RUN pip install /app/agent_service
+# amazon-transcribe (streaming STT) is installed --no-deps on purpose: its metadata
+# hard-pins awscrt~=0.26.1 which conflicts with awsiotsdk's awscrt 0.34.x. Its only
+# dependency IS awscrt, already present at 0.34.1 (runtime-compatible; verified by the
+# live Polly->Transcribe loopback). See the note in agent_service/pyproject.toml.
+RUN pip install --no-deps amazon-transcribe
 # The app loads static assets (chat + admin UI) from a `static/` dir resolved as a
 # sibling of the installed `guidemate_agent` package. A non-editable install ships only
 # the package, not the sibling `static/` tree, so place it beside the installed package.

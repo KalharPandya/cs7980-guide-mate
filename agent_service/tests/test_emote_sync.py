@@ -19,6 +19,14 @@ def test_gate_not_released_on_received_only():
     assert gate_released(_acks("received")) is False
 
 
+def test_gate_not_released_on_failed_only():
+    # A refused emote (received -> failed, no running/done) must NOT release the
+    # gate — else the voice reply fires for a motion the robot rejected. Only the
+    # caller's timeout fallback releases here.
+    assert gate_released(_acks("failed")) is False
+    assert gate_released(_acks("received", "failed")) is False
+
+
 def test_gate_released_on_running():
     assert gate_released(_acks("received", "running")) is True
 
