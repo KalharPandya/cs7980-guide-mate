@@ -64,6 +64,7 @@ document.querySelectorAll(".tabs button").forEach((btn) => {
     if (tab === "robot") { loadRobots(); reloadAssignEvents(); }
     if (tab === "knowledge") loadKb();
     if (tab === "maps") loadMapsTab();
+    if (tab === "health" && window.startHealthPolling) window.startHealthPolling();
   });
 });
 
