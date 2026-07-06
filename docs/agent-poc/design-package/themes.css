@@ -1,65 +1,51 @@
 :root,
 [data-theme="light"] {
   color-scheme: light;
-  --gm-bg: #f7f9fc;
+  --gm-bg: #f7f7f7;
   --gm-surface: #ffffff;
-  --gm-surface-soft: #f8fbfd;
-  --gm-text: #101828;
-  --gm-text-muted: #667085;
-  --gm-border: #d9e2ec;
-  --gm-primary: #129c9c;
+  --gm-surface-soft: #f2f2f2;
+  --gm-text: #000000;
+  --gm-text-muted: #5b6170;
+  --gm-border: #d9d9d9;
+  --gm-primary: #c8102e;
   --gm-primary-text: #ffffff;
   --gm-route: #1f6feb;
   --gm-success: #168a4a;
   --gm-warning: #b76b00;
-  --gm-danger: #d92d20;
-  --gm-focus: #1f6feb;
-  --gm-shadow: 0 18px 45px rgba(16, 24, 40, 0.12);
+  --gm-danger: #c8102e;
+  --gm-focus: #c8102e;
+  --gm-shadow: 0 14px 34px rgba(0, 0, 0, 0.10);
 }
 
+[data-theme="hero"],
 [data-theme="dark"] {
   color-scheme: dark;
-  --gm-bg: #0b1220;
-  --gm-surface: #111b2e;
-  --gm-surface-soft: #172033;
-  --gm-text: #f7fafc;
-  --gm-text-muted: #d0d7e2;
-  --gm-border: #2e4056;
-  --gm-primary: #7ee7ff;
-  --gm-primary-text: #0b1220;
+  --gm-bg: #000000;
+  --gm-surface: #111111;
+  --gm-surface-soft: #1d1d1d;
+  --gm-text: #ffffff;
+  --gm-text-muted: #d6d6d6;
+  --gm-border: #343434;
+  --gm-primary: #c8102e;
+  --gm-primary-text: #ffffff;
   --gm-route: #58a6ff;
   --gm-success: #6ddc91;
   --gm-warning: #f5b83d;
-  --gm-danger: #ff9a91;
-  --gm-focus: #7ee7ff;
-  --gm-shadow: 0 18px 45px rgba(0, 0, 0, 0.36);
+  --gm-danger: #ff6b6b;
+  --gm-focus: #c8102e;
+  --gm-shadow: 0 18px 45px rgba(0, 0, 0, 0.42);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --gm-bg: #0b1220;
-    --gm-surface: #111b2e;
-    --gm-surface-soft: #172033;
-    --gm-text: #f7fafc;
-    --gm-text-muted: #d0d7e2;
-    --gm-border: #2e4056;
-    --gm-primary: #7ee7ff;
-    --gm-primary-text: #0b1220;
-    --gm-route: #58a6ff;
-    --gm-success: #6ddc91;
-    --gm-warning: #f5b83d;
-    --gm-danger: #ff9a91;
-    --gm-focus: #7ee7ff;
-    --gm-shadow: 0 18px 45px rgba(0, 0, 0, 0.36);
-  }
+[data-theme="hero"],
+[data-theme="dark"] {
+  color: var(--gm-text);
 }
 
 .gm-theme {
   min-height: 100%;
   background: var(--gm-bg);
   color: var(--gm-text);
-  font-family: Inter, Atkinson Hyperlegible, system-ui, sans-serif;
+  font-family: "Real Head Pro", "FF Real Head", Lato, Arial, sans-serif;
   font-size: 18px;
   line-height: 1.5;
 }
@@ -67,19 +53,74 @@
 .gm-card {
   background: var(--gm-surface);
   border: 1px solid var(--gm-border);
-  border-radius: 16px;
+  border-radius: 8px;
   box-shadow: var(--gm-shadow);
+}
+
+.gm-moses-lockup {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.gm-moses-mark {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border: 8px solid #000000;
+  background: #ffffff;
+}
+
+[data-theme="hero"] .gm-moses-mark,
+[data-theme="dark"] .gm-moses-mark {
+  border-color: var(--gm-primary);
+}
+
+.gm-moses-mark img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+
+.gm-moses-name {
+  display: block;
+  font-size: 34px;
+  line-height: .9;
+  letter-spacing: -.055em;
+  font-weight: 950;
+}
+
+.gm-moses-subtitle {
+  display: block;
+  margin-top: 3px;
+  color: var(--gm-text-muted);
+  font-size: 13px;
+  line-height: 1.2;
+  font-weight: 850;
+}
+
+[data-theme="hero"] .gm-moses-subtitle,
+[data-theme="dark"] .gm-moses-subtitle {
+  color: var(--gm-text-muted);
+}
+
+.gm-campus-lockup {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
 }
 
 .gm-button {
   min-height: 44px;
-  border-radius: 12px;
+  border-radius: 999px;
   border: 1px solid var(--gm-border);
   background: var(--gm-surface);
   color: var(--gm-text);
   font: inherit;
-  font-weight: 800;
-  padding: 0 14px;
+  font-weight: 850;
+  padding: 0 16px;
 }
 
 .gm-button-primary {
@@ -103,7 +144,7 @@
 .gm-input {
   min-height: 46px;
   border: 1px solid var(--gm-border);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--gm-surface);
   color: var(--gm-text);
   font: inherit;
@@ -115,9 +156,9 @@
   align-items: center;
   min-height: 32px;
   border-radius: 999px;
-  padding: 6px 10px;
+  padding: 6px 11px;
   background: var(--gm-surface-soft);
   color: var(--gm-text);
   font-size: 14px;
-  font-weight: 750;
+  font-weight: 850;
 }
