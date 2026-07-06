@@ -63,6 +63,7 @@ document.querySelectorAll(".tabs button").forEach((btn) => {
     if (tab === "sessions") reloadSessions();
     if (tab === "robot") { loadRobots(); reloadAssignEvents(); }
     if (tab === "knowledge") loadKb();
+    if (tab === "maps") loadMapsTab();
   });
 });
 
@@ -320,6 +321,54 @@ async function sendRobotCommand(type, name) {
 }
 $("robot-dock").addEventListener("click", () => sendRobotCommand("motion", "dock"));
 $("robot-stop").addEventListener("click", () => sendRobotCommand("stop", "stop"));
+
+// --- maps ------------------------------------------------------------------
+// Robot picker is populated from the same /status list the Robot tab uses
+// (data.robots), not hardcoded to ROBOT_ID -- the Maps tab supports every
+// configured robot, not just the one wired into the session/assignment demo.
+async function populateMapsRobotSelect() {
+  const sel = $("maps-robot");
+  const previous = sel.value;
+  const data = await (await api("/status")).json();
+  const robotIds = (data.robots || []).map((r) => r.robot_id);
+  if (!robotIds.length) robotIds.push(ROBOT_ID); // fall back to the known default
+  sel.innerHTML = "";
+  robotIds.forEach((id) => {
+    const opt = document.createElement("option");
+    opt.value = id;
+    opt.textContent = id;
+    sel.appendChild(opt);
+  });
+  if (robotIds.includes(previous)) sel.value = previous;
+}
+
+async function loadMap(robotId) {
+  const img = $("maps-image");
+  const empty = $("maps-empty");
+  const ts = $("maps-timestamp");
+  try {
+    const metaResp = await api(`/map/${robotId}/meta.json`);
+    if (!metaResp.ok) throw new Error("no map");
+    const meta = await metaResp.json();
+    ts.textContent = `Captured: ${meta.captured_ts} (source: ${meta.source})`;
+    // Cache-bust so a re-uploaded map replaces the browser's cached image;
+    // the admin cookie rides along same-origin.
+    img.src = `/api/admin/map/${robotId}?t=${Date.now()}`;
+    img.hidden = false;
+    empty.hidden = true;
+  } catch (e) {
+    img.hidden = true;
+    empty.hidden = false;
+    ts.textContent = "—";
+  }
+}
+
+async function loadMapsTab() {
+  await populateMapsRobotSelect();
+  loadMap($("maps-robot").value);
+}
+
+$("maps-robot").addEventListener("change", (e) => loadMap(e.target.value));
 
 async function reloadAssignEvents() {
   // Never throws: the login screen / a transient 401 just leaves the last text.

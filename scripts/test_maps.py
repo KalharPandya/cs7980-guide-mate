@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 """
-Tests for maps.py (pgm->png conversion + S3 key helpers).
+Tests for guidemate_agent.maps (pgm->png conversion + S3 key helpers).
 
-Run:  cd <repo>/scripts && python -m pytest test_maps.py -v
+Re-homed by Phase-6 Task 5: the module now lives in the `guidemate_agent`
+package (editable-installed into `.venv`), so no PYTHONPATH/sys.path hack is
+needed to import it.
+
+Run:  cd <repo>/scripts && ../.venv/bin/python -m pytest test_maps.py -v
       (or python scripts/test_maps.py from the repo root)
 """
 
 import os
-import sys
 import tempfile
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import maps as m  # noqa: E402
+from guidemate_agent import maps as m
 
-from PIL import Image  # noqa: E402
+from PIL import Image
 
 
 class TestKeyHelpers(unittest.TestCase):

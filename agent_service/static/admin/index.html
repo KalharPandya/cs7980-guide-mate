@@ -26,6 +26,7 @@
       <button data-tab="sessions">Sessions</button>
       <button data-tab="robot">Robot</button>
       <button data-tab="knowledge">Knowledge</button>
+      <button data-tab="maps">Maps</button>
     </nav>
 
     <div id="tab-flags" class="tab">
@@ -93,6 +94,24 @@
         <thead><tr><th>Key</th><th>Size</th><th>Modified</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
+    </div>
+
+    <div id="tab-maps" class="tab" hidden>
+      <h2>Maps</h2>
+      <label>Robot:
+        <select id="maps-robot"></select>
+      </label>
+      <p id="maps-timestamp" class="hint">&mdash;</p>
+      <div class="map-frame">
+        <img id="maps-image" alt="latest saved map" style="max-width:100%;" hidden />
+        <p id="maps-empty" hidden>No map uploaded yet.</p>
+      </div>
+      <details>
+        <summary>How to refresh this map</summary>
+        <p class="hint">Maps are operator-uploaded (the uploader needs SSH to the Pi, so it
+           can't run from this panel). From the Linux box:</p>
+        <pre>./scripts/upload_map_from_pi.sh turtlebot468</pre>
+      </details>
     </div>
   </section>
 
