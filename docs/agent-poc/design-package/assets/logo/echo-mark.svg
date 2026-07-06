@@ -1,0 +1,13 @@
+<svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Echo app mark</title>
+  <desc id="desc">Rounded robot dog face mark with a teal-blue GuideMate ring motif.</desc>
+  <rect width="160" height="160" rx="40" fill="#F7FAFC"/>
+  <rect x="23" y="74" width="114" height="38" rx="19" fill="#25364A"/>
+  <circle cx="60" cy="93" r="7" fill="#7EE7FF"/>
+  <circle cx="100" cy="93" r="7" fill="#7EE7FF"/>
+  <path d="M68 104C72.2 109 87.8 109 92 104" stroke="#7EE7FF" stroke-width="5" stroke-linecap="round"/>
+  <path d="M40 71C34 59 36 45 47 39C58 47 62 59 59 72" fill="#129C9C" stroke="#25364A" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M120 71C126 59 124 45 113 39C102 47 98 59 101 72" fill="#1F6FEB" stroke="#25364A" stroke-width="6" stroke-linejoin="round"/>
+  <circle cx="80" cy="80" r="58" stroke="#1F6FEB" stroke-width="7" stroke-linecap="round" stroke-dasharray="70 24"/>
+  <circle cx="80" cy="80" r="44" stroke="#129C9C" stroke-width="5" stroke-linecap="round" stroke-dasharray="48 26"/>
+</svg>

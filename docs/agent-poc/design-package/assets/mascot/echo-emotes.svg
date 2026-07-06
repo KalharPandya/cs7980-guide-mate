@@ -1,0 +1,42 @@
+<svg width="920" height="300" viewBox="0 0 920 300" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Echo emote states</title>
+  <desc id="desc">Four small Echo robot dog avatar states: ready, thinking, happy, and stopped.</desc>
+  <rect width="920" height="300" rx="30" fill="#FFFFFF"/>
+  <defs>
+    <g id="avatar-ready">
+      <rect x="20" y="82" width="150" height="48" rx="24" fill="#263547"/>
+      <circle cx="48" cy="126" r="22" fill="#0B1220"/>
+      <circle cx="142" cy="126" r="22" fill="#0B1220"/>
+      <rect x="53" y="28" width="84" height="86" rx="30" fill="#FFFFFF" stroke="#25364A" stroke-width="7"/>
+      <rect x="68" y="56" width="54" height="28" rx="14" fill="#0B1220"/>
+      <circle cx="84" cy="70" r="4" fill="#7EE7FF"/>
+      <circle cx="106" cy="70" r="4" fill="#7EE7FF"/>
+      <circle cx="95" cy="104" r="14" fill="#129C9C"/>
+    </g>
+  </defs>
+  <g transform="translate(30 40)">
+    <use href="#avatar-ready"/>
+    <text x="31" y="202" fill="#101828" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="800">Ready</text>
+  </g>
+  <g transform="translate(250 40)">
+    <use href="#avatar-ready"/>
+    <circle cx="142" cy="28" r="8" fill="#F5B83D"/>
+    <circle cx="164" cy="14" r="5" fill="#F5B83D"/>
+    <circle cx="176" cy="38" r="4" fill="#F5B83D"/>
+    <text x="18" y="202" fill="#101828" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="800">Thinking</text>
+  </g>
+  <g transform="translate(470 40)">
+    <use href="#avatar-ready"/>
+    <path d="M78 78C85 88 105 88 112 78" stroke="#7EE7FF" stroke-width="5" stroke-linecap="round"/>
+    <path d="M166 64C184 52 194 70 180 83" stroke="#129C9C" stroke-width="8" stroke-linecap="round"/>
+    <text x="31" y="202" fill="#101828" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="800">Happy</text>
+  </g>
+  <g transform="translate(690 40)">
+    <use href="#avatar-ready"/>
+    <path d="M78 66L90 78M90 66L78 78" stroke="#FF9A91" stroke-width="5" stroke-linecap="round"/>
+    <path d="M100 66L112 78M112 66L100 78" stroke="#FF9A91" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="156" cy="32" r="18" fill="#FFF0EE" stroke="#D92D20" stroke-width="5"/>
+    <path d="M146 32H166" stroke="#D92D20" stroke-width="5" stroke-linecap="round"/>
+    <text x="22" y="202" fill="#101828" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="800">Stopped</text>
+  </g>
+</svg>

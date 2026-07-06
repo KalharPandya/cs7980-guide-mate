@@ -1,0 +1,11 @@
+<svg width="330" height="100" viewBox="0 0 330 100" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Echo wordmark</title>
+  <desc id="desc">Echo wordmark with guide signal bars.</desc>
+  <rect width="330" height="100" rx="20" fill="#FFFFFF"/>
+  <rect x="32" y="35" width="6" height="30" rx="3" fill="#129C9C"/>
+  <rect x="45" y="27" width="6" height="46" rx="3" fill="#1F6FEB"/>
+  <rect x="58" y="39" width="6" height="22" rx="3" fill="#7EE7FF"/>
+  <text x="82" y="63" fill="#101828" font-family="Inter, Arial, sans-serif" font-size="48" font-weight="850">Echo</text>
+  <circle cx="240" cy="35" r="5" fill="#F5B83D"/>
+  <path d="M253 35H273" stroke="#F5B83D" stroke-width="4" stroke-linecap="round"/>
+</svg>

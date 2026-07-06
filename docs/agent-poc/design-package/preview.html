@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GuideMate Echo Design Package Preview</title>
+  <link rel="stylesheet" href="themes.css" />
+  <style>
+    body { margin: 0; }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 34px 22px 54px; }
+    h1 { font-size: 34px; margin: 0 0 8px; }
+    h2 { font-size: 22px; margin: 34px 0 14px; }
+    p { color: var(--gm-text-muted); margin: 0; max-width: 780px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 18px; }
+    .asset { padding: 18px; display: grid; gap: 12px; align-content: start; }
+    .asset img { max-width: 100%; height: auto; border-radius: 12px; }
+    .swatches { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+    .swatch { min-height: 78px; border-radius: 14px; padding: 10px; border: 1px solid var(--gm-border); font-size: 14px; font-weight: 800; }
+    .demo { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 18px; }
+    .screen { padding: 18px; }
+    .top { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 16px; }
+    .brand { display: flex; gap: 10px; align-items: center; font-weight: 900; }
+    .brand img { width: 44px; height: 44px; border-radius: 14px; }
+    .field { display: grid; gap: 6px; margin: 14px 0; }
+    label { font-weight: 850; font-size: 14px; }
+    .privacy { margin: 14px 0; padding: 12px; border-radius: 14px; background: color-mix(in srgb, var(--gm-primary) 12%, var(--gm-surface)); color: var(--gm-text); font-weight: 750; }
+    .chat { display: grid; gap: 10px; }
+    .bubble { width: fit-content; max-width: 86%; padding: 11px 13px; border-radius: 15px; background: var(--gm-surface-soft); }
+    .bubble.user { margin-left: auto; background: var(--gm-route); color: white; }
+    .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+    .dark-panel { margin-top: 26px; border-radius: 18px; padding: 20px; }
+  </style>
+</head>
+<body class="gm-theme">
+  <main class="wrap">
+    <h1>GuideMate Echo Design Package</h1>
+    <p>Logo, mascot, light/dark theme tokens, and sample UI components for the TurtleBot Pal direction.</p>
+
+    <h2>Logos and Mascot</h2>
+    <section class="grid">
+      <div class="gm-card asset"><strong>Light lockup</strong><img src="assets/logo/guidemate-echo-logo-light.svg" alt="GuideMate Echo light logo" /></div>
+      <div class="gm-card asset"><strong>Dark lockup</strong><img src="assets/logo/guidemate-echo-logo-dark.svg" alt="GuideMate Echo dark logo" /></div>
+      <div class="gm-card asset"><strong>Mark</strong><img src="assets/logo/echo-mark.svg" alt="Echo app mark" /></div>
+      <div class="gm-card asset"><strong>Mascot</strong><img src="assets/mascot/echo-turtlebot-pal.svg" alt="Echo TurtleBot Pal mascot" /></div>
+      <div class="gm-card asset" style="grid-column: 1 / -1;"><strong>Emotes</strong><img src="assets/mascot/echo-emotes.svg" alt="Echo emote states" /></div>
+      <div class="gm-card asset" style="grid-column: 1 / -1;"><strong>Icons</strong><img src="assets/icons/guidemate-ui-icons.svg" alt="GuideMate UI icon set" /></div>
+    </section>
+
+    <h2>Light Theme</h2>
+    <section class="swatches">
+      <div class="swatch" style="background:var(--gm-bg)">Background</div>
+      <div class="swatch" style="background:var(--gm-surface)">Surface</div>
+      <div class="swatch" style="background:var(--gm-primary); color:var(--gm-primary-text)">Primary</div>
+      <div class="swatch" style="background:var(--gm-route); color:white">Route</div>
+      <div class="swatch" style="background:var(--gm-success); color:white">Success</div>
+      <div class="swatch" style="background:var(--gm-warning); color:white">Warning</div>
+      <div class="swatch" style="background:var(--gm-danger); color:white">Danger</div>
+    </section>
+
+    <h2>Sample Components</h2>
+    <section class="demo">
+      <div class="gm-card screen">
+        <div class="top">
+          <div class="brand"><img src="assets/logo/echo-mark.svg" alt="" /> GuideMate</div>
+          <span class="gm-chip">Echo ready</span>
+        </div>
+        <div class="field">
+          <label for="name">What should we call you?</label>
+          <input id="name" class="gm-input" value="Kalhar" />
+        </div>
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" class="gm-input" value="kalhar@university.ca" />
+        </div>
+        <div class="privacy">Cameras help navigation only. No face recognition.</div>
+        <button class="gm-button gm-button-primary">Start</button>
+      </div>
+
+      <div class="gm-card screen">
+        <div class="top">
+          <div class="brand"><img src="assets/logo/echo-mark.svg" alt="" /> Echo</div>
+          <span class="gm-chip">Waiting</span>
+        </div>
+        <div class="chat">
+          <div class="bubble">Where would you like to go?</div>
+          <div class="bubble user">Find the library entrance.</div>
+          <div class="bubble">I found directions. You can walk on your own or ask Echo to guide you.</div>
+        </div>
+        <div class="buttons">
+          <button class="gm-button">Self-guided</button>
+          <button class="gm-button">Robot guide</button>
+          <button class="gm-button">Talk to a person</button>
+          <button class="gm-button gm-button-danger">Stop</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="gm-theme dark-panel" data-theme="dark">
+      <h2>Dark Theme</h2>
+      <div class="demo">
+        <div class="gm-card screen">
+          <div class="top">
+            <div class="brand"><img src="assets/logo/echo-mark.svg" alt="" /> GuideMate</div>
+            <span class="gm-chip">Dark mode</span>
+          </div>
+          <p>Dark mode keeps the same semantics: teal for primary actions, blue for route state, red for stop/error.</p>
+          <div class="buttons">
+            <button class="gm-button gm-button-primary">Start</button>
+            <button class="gm-button gm-button-danger">Stop</button>
+          </div>
+        </div>
+        <div class="gm-card asset"><img src="assets/logo/guidemate-echo-logo-dark.svg" alt="GuideMate Echo dark logo" /></div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

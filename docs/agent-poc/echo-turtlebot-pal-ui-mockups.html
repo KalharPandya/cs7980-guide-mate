@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GuideMate Echo - TurtleBot Pal UI Mockups</title>
+  <style>
+    :root {
+      --bg: #f7f9fc;
+      --surface: #ffffff;
+      --ink: #101828;
+      --muted: #667085;
+      --line: #d9e2ec;
+      --soft: #eef5f9;
+      --blue: #1f6feb;
+      --teal: #129c9c;
+      --green: #168a4a;
+      --yellow: #f5b83d;
+      --red: #d92d20;
+      --shadow: 0 18px 45px rgba(16, 24, 40, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+
+    .page {
+      max-width: 1220px;
+      margin: 0 auto;
+      padding: 34px 24px 54px;
+    }
+
+    .intro {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 28px;
+      align-items: end;
+      margin-bottom: 28px;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 34px; letter-spacing: 0; }
+    h2 { font-size: 22px; margin: 34px 0 14px; }
+    .intro p, .section-note { color: var(--muted); line-height: 1.55; }
+    .section-note { max-width: 780px; margin: -6px 0 18px; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 32px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--soft);
+      color: #345064;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .pill.ok { background: #e8f7ef; color: #0d6f38; }
+    .pill.warn { background: #fff4d8; color: #845600; }
+    .pill.danger { background: #fff0ee; color: #a61b12; }
+    .pill.blue { background: #eaf2ff; color: #1558c8; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(306px, 1fr));
+      gap: 24px;
+      align-items: start;
+    }
+
+    .wide { grid-column: 1 / -1; }
+
+    .label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .phone {
+      width: min(100%, 350px);
+      margin: 0 auto;
+      padding: 10px;
+      border-radius: 32px;
+      background: #0b1220;
+      box-shadow: var(--shadow);
+    }
+
+    .screen {
+      min-height: 700px;
+      border-radius: 24px;
+      overflow: hidden;
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .top {
+      padding: 18px 18px 12px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.96);
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+    }
+
+    .mark {
+      width: 43px;
+      height: 43px;
+      border-radius: 15px;
+      position: relative;
+      flex: 0 0 auto;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.86), rgba(255,255,255,.2)),
+        linear-gradient(135deg, var(--blue), var(--teal));
+      box-shadow: inset 0 -8px 14px rgba(0,0,0,.12);
+    }
+    .mark::before {
+      content: "";
+      position: absolute;
+      left: 9px;
+      right: 9px;
+      top: 13px;
+      height: 15px;
+      border-radius: 9px;
+      background: #0b1220;
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,.08);
+    }
+    .mark::after {
+      content: "";
+      position: absolute;
+      left: 15px;
+      top: 18px;
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: #7ee7ff;
+      box-shadow: 9px 0 0 #7ee7ff;
+    }
+
+    .brand strong { display: block; font-size: 17px; }
+    .brand span { display: block; color: var(--muted); font-size: 12px; margin-top: 1px; }
+
+    .plain-button, .primary, .secondary, .stop {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      font: inherit;
+      font-weight: 800;
+      min-height: 44px;
+      border-radius: 13px;
+      padding: 0 14px;
+    }
+    .primary { background: var(--teal); color: #fff; border-color: var(--teal); width: 100%; }
+    .secondary { background: #f8fbfd; }
+    .stop { background: #fff2f0; border-color: #f5b8b3; color: var(--red); }
+
+    .body { padding: 18px; flex: 1; }
+    .body h3 { font-size: 22px; margin-bottom: 8px; }
+    .body p { color: var(--muted); line-height: 1.5; font-size: 14px; }
+
+    .field { margin-top: 16px; }
+    .field label { display: block; font-weight: 800; font-size: 13px; margin-bottom: 7px; }
+    .input {
+      width: 100%;
+      min-height: 46px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      padding: 0 13px;
+      font: inherit;
+      color: var(--ink);
+      background: #fff;
+    }
+
+    .check {
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 10px;
+      margin: 16px 0;
+      color: #344054;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .box {
+      width: 22px;
+      height: 22px;
+      border-radius: 7px;
+      border: 2px solid var(--line);
+      background: #fff;
+    }
+
+    .privacy {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 10px;
+      align-items: center;
+      margin: 18px 0;
+      padding: 12px;
+      border-radius: 16px;
+      background: #effaf8;
+      border: 1px solid #bde5df;
+      color: #145c56;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .privacy .icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 11px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: var(--teal);
+      font-weight: 900;
+    }
+
+    .robot-hero {
+      min-height: 210px;
+      margin: 18px;
+      border: 1px solid #d3e1ec;
+      border-radius: 22px;
+      background:
+        radial-gradient(circle at 78% 20%, rgba(31,111,235,.14) 0 16%, transparent 17%),
+        linear-gradient(150deg, #f9fcff, #edf7f6);
+      display: grid;
+      place-items: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .turtlebot-pal {
+      width: 186px;
+      height: 150px;
+      position: relative;
+    }
+    .base {
+      position: absolute;
+      left: 18px;
+      right: 18px;
+      bottom: 8px;
+      height: 48px;
+      border-radius: 24px;
+      background: #263547;
+      box-shadow: inset 0 -10px 0 rgba(0,0,0,.12);
+    }
+    .wheel {
+      position: absolute;
+      bottom: 0;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #0b1220;
+      border: 7px solid #4d647a;
+    }
+    .wheel.left { left: 18px; }
+    .wheel.right { right: 18px; }
+    .body-shell {
+      position: absolute;
+      left: 39px;
+      right: 39px;
+      bottom: 38px;
+      height: 58px;
+      border-radius: 24px 24px 18px 18px;
+      background: #f8fbff;
+      border: 3px solid #24364c;
+    }
+    .face {
+      position: absolute;
+      left: 54px;
+      right: 54px;
+      bottom: 66px;
+      height: 38px;
+      border-radius: 18px;
+      background: #0b1220;
+    }
+    .face::before {
+      content: "";
+      position: absolute;
+      left: 15px;
+      top: 15px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #7ee7ff;
+      box-shadow: 26px 0 0 #7ee7ff;
+    }
+    .ring {
+      position: absolute;
+      left: 81px;
+      bottom: 45px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 5px solid var(--teal);
+      background: #e9fbfb;
+    }
+    .sensor {
+      position: absolute;
+      right: 22px;
+      top: 18px;
+      width: 12px;
+      height: 52px;
+      border-radius: 999px;
+      background: var(--yellow);
+      border: 3px solid #24364c;
+      transform: rotate(-18deg);
+    }
+
+    .hero-badge {
+      position: absolute;
+      left: 14px;
+      bottom: 14px;
+      font-size: 12px;
+      font-weight: 800;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.9);
+      border: 1px solid var(--line);
+      color: #345064;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .chat {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .bubble {
+      max-width: 86%;
+      padding: 12px 13px;
+      border-radius: 16px;
+      font-size: 14px;
+      line-height: 1.42;
+    }
+    .bubble.user { align-self: flex-end; background: var(--blue); color: #fff; border-bottom-right-radius: 5px; }
+    .bubble.bot { align-self: flex-start; background: #eff5f8; border-bottom-left-radius: 5px; }
+    .source {
+      display: block;
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .quick {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+      margin-top: 14px;
+    }
+
+    .composer {
+      padding: 12px;
+      border-top: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: 1fr 48px;
+      gap: 8px;
+    }
+    .composer .input { min-height: 48px; }
+    .send {
+      border: 0;
+      border-radius: 14px;
+      background: var(--teal);
+      color: #fff;
+      font-weight: 900;
+    }
+
+    .map {
+      height: 210px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background:
+        linear-gradient(90deg, rgba(18,156,156,.1) 1px, transparent 1px),
+        linear-gradient(rgba(18,156,156,.1) 1px, transparent 1px),
+        #fbfdff;
+      background-size: 24px 24px;
+      position: relative;
+      overflow: hidden;
+      margin: 12px 0 14px;
+    }
+    .room {
+      position: absolute;
+      border: 2px solid #9fb3c8;
+      background: rgba(255,255,255,.82);
+      border-radius: 7px;
+    }
+    .r1 { left: 8%; top: 12%; width: 30%; height: 25%; }
+    .r2 { right: 10%; top: 16%; width: 28%; height: 30%; }
+    .r3 { left: 18%; bottom: 13%; width: 48%; height: 26%; }
+    .route {
+      position: absolute;
+      left: 17%;
+      top: 48%;
+      width: 68%;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--teal);
+      transform: rotate(-11deg);
+    }
+    .pin {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--blue);
+      border: 3px solid #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,.18);
+    }
+    .pin.start { left: 15%; top: 52%; }
+    .pin.end { right: 15%; top: 34%; background: var(--green); }
+
+    .steps {
+      display: grid;
+      gap: 9px;
+    }
+    .step {
+      display: grid;
+      grid-template-columns: 30px 1fr;
+      gap: 10px;
+      align-items: start;
+      padding: 9px;
+      border-radius: 13px;
+      background: #f8fbfd;
+      color: #344054;
+      font-size: 13px;
+    }
+    .num {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 10px;
+      background: #e6f4f4;
+      color: #0b7777;
+      font-weight: 900;
+    }
+
+    .status-card {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 14px;
+      background: #fff;
+      margin-bottom: 12px;
+    }
+    .status-card strong { display: block; font-size: 18px; margin-bottom: 4px; }
+    .facts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin: 14px 0;
+    }
+    .fact {
+      border-radius: 14px;
+      background: #f7fafc;
+      padding: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+    }
+    .fact b { display: block; color: var(--ink); font-size: 17px; margin-top: 4px; }
+
+    .desktop {
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      overflow: hidden;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .desk-top {
+      height: 62px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      background: #fff;
+    }
+    .desk-body {
+      display: grid;
+      grid-template-columns: 210px 1fr;
+      min-height: 560px;
+    }
+    .nav {
+      padding: 16px;
+      background: #f8fbfd;
+      border-right: 1px solid var(--line);
+    }
+    .nav button {
+      display: block;
+      width: 100%;
+      border: 0;
+      background: transparent;
+      text-align: left;
+      padding: 11px 12px;
+      border-radius: 12px;
+      font: inherit;
+      font-weight: 800;
+      color: #475467;
+      margin-bottom: 4px;
+    }
+    .nav button.active { background: #eaf7f7; color: #087575; }
+    .work {
+      padding: 20px;
+      min-width: 0;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: #fff;
+      padding: 16px;
+    }
+    .card h3 { font-size: 17px; margin-bottom: 6px; }
+    .card p { color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .metric {
+      font-size: 28px;
+      font-weight: 900;
+      margin-top: 8px;
+    }
+    .table {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    .tr {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 14px;
+      border-bottom: 1px solid var(--line);
+      font-size: 14px;
+    }
+    .tr:last-child { border-bottom: 0; }
+    .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: end; }
+    .mini {
+      min-height: 36px;
+      border-radius: 11px;
+      border: 1px solid var(--line);
+      background: #fff;
+      padding: 0 11px;
+      font-weight: 800;
+      color: var(--ink);
+    }
+    .mini.primary { background: var(--teal); color: #fff; border-color: var(--teal); width: auto; }
+    .mini.stop { background: #fff2f0; border-color: #f5b8b3; color: var(--red); }
+
+    @media (max-width: 780px) {
+      .page { padding: 24px 16px 40px; }
+      .intro { grid-template-columns: 1fr; }
+      .desk-body { grid-template-columns: 1fr; }
+      .nav { display: flex; gap: 6px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      .nav button { white-space: nowrap; width: auto; }
+      .tr { grid-template-columns: 1fr; }
+      .actions { justify-content: start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="intro">
+      <div>
+        <span class="pill blue">TurtleBot Pal direction</span>
+        <h1>GuideMate full UI mockups with Echo</h1>
+        <p>
+          Cleaner screen set using Echo as a TurtleBot-inspired companion: compact,
+          helpful, accessible, and service-oriented. The mascot supports the interface;
+          maps, text, status, stop, and human handoff stay primary.
+        </p>
+      </div>
+      <div class="row" style="justify-content: flex-end; flex-wrap: wrap;">
+        <span class="pill ok">No voice required</span>
+        <span class="pill">Text first</span>
+        <span class="pill warn">Stop always visible</span>
+      </div>
+    </section>
+
+    <h2>User Webapp</h2>
+    <p class="section-note">Mobile-first screens for QR/NFC entry, chat, route guidance, robot state, and pointperson fallback.</p>
+
+    <section class="grid">
+      <article>
+        <div class="label">01 Landing and consent</div>
+        <div class="phone">
+          <div class="screen">
+            <div class="top">
+              <div class="row">
+                <div class="brand">
+                  <div class="mark"></div>
+                  <div><strong>GuideMate</strong><span>Campus guide robot</span></div>
+                </div>
+                <button class="plain-button">Help</button>
+              </div>
+            </div>
+            <div class="robot-hero">
+              <div class="turtlebot-pal">
+                <div class="sensor"></div><div class="base"></div><div class="wheel left"></div><div class="wheel right"></div>
+                <div class="body-shell"></div><div class="face"></div><div class="ring"></div>
+              </div>
+              <div class="hero-badge">Echo is ready</div>
+            </div>
+            <div class="body">
+              <h3>You are talking to GuideMate</h3>
+              <p>I can help you find rooms, people, and places on campus.</p>
+              <div class="field"><label>What should we call you?</label><input class="input" value="Kalhar" /></div>
+              <div class="field"><label>Email</label><input class="input" value="kalhar@university.ca" /></div>
+              <div class="privacy"><div class="icon">i</div><div>Cameras help navigation only. No face recognition.</div></div>
+              <label class="check"><span class="box"></span><span>Save my conversations so I can pick up where I left off next time.</span></label>
+              <button class="primary">Start</button>
+              <button class="secondary" style="width:100%; margin-top:10px;">Prefer to talk to a person instead?</button>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article>
+        <div class="label">02 Main chat</div>
+        <div class="phone">
+          <div class="screen">
+            <div class="top">
+              <div class="row">
+                <div class="brand">
+                  <div class="mark"></div>
+                  <div><strong>Echo</strong><span>Waiting near reception</span></div>
+                </div>
+                <span class="pill ok">Online</span>
+              </div>
+              <div class="chips">
+                <span class="pill">Self-guided available</span>
+                <span class="pill warn">Robot moves slowly</span>
+              </div>
+            </div>
+            <div class="body">
+              <div class="chat">
+                <div class="bubble bot">Hi Kalhar. Where would you like to go?</div>
+                <div class="bubble user">Find the library entrance.</div>
+                <div class="bubble bot">
+                  I found directions to the Library Entrance. You can walk on your own or ask Echo to guide you.
+                  <span class="source">Source: campus map, updated today</span>
+                </div>
+              </div>
+              <div class="quick">
+                <button class="secondary">Find a room</button>
+                <button class="secondary">Bathrooms</button>
+                <button class="secondary">Talk to a person</button>
+                <button class="stop">Stop</button>
+              </div>
+              <div class="privacy"><div class="icon">i</div><div>Session data deletes when this conversation ends unless you choose to save it.</div></div>
+            </div>
+            <div class="composer">
+              <input class="input" value="Type your message" />
+              <button class="send">Send</button>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article>
+        <div class="label">03 Wayfinding</div>
+        <div class="phone">
+          <div class="screen">
+            <div class="top">
+              <div class="row">
+                <div class="brand">
+                  <div class="mark"></div>
+                  <div><strong>To Library Entrance</strong><span>3 minute walk</span></div>
+                </div>
+                <button class="stop">Stop</button>
+              </div>
+            </div>
+            <div class="body">
+              <div class="map">
+                <div class="room r1"></div><div class="room r2"></div><div class="room r3"></div>
+                <div class="route"></div><div class="pin start"></div><div class="pin end"></div>
+              </div>
+              <div class="chips">
+                <span class="pill ok">Step-free route</span>
+                <span class="pill">Echo position visible</span>
+              </div>
+              <div class="steps" style="margin-top:14px;">
+                <div class="step"><div class="num">1</div><div>Go past reception and stay on the main corridor.</div></div>
+                <div class="step"><div class="num">2</div><div>Turn left at the elevators.</div></div>
+                <div class="step"><div class="num">3</div><div>Continue to the blue doors.</div></div>
+              </div>
+              <div class="quick">
+                <button class="secondary">Self-guided</button>
+                <button class="secondary">Robot guide</button>
+                <button class="secondary">Lost Echo?</button>
+                <button class="stop">Stop</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article>
+        <div class="label">04 Robot status and safety</div>
+        <div class="phone">
+          <div class="screen">
+            <div class="top">
+              <div class="row">
+                <div class="brand">
+                  <div class="mark"></div>
+                  <div><strong>Echo status</strong><span>Physical robot</span></div>
+                </div>
+                <span class="pill warn">Docked</span>
+              </div>
+            </div>
+            <div class="robot-hero">
+              <div class="turtlebot-pal">
+                <div class="sensor"></div><div class="base"></div><div class="wheel left"></div><div class="wheel right"></div>
+                <div class="body-shell"></div><div class="face"></div><div class="ring"></div>
+              </div>
+              <div class="hero-badge">Motion locked</div>
+            </div>
+            <div class="body">
+              <div class="status-card">
+                <strong>Echo is safe and waiting</strong>
+                <p>Robot-led guidance is unavailable while Echo is docked or motion-locked.</p>
+              </div>
+              <div class="facts">
+                <div class="fact">Battery<b>82%</b></div>
+                <div class="fact">Dock<b>Docked</b></div>
+                <div class="fact">Motion<b>Disabled</b></div>
+                <div class="fact">Mode<b>Dry-run</b></div>
+              </div>
+              <button class="stop" style="width:100%;">Stop robot now</button>
+              <button class="secondary" style="width:100%; margin-top:10px;">Continue with self-guided directions</button>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article>
+        <div class="label">05 Pointperson handoff</div>
+        <div class="phone">
+          <div class="screen">
+            <div class="top">
+              <div class="row">
+                <div class="brand">
+                  <div class="mark"></div>
+                  <div><strong>Talk to a person</strong><span>Human help available</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="body">
+              <h3>A staff member can help</h3>
+              <p>You do not need to use the webapp. The pointperson can help with directions, campus services, or accessibility support.</p>
+              <div class="status-card" style="margin-top:16px;">
+                <strong>Pointperson location</strong>
+                <p>Reception desk, first floor. Look for the GuideMate sign.</p>
+              </div>
+              <div class="field">
+                <label>What should Echo summarize?</label>
+                <div class="check"><span class="box"></span><span>Share my destination request.</span></div>
+                <div class="check"><span class="box"></span><span>Share my accessibility preferences for this session.</span></div>
+                <div class="check"><span class="box"></span><span>Share nothing. I will explain in person.</span></div>
+              </div>
+              <button class="primary">Show handoff note</button>
+              <button class="secondary" style="width:100%; margin-top:10px;">Back to chat</button>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <h2>Admin / Operator</h2>
+    <p class="section-note">A clean operational surface: requests, robot status, safety, knowledge, health, and maps. Less playful than the user app.</p>
+
+    <section class="grid">
+      <article class="wide">
+        <div class="label">06 Operator dashboard</div>
+        <div class="desktop">
+          <div class="desk-top">
+            <div class="brand"><div class="mark"></div><div><strong>GuideMate Operator</strong><span>Echo / turtlebot468</span></div></div>
+            <div class="chips"><span class="pill ok">Service ready</span><span class="pill warn">Motion disabled</span></div>
+          </div>
+          <div class="desk-body">
+            <nav class="nav">
+              <button class="active">Overview</button><button>Requests</button><button>Robot</button><button>Knowledge</button><button>Maps</button><button>Audit</button>
+            </nav>
+            <div class="work">
+              <div class="cards">
+                <div class="card"><h3>Robot state</h3><p>Echo is online, docked, and locked.</p><div class="metric">Safe</div></div>
+                <div class="card"><h3>Active session</h3><p>No current physical companion holder.</p><div class="metric">0</div></div>
+                <div class="card"><h3>Pending requests</h3><p>Visitors waiting for staff approval.</p><div class="metric">2</div></div>
+                <div class="card"><h3>Recent errors</h3><p>No service or robot errors in the last hour.</p><div class="metric">0</div></div>
+              </div>
+              <div class="table">
+                <div class="tr">
+                  <div><strong>Kalhar</strong><span class="sub">Comfortable around physical AI dogs. Wants Library Entrance.</span></div>
+                  <span class="pill warn">Pending companion</span>
+                  <div class="actions"><button class="mini primary">Approve</button><button class="mini">Deny</button></div>
+                </div>
+                <div class="tr">
+                  <div><strong>Echo physical</strong><span class="sub">Battery 82%, docked, dry-run true, motion disabled.</span></div>
+                  <span class="pill ok">Online</span>
+                  <div class="actions"><button class="mini stop">Kill switch</button><button class="mini">Stop</button></div>
+                </div>
+                <div class="tr">
+                  <div><strong>Knowledge sync</strong><span class="sub">Campus FAQs and room data synced today.</span></div>
+                  <span class="pill ok">Complete</span>
+                  <div class="actions"><button class="mini">Upload docs</button><button class="mini">Sync</button></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+  </div>
+</body>
+</html>

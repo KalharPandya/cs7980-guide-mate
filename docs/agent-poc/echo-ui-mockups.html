@@ -1,0 +1,1237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Echo Dog Agent UI Mockups</title>
+  <style>
+    :root {
+      --page: #f6f8fb;
+      --ink: #172033;
+      --muted: #647084;
+      --panel: #ffffff;
+      --line: #dbe2ea;
+      --soft: #eef3f8;
+      --brand: #1663d8;
+      --brand-2: #0e8f8f;
+      --safe: #168a4a;
+      --warn: #ad6a00;
+      --danger: #c82436;
+      --shadow: 0 16px 48px rgba(23, 32, 51, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--page);
+      line-height: 1.45;
+    }
+
+    header {
+      padding: 32px 28px 20px;
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+
+    h1 {
+      font-size: 30px;
+      letter-spacing: 0;
+    }
+
+    header p {
+      max-width: 760px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .section {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 18px 28px 34px;
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 18px;
+      margin-bottom: 16px;
+    }
+
+    .section-head h2 { font-size: 21px; }
+    .section-head p { color: var(--muted); font-size: 14px; max-width: 620px; }
+
+    .mock-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(286px, 1fr));
+      gap: 22px;
+      align-items: start;
+    }
+
+    .caption {
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .phone {
+      width: min(100%, 344px);
+      min-height: 704px;
+      margin: 0 auto;
+      border: 1px solid #c7d1dc;
+      border-radius: 28px;
+      background: #101722;
+      padding: 10px;
+      box-shadow: var(--shadow);
+    }
+
+    .phone-screen {
+      min-height: 684px;
+      border-radius: 22px;
+      overflow: hidden;
+      background: var(--panel);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .mobile-top {
+      padding: 16px 16px 10px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.94);
+    }
+
+    .mobile-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .echo-mark {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      background:
+        radial-gradient(circle at 50% 42%, #ffffff 0 20%, transparent 21%),
+        linear-gradient(145deg, #1a74e8, #0d8f8f);
+      position: relative;
+      flex: 0 0 auto;
+    }
+
+    .echo-mark::before,
+    .echo-mark::after {
+      content: "";
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      top: 13px;
+      border-radius: 50%;
+      background: #172033;
+    }
+
+    .echo-mark::before { left: 11px; }
+    .echo-mark::after { right: 11px; }
+
+    .brand-title { font-weight: 760; font-size: 17px; white-space: nowrap; }
+    .brand-sub { color: var(--muted); font-size: 12px; margin-top: 1px; }
+
+    .icon-button {
+      width: 38px;
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      color: var(--ink);
+      font-weight: 800;
+      display: grid;
+      place-items: center;
+    }
+
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 12px;
+    }
+
+    .chip {
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: var(--soft);
+      color: #34435a;
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .chip.ok { color: #0e6f3a; background: #e8f6ee; }
+    .chip.warn { color: #8a5200; background: #fff2dc; }
+    .chip.danger { color: #a01625; background: #ffe8eb; }
+    .chip.info { color: #0b5dbd; background: #e8f1ff; }
+
+    .hero-dog {
+      margin: 18px 16px 0;
+      min-height: 176px;
+      border-radius: 18px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0)),
+        radial-gradient(circle at 24% 18%, #cde7ff 0 15%, transparent 16%),
+        linear-gradient(135deg, #edf6ff, #e9f8f5);
+      display: grid;
+      place-items: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .dog-bot {
+      width: 154px;
+      height: 114px;
+      position: relative;
+    }
+
+    .dog-head {
+      width: 78px;
+      height: 64px;
+      border-radius: 24px 24px 22px 22px;
+      background: #f8fbff;
+      border: 3px solid #18324d;
+      position: absolute;
+      top: 6px;
+      left: 39px;
+      box-shadow: 0 8px 18px rgba(23, 32, 51, 0.12);
+    }
+
+    .dog-head::before,
+    .dog-head::after {
+      content: "";
+      position: absolute;
+      top: 14px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #18324d;
+    }
+
+    .dog-head::before { left: 19px; }
+    .dog-head::after { right: 19px; }
+
+    .dog-ear {
+      position: absolute;
+      top: 14px;
+      width: 28px;
+      height: 34px;
+      border-radius: 13px;
+      background: #1663d8;
+      border: 3px solid #18324d;
+    }
+
+    .dog-ear.left { left: 20px; transform: rotate(-18deg); }
+    .dog-ear.right { right: 20px; transform: rotate(18deg); }
+
+    .dog-mouth {
+      position: absolute;
+      left: 28px;
+      bottom: 13px;
+      width: 22px;
+      height: 10px;
+      border-bottom: 3px solid #18324d;
+      border-radius: 0 0 22px 22px;
+    }
+
+    .dog-body {
+      position: absolute;
+      left: 28px;
+      bottom: 14px;
+      width: 98px;
+      height: 36px;
+      border-radius: 20px;
+      background: #dbeafe;
+      border: 3px solid #18324d;
+    }
+
+    .dog-leg {
+      position: absolute;
+      bottom: 0;
+      width: 15px;
+      height: 24px;
+      border-radius: 9px;
+      background: #f8fbff;
+      border: 3px solid #18324d;
+    }
+
+    .dog-leg.l1 { left: 42px; }
+    .dog-leg.l2 { left: 94px; }
+
+    .dog-tail {
+      position: absolute;
+      right: 10px;
+      bottom: 38px;
+      width: 34px;
+      height: 12px;
+      border-radius: 999px;
+      background: #0e8f8f;
+      border: 3px solid #18324d;
+      transform: rotate(-28deg);
+      transform-origin: left center;
+    }
+
+    .emote-pill {
+      position: absolute;
+      left: 14px;
+      bottom: 14px;
+      border-radius: 999px;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-weight: 760;
+      color: #0d5d5d;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid #b7d9d9;
+    }
+
+    .body-area {
+      padding: 16px;
+      flex: 1;
+    }
+
+    .field-label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .input,
+    .textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      font: inherit;
+      background: #fff;
+    }
+
+    .checkbox-row {
+      display: flex;
+      gap: 10px;
+      margin: 14px 0;
+      color: #34435a;
+      font-size: 14px;
+    }
+
+    .checkbox-box {
+      width: 22px;
+      height: 22px;
+      border-radius: 7px;
+      border: 2px solid var(--brand);
+      flex: 0 0 auto;
+      position: relative;
+    }
+
+    .checkbox-box::after {
+      content: "";
+      position: absolute;
+      left: 5px;
+      top: 2px;
+      width: 7px;
+      height: 12px;
+      border: solid var(--brand);
+      border-width: 0 2px 2px 0;
+      transform: rotate(42deg);
+    }
+
+    .primary,
+    .secondary,
+    .danger-button {
+      min-height: 44px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      padding: 0 14px;
+      font: inherit;
+      font-weight: 760;
+    }
+
+    .primary { background: var(--brand); color: #fff; width: 100%; }
+    .secondary { background: #fff; color: var(--ink); border-color: var(--line); }
+    .danger-button { background: #fff1f3; color: var(--danger); border-color: #f4b7bf; }
+
+    .microcopy {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .message-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .bubble {
+      max-width: 88%;
+      border-radius: 16px;
+      padding: 11px 13px;
+      font-size: 14px;
+    }
+
+    .bubble.user {
+      align-self: flex-end;
+      background: var(--brand);
+      color: #fff;
+      border-bottom-right-radius: 5px;
+    }
+
+    .bubble.echo {
+      align-self: flex-start;
+      background: var(--soft);
+      border-bottom-left-radius: 5px;
+    }
+
+    .bubble-meta {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .composer {
+      padding: 12px;
+      border-top: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: 42px 1fr 42px;
+      gap: 8px;
+      background: #fff;
+    }
+
+    .composer .input {
+      height: 42px;
+      padding: 0 12px;
+      border-radius: 13px;
+    }
+
+    .round-action {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 13px;
+      color: var(--brand);
+      font-weight: 900;
+    }
+
+    .banner {
+      margin-bottom: 14px;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid #bcd4f8;
+      background: #edf5ff;
+      color: #17446f;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .banner.warn {
+      border-color: #f2c879;
+      background: #fff6df;
+      color: #684100;
+    }
+
+    .banner.danger {
+      border-color: #f1b1ba;
+      background: #fff0f2;
+      color: #831522;
+    }
+
+    .voice-panel {
+      margin: 14px 0;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #fbfdff;
+    }
+
+    .voice-orb {
+      width: 112px;
+      height: 112px;
+      margin: 8px auto 14px;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle, #fff 0 34%, transparent 35%),
+        conic-gradient(from 10deg, #1663d8, #0e8f8f, #48b3ff, #1663d8);
+      display: grid;
+      place-items: center;
+      box-shadow: 0 10px 28px rgba(22, 99, 216, 0.2);
+      color: #18324d;
+      font-size: 28px;
+      font-weight: 900;
+    }
+
+    .status-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+    }
+
+    .desktop {
+      border: 1px solid #c7d1dc;
+      border-radius: 18px;
+      background: var(--panel);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .desktop-bar {
+      height: 54px;
+      padding: 0 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcfe;
+    }
+
+    .desktop-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+    }
+
+    .desktop-layout {
+      display: grid;
+      grid-template-columns: 190px 1fr;
+      min-height: 520px;
+    }
+
+    .side-nav {
+      border-right: 1px solid var(--line);
+      padding: 14px;
+      background: #f8fafc;
+    }
+
+    .nav-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: 0;
+      background: transparent;
+      border-radius: 10px;
+      padding: 10px 11px;
+      margin-bottom: 4px;
+      color: #41516a;
+      font-weight: 700;
+    }
+
+    .nav-item.active {
+      color: #0d4f9f;
+      background: #e9f2ff;
+    }
+
+    .admin-content {
+      padding: 18px;
+      min-width: 0;
+    }
+
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+      margin-bottom: 16px;
+    }
+
+    .toolbar h3 { font-size: 20px; }
+    .toolbar p { color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+    .admin-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 13px;
+      background: #fff;
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .metric-value {
+      margin-top: 6px;
+      font-size: 22px;
+      font-weight: 850;
+    }
+
+    .request-row,
+    .session-row,
+    .doc-row {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+    }
+
+    .row-title { font-weight: 800; }
+    .row-sub { color: var(--muted); margin-top: 2px; }
+
+    .button-row {
+      display: flex;
+      gap: 8px;
+      justify-content: end;
+      flex-wrap: wrap;
+    }
+
+    .small-button {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      padding: 8px 10px;
+      font-weight: 760;
+      color: var(--ink);
+    }
+
+    .small-button.primary-small {
+      background: var(--brand);
+      color: #fff;
+      border-color: var(--brand);
+    }
+
+    .small-button.danger-small {
+      color: var(--danger);
+      border-color: #efb0b9;
+      background: #fff5f6;
+    }
+
+    .robot-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      background: #fff;
+    }
+
+    .robot-card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .robot-name { font-size: 17px; font-weight: 850; }
+    .robot-id { color: var(--muted); font-size: 12px; margin-top: 1px; }
+
+    .gate-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin: 12px 0;
+    }
+
+    .gate {
+      border-radius: 10px;
+      background: var(--soft);
+      padding: 9px;
+      font-size: 12px;
+    }
+
+    .gate strong { display: block; font-size: 14px; margin-top: 2px; }
+
+    .event-log {
+      margin-top: 12px;
+      border-radius: 12px;
+      background: #101722;
+      color: #dbeafe;
+      padding: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      overflow: auto;
+    }
+
+    .upload-zone {
+      border: 1px dashed #9cb6d3;
+      border-radius: 14px;
+      background: #f7fbff;
+      padding: 22px;
+      text-align: center;
+      margin-bottom: 14px;
+    }
+
+    .map-preview {
+      min-height: 216px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background:
+        linear-gradient(90deg, rgba(22, 99, 216, 0.08) 1px, transparent 1px),
+        linear-gradient(rgba(22, 99, 216, 0.08) 1px, transparent 1px),
+        #fbfdff;
+      background-size: 22px 22px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .map-path {
+      position: absolute;
+      left: 14%;
+      top: 44%;
+      width: 72%;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--brand-2);
+      transform: rotate(-8deg);
+    }
+
+    .map-room {
+      position: absolute;
+      border: 2px solid #5d7592;
+      border-radius: 5px;
+      background: rgba(255, 255, 255, 0.75);
+    }
+
+    .map-room.r1 { left: 9%; top: 16%; width: 25%; height: 25%; }
+    .map-room.r2 { right: 10%; top: 14%; width: 28%; height: 31%; }
+    .map-room.r3 { left: 18%; bottom: 13%; width: 42%; height: 24%; }
+
+    @media (max-width: 760px) {
+      header { padding: 24px 18px 12px; }
+      .section { padding: 16px 18px 28px; }
+      .section-head { display: block; }
+      .section-head p { margin-top: 6px; }
+      .desktop-layout { grid-template-columns: 1fr; }
+      .side-nav {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+      }
+      .nav-item { white-space: nowrap; margin-bottom: 0; }
+      .request-row,
+      .session-row,
+      .doc-row {
+        grid-template-columns: 1fr;
+      }
+      .button-row { justify-content: start; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Echo Dog Agent UI Mockups</h1>
+    <p>
+      Static design pass for the current POC screens. Echo is the responding doggo: a
+      companion-style chat surface for visitors, with a restrained admin console for staff
+      approval, robot safety, knowledge, and observability.
+    </p>
+  </header>
+
+  <main>
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <h2>Mobile User Flow</h2>
+          <p>First visit, chat, physical companion request, and voice mode.</p>
+        </div>
+      </div>
+
+      <div class="mock-grid">
+        <article>
+          <div class="caption">01 Intake</div>
+          <div class="phone">
+            <div class="phone-screen">
+              <div class="mobile-top">
+                <div class="mobile-top-row">
+                  <div class="brand-lockup">
+                    <div class="echo-mark" aria-hidden="true"></div>
+                    <div>
+                      <div class="brand-title">Echo</div>
+                      <div class="brand-sub">Guide-Mate doggo</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="hero-dog">
+                <div class="dog-bot" aria-hidden="true">
+                  <div class="dog-tail"></div>
+                  <div class="dog-body"></div>
+                  <div class="dog-leg l1"></div>
+                  <div class="dog-leg l2"></div>
+                  <div class="dog-ear left"></div>
+                  <div class="dog-ear right"></div>
+                  <div class="dog-head"><div class="dog-mouth"></div></div>
+                </div>
+                <div class="emote-pill">idle and listening</div>
+              </div>
+
+              <div class="body-area">
+                <h3>Meet Echo</h3>
+                <p class="microcopy">
+                  Echo can answer Guide-Mate questions, show virtual emotes, and request
+                  a physical companion session when staff approve it.
+                </p>
+
+                <div style="height: 20px"></div>
+                <label class="field-label" for="mock-name">Your name</label>
+                <input id="mock-name" class="input" value="Kalhar" />
+
+                <label class="checkbox-row">
+                  <span class="checkbox-box" aria-hidden="true"></span>
+                  <span>I am comfortable around Physical AI Dogs.</span>
+                </label>
+
+                <button class="primary">Start chatting</button>
+                <p class="microcopy">This creates a local browser session. Staff can view the transcript during demos.</p>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article>
+          <div class="caption">02 Chat - virtual companion</div>
+          <div class="phone">
+            <div class="phone-screen">
+              <div class="mobile-top">
+                <div class="mobile-top-row">
+                  <div class="brand-lockup">
+                    <div class="echo-mark" aria-hidden="true"></div>
+                    <div>
+                      <div class="brand-title">Echo</div>
+                      <div class="brand-sub">Virtual dog active</div>
+                    </div>
+                  </div>
+                  <button class="icon-button">+</button>
+                </div>
+                <div class="chip-row">
+                  <span class="chip info">Virtual</span>
+                  <span class="chip ok">KB on</span>
+                  <span class="chip warn">Motion locked</span>
+                </div>
+              </div>
+
+              <div class="hero-dog">
+                <div class="dog-bot" aria-hidden="true">
+                  <div class="dog-tail"></div>
+                  <div class="dog-body"></div>
+                  <div class="dog-leg l1"></div>
+                  <div class="dog-leg l2"></div>
+                  <div class="dog-ear left"></div>
+                  <div class="dog-ear right"></div>
+                  <div class="dog-head"><div class="dog-mouth"></div></div>
+                </div>
+                <div class="emote-pill">happy wiggle - avatar only</div>
+              </div>
+
+              <div class="body-area">
+                <div class="banner">Virtual mode: Echo can emote on-screen. Physical movement needs staff approval.</div>
+                <div class="message-list">
+                  <div class="bubble user">What are you?</div>
+                  <div class="bubble echo">
+                    I am Echo, the Guide-Mate robot dog. I help explain the project and can do tiny safe tricks when approved.
+                    <span class="bubble-meta">emote: happy - virtual</span>
+                  </div>
+                  <div class="bubble user">Can you come with me?</div>
+                  <div class="bubble echo">
+                    I can ask a staff member for a physical companion session. Until then I will stay right here on-screen.
+                    <span class="bubble-meta">emote: yes - virtual</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="composer">
+                <button class="round-action">mic</button>
+                <input class="input" value="Ask Echo..." />
+                <button class="round-action">send</button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article>
+          <div class="caption">03 Request states</div>
+          <div class="phone">
+            <div class="phone-screen">
+              <div class="mobile-top">
+                <div class="mobile-top-row">
+                  <div class="brand-lockup">
+                    <div class="echo-mark" aria-hidden="true"></div>
+                    <div>
+                      <div class="brand-title">Echo</div>
+                      <div class="brand-sub">Companion request</div>
+                    </div>
+                  </div>
+                  <button class="icon-button">new</button>
+                </div>
+                <div class="chip-row">
+                  <span class="chip warn">Pending</span>
+                  <span class="chip">turtlebot468</span>
+                  <span class="chip warn">Docked</span>
+                </div>
+              </div>
+
+              <div class="body-area">
+                <div class="banner warn">Request pending. Staff can approve Echo for this session from the admin console.</div>
+                <button class="secondary" style="width: 100%; margin-bottom: 12px;">Request already sent</button>
+
+                <div class="banner">Approved state preview: connected to turtlebot468. Physical commands still obey dock guard, dry-run, and motion lock.</div>
+                <div class="banner danger">Aborted state preview: staff disconnected this session. Echo returned to virtual mode.</div>
+
+                <div class="status-list">
+                  <div class="status-row"><span>Physical robot</span><strong>Waiting</strong></div>
+                  <div class="status-row"><span>Battery</span><strong>82%</strong></div>
+                  <div class="status-row"><span>Dock</span><strong>Docked</strong></div>
+                  <div class="status-row"><span>Motion</span><strong>Disabled</strong></div>
+                  <div class="status-row"><span>Dry run</span><strong>Enabled</strong></div>
+                </div>
+              </div>
+
+              <div class="composer">
+                <button class="round-action">mic</button>
+                <input class="input" value="Ask Echo..." />
+                <button class="round-action">send</button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article>
+          <div class="caption">04 Voice mode</div>
+          <div class="phone">
+            <div class="phone-screen">
+              <div class="mobile-top">
+                <div class="mobile-top-row">
+                  <div class="brand-lockup">
+                    <div class="echo-mark" aria-hidden="true"></div>
+                    <div>
+                      <div class="brand-title">Echo</div>
+                      <div class="brand-sub">Voice reply syncing</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="chip-row">
+                  <span class="chip ok">Listening</span>
+                  <span class="chip info">Polly voice</span>
+                  <span class="chip">Ack sync</span>
+                </div>
+              </div>
+
+              <div class="body-area">
+                <div class="voice-panel">
+                  <div class="voice-orb">mic</div>
+                  <h3 style="text-align: center;">Listening to Kalhar</h3>
+                  <p class="microcopy" style="text-align: center;">Tap to stop. Echo will answer after transcription.</p>
+                </div>
+
+                <label class="field-label">Transcript preview</label>
+                <div class="textarea">Echo, explain why motion is locked right now.</div>
+
+                <div class="status-list">
+                  <div class="status-row"><span>Speech to text</span><strong>Ready</strong></div>
+                  <div class="status-row"><span>Emote ack</span><strong>Timeout fallback 2s</strong></div>
+                  <div class="status-row"><span>Audio output</span><strong>Neural voice</strong></div>
+                </div>
+              </div>
+
+              <div class="composer">
+                <button class="round-action">stop</button>
+                <input class="input" value="Voice mode active" />
+                <button class="round-action">send</button>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <h2>Admin Console</h2>
+          <p>Staff surfaces for approval, robot safety, knowledge, health, and maps.</p>
+        </div>
+      </div>
+
+      <div class="mock-grid">
+        <article style="grid-column: 1 / -1;">
+          <div class="caption">05 Requests and sessions</div>
+          <div class="desktop">
+            <div class="desktop-bar">
+              <div class="desktop-title"><div class="echo-mark" style="width: 32px; height: 32px; border-radius: 10px;"></div> Echo Admin</div>
+              <span class="chip ok">Signed in</span>
+            </div>
+            <div class="desktop-layout">
+              <nav class="side-nav">
+                <button class="nav-item">Flags</button>
+                <button class="nav-item">Prompt</button>
+                <button class="nav-item active">Requests</button>
+                <button class="nav-item">Sessions</button>
+                <button class="nav-item">Robot</button>
+                <button class="nav-item">Knowledge</button>
+                <button class="nav-item">Health</button>
+                <button class="nav-item">Maps</button>
+              </nav>
+              <div class="admin-content">
+                <div class="toolbar">
+                  <div>
+                    <h3>Companion requests</h3>
+                    <p>Approve one physical holder at a time. Reassignment aborts the current holder.</p>
+                  </div>
+                  <button class="small-button">Refresh</button>
+                </div>
+
+                <div class="request-row">
+                  <div>
+                    <div class="row-title">Kalhar</div>
+                    <div class="row-sub">Comfortable: yes - session 7f3a... - asked 2 min ago</div>
+                  </div>
+                  <div>
+                    <span class="chip warn">Pending</span>
+                    <span class="chip">Robot: turtlebot468</span>
+                  </div>
+                  <div class="button-row">
+                    <button class="small-button primary-small">Approve</button>
+                    <button class="small-button">Deny</button>
+                  </div>
+                </div>
+
+                <div class="request-row">
+                  <div>
+                    <div class="row-title">Demo Guest</div>
+                    <div class="row-sub">Comfortable: no - session c18e... - asked 9 min ago</div>
+                  </div>
+                  <div>
+                    <span class="chip warn">Pending</span>
+                    <span class="chip">Virtual only suggested</span>
+                  </div>
+                  <div class="button-row">
+                    <button class="small-button primary-small">Approve virtual pet</button>
+                    <button class="small-button">Deny</button>
+                  </div>
+                </div>
+
+                <div class="toolbar" style="margin-top: 24px;">
+                  <div>
+                    <h3>Recent sessions</h3>
+                    <p>Read-only transcripts and robot handoff controls.</p>
+                  </div>
+                </div>
+
+                <div class="session-row">
+                  <div>
+                    <div class="row-title">Kalhar</div>
+                    <div class="row-sub">Last: "Can Echo spin?"</div>
+                  </div>
+                  <span class="chip info">Pending</span>
+                  <div class="button-row">
+                    <button class="small-button">Transcript</button>
+                    <button class="small-button">Give robot</button>
+                  </div>
+                </div>
+
+                <div class="session-row">
+                  <div>
+                    <div class="row-title">System autonomy</div>
+                    <div class="row-sub">Low-battery event generated a motion-free turn</div>
+                  </div>
+                  <span class="chip">No robot</span>
+                  <div class="button-row">
+                    <button class="small-button">Transcript</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article style="grid-column: 1 / -1;">
+          <div class="caption">06 Robot safety and command outcomes</div>
+          <div class="desktop">
+            <div class="desktop-bar">
+              <div class="desktop-title"><div class="echo-mark" style="width: 32px; height: 32px; border-radius: 10px;"></div> Echo Admin</div>
+              <span class="chip danger">Motion disabled</span>
+            </div>
+            <div class="desktop-layout">
+              <nav class="side-nav">
+                <button class="nav-item">Flags</button>
+                <button class="nav-item">Prompt</button>
+                <button class="nav-item">Requests</button>
+                <button class="nav-item">Sessions</button>
+                <button class="nav-item active">Robot</button>
+                <button class="nav-item">Knowledge</button>
+                <button class="nav-item">Health</button>
+                <button class="nav-item">Maps</button>
+              </nav>
+              <div class="admin-content">
+                <div class="toolbar">
+                  <div>
+                    <h3>Robot control</h3>
+                    <p>Refusals are expected safety outcomes while docked or motion-locked.</p>
+                  </div>
+                  <button class="danger-button">Kill switch</button>
+                </div>
+
+                <div class="admin-grid">
+                  <div class="robot-card">
+                    <div class="robot-card-head">
+                      <div>
+                        <div class="robot-name">Echo physical</div>
+                        <div class="robot-id">robot_id: turtlebot468</div>
+                      </div>
+                      <span class="chip ok">Online</span>
+                    </div>
+
+                    <div class="gate-grid">
+                      <div class="gate">Battery<strong>82%</strong></div>
+                      <div class="gate">Dock<strong>Docked</strong></div>
+                      <div class="gate">Motion<strong>Disabled</strong></div>
+                      <div class="gate">Dry run<strong>True</strong></div>
+                    </div>
+
+                    <div class="button-row" style="justify-content: start;">
+                      <button class="small-button danger-small">Abort session</button>
+                      <button class="small-button">Stop</button>
+                      <button class="small-button">Dock</button>
+                      <button class="small-button">Spin</button>
+                    </div>
+                  </div>
+
+                  <div class="robot-card">
+                    <div class="metric-label">Current holder</div>
+                    <div class="metric-value">None</div>
+                    <p class="microcopy">Approving a request atomically binds a session to this robot.</p>
+                    <div class="event-log">14:22:08 undock: REFUSED - motion_disabled
+14:20:41 dock: REFUSED - docked
+14:18:12 stop: done simulated=true</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article style="grid-column: 1 / -1;">
+          <div class="caption">07 Knowledge, health, and maps</div>
+          <div class="desktop">
+            <div class="desktop-bar">
+              <div class="desktop-title"><div class="echo-mark" style="width: 32px; height: 32px; border-radius: 10px;"></div> Echo Admin</div>
+              <span class="chip info">Operator view</span>
+            </div>
+            <div class="desktop-layout">
+              <nav class="side-nav">
+                <button class="nav-item">Flags</button>
+                <button class="nav-item">Prompt</button>
+                <button class="nav-item">Requests</button>
+                <button class="nav-item">Sessions</button>
+                <button class="nav-item">Robot</button>
+                <button class="nav-item active">Knowledge</button>
+                <button class="nav-item">Health</button>
+                <button class="nav-item">Maps</button>
+              </nav>
+              <div class="admin-content">
+                <div class="admin-grid">
+                  <div>
+                    <div class="toolbar">
+                      <div>
+                        <h3>Knowledge base</h3>
+                        <p>Upload docs, then sync ingestion before Echo relies on them.</p>
+                      </div>
+                    </div>
+                    <div class="upload-zone">
+                      <strong>Drop a PDF or Markdown file</strong>
+                      <p class="microcopy">Files are stored in S3 and ingested by Bedrock KB.</p>
+                    </div>
+                    <div class="doc-row">
+                      <div>
+                        <div class="row-title">echo-facts.md</div>
+                        <div class="row-sub">12.4 KB - synced today</div>
+                      </div>
+                      <span class="chip ok">Complete</span>
+                      <div class="button-row"><button class="small-button">Delete</button></div>
+                    </div>
+                    <button class="small-button primary-small" style="margin-top: 12px;">Start sync</button>
+                  </div>
+
+                  <div>
+                    <div class="toolbar">
+                      <div>
+                        <h3>Health</h3>
+                        <p>Surface the facts an operator needs during a demo.</p>
+                      </div>
+                    </div>
+                    <div class="admin-grid">
+                      <div class="metric">
+                        <div class="metric-label">Service</div>
+                        <div class="metric-value">Ready</div>
+                      </div>
+                      <div class="metric">
+                        <div class="metric-label">MQTT ack p95</div>
+                        <div class="metric-value">280ms</div>
+                      </div>
+                      <div class="metric">
+                        <div class="metric-label">Last turn</div>
+                        <div class="metric-value">1.9s</div>
+                      </div>
+                      <div class="metric">
+                        <div class="metric-label">Recent errors</div>
+                        <div class="metric-value">0</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="margin-top: 18px;">
+                  <div class="toolbar">
+                    <div>
+                      <h3>Map preview</h3>
+                      <p>Last uploaded S3 map for turtlebot468. Live snapshots can plug in later.</p>
+                    </div>
+                    <span class="chip">Captured 14:10</span>
+                  </div>
+                  <div class="map-preview">
+                    <div class="map-room r1"></div>
+                    <div class="map-room r2"></div>
+                    <div class="map-room r3"></div>
+                    <div class="map-path"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
