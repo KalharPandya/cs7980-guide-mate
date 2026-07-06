@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from guide_mate_bridge.executor import ChoreographyRunner
 from guide_mate_bridge.iot_client import IotClient
+from guide_mate_bridge.safety import SafetyState
 
 log = logging.getLogger(__name__)
 
@@ -22,16 +23,17 @@ def _truthy(value: str) -> bool:
 
 
 class Bridge:
-    def __init__(self, client: IotClient, robot_id: str, dry_run: bool = True) -> None:
+    def __init__(self, client: IotClient, robot_id: str, safety: SafetyState) -> None:
         self._client = client
         self._robot_id = robot_id
+        self._safety = safety
         self._seen = collections.deque(maxlen=256)
         self._seen_set: set[str] = set()
         # awscrt dispatches callbacks single-threaded per connection today, but that's
         # not a documented contract — guard the check-evict-insert sequence explicitly.
         self._dedupe_lock = threading.Lock()
         self._queue: "queue.Queue[Command]" = queue.Queue()
-        self._runner = ChoreographyRunner(publish_ack=self._publish_ack, dry_run=dry_run)
+        self._runner = ChoreographyRunner(publish_ack=self._publish_ack, safety=safety)
         self._worker = threading.Thread(target=self._run, daemon=True)
 
     def _publish_ack(self, ack: Ack) -> None:
@@ -91,7 +93,8 @@ def main() -> None:
         robot_id=robot_id,
         ca_filepath=ca,
     )
-    bridge = Bridge(client=client, robot_id=robot_id, dry_run=True)
+    safety = SafetyState(env_dry_run=True)  # main() already exited above if env != truthy
+    bridge = Bridge(client=client, robot_id=robot_id, safety=safety)
     bridge.start()
     log.info("bridge connected", extra=log_extra(robot_id=robot_id))
     threading.Event().wait()  # block forever
