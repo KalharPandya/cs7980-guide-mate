@@ -102,3 +102,19 @@ th { color: var(--muted); font-weight: 600; }
 
 form { display: flex; gap: 0.6rem; align-items: center; margin: 0.6rem 0; flex-wrap: wrap; }
 #login-form input { max-width: 260px; }
+
+/* Task 6: requests / sessions / robot-session controls */
+#requests-list, #sessions-list { list-style: none; padding: 0; }
+#requests-list li, #sessions-list li {
+  padding: 0.5rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem;
+}
+#requests-list button, #sessions-list button { margin-left: 0.4rem; }
+.transcript {
+  border: 1px solid var(--border); border-radius: 8px; background: var(--card);
+  padding: 0.8rem; min-height: 120px; white-space: pre-wrap; font-size: 0.9rem;
+}
+#robot-holder { margin: 0.6rem 0; color: var(--muted); }
+#assign-event {
+  border: 1px solid var(--border); border-radius: 8px; background: var(--card);
+  padding: 0.8rem; white-space: pre-wrap; font-size: 0.85rem; overflow-x: auto;
+}

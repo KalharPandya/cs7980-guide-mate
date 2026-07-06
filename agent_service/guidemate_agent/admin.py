@@ -20,8 +20,11 @@ from typing import Optional
 import boto3
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from itsdangerous import BadSignature, SignatureExpired, TimestampSigner
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
+from guidemate_msgs.messages import Command, new_cmd_id
+
+from guidemate_agent import sessions
 from guidemate_agent.store import DEFAULT_FLAGS
 
 log = logging.getLogger(__name__)
@@ -242,3 +245,106 @@ def kb_sync(request: Request, _: bool = Depends(admin_required)) -> dict:
 @router.get("/kb/sync-status")
 def kb_sync_status(request: Request, _: bool = Depends(admin_required)) -> dict:
     return request.app.state.kb.latest_job_status()
+
+
+# --- companion requests / sessions / robot-session controls (Task 6) -----
+# Paths are RELATIVE to the router's /api/admin prefix (Phase 3). The Phase 4
+# brief drafted them under /admin/api/...; the real router already carries the
+# prefix, so they resolve as /api/admin/requests, /api/admin/robot/<id>/...,
+# etc. All orchestration lives in sessions.*; these routes are thin adapters
+# that thread request.app.state.registry through so binds/unbinds fire the
+# best-effort assignment undock/dock (whose refusal ack is the Phase 4 evidence).
+class _ApproveBody(BaseModel):
+    robot_id: str
+
+
+class _ReassignBody(BaseModel):
+    session_id: str
+
+
+class _RobotCommandBody(BaseModel):
+    type: str
+    name: str
+
+
+@router.get("/requests")
+def admin_list_requests(_: bool = Depends(admin_required)) -> list:
+    return sessions.list_pending_requests()
+
+
+@router.post("/requests/{request_id}/approve")
+def admin_approve(
+    request_id: str, body: _ApproveBody, request: Request,
+    _: bool = Depends(admin_required),
+) -> dict:
+    # Binding fires the assignment undock (best-effort; refusal recorded and
+    # surfaced by the assign-events route below).
+    return sessions.approve_request(
+        request_id, body.robot_id, registry=request.app.state.registry
+    )
+
+
+@router.post("/requests/{request_id}/deny")
+def admin_deny(request_id: str, _: bool = Depends(admin_required)) -> dict:
+    sessions.deny_request(request_id)
+    return {"ok": True}
+
+
+@router.get("/sessions")
+def admin_list_sessions(_: bool = Depends(admin_required)) -> list:
+    return sessions.list_sessions()
+
+
+@router.get("/sessions/{session_id}/messages")
+def admin_session_messages(session_id: str, _: bool = Depends(admin_required)) -> list:
+    return sessions.get_messages(session_id)
+
+
+@router.post("/robot/{robot_id}/abort")
+def admin_abort_robot(
+    robot_id: str, request: Request, _: bool = Depends(admin_required),
+) -> dict:
+    # Unassign fires a best-effort dock (refusal recorded).
+    return {"freed_session_id": sessions.abort_robot(
+        robot_id, registry=request.app.state.registry)}
+
+
+@router.post("/robot/{robot_id}/reassign")
+def admin_reassign_robot(
+    robot_id: str, body: _ReassignBody, request: Request,
+    _: bool = Depends(admin_required),
+) -> dict:
+    # Fires dock (old holder) then undock (new holder), both best-effort.
+    return {"aborted_session_id": sessions.reassign_robot(
+        robot_id, body.session_id, registry=request.app.state.registry)}
+
+
+@router.get("/robot/{robot_id}/assign-events")
+def admin_assign_events(robot_id: str, _: bool = Depends(admin_required)) -> list:
+    """Assignment-triggered undock/dock attempts + their acks/refusals."""
+    return sessions.get_assign_events(robot_id)
+
+
+@router.post("/robot/{robot_id}/command")
+def admin_robot_command(
+    robot_id: str, body: _RobotCommandBody, request: Request,
+    _: bool = Depends(admin_required),
+) -> dict:
+    try:
+        cmd = Command(type=body.type, name=body.name)
+    except ValidationError:
+        # Unknown command shape — synthesize a refusal WITHOUT publishing.
+        # (dock/undock DO validate since Task 3's schema change; they are
+        # published below and the robot/fake returns the real refusal ack.)
+        return {
+            "refused": True,
+            "acks": [{
+                "cmd_id": new_cmd_id(),
+                "state": "failed",
+                "reason": (f"blocked: {body.type}/{body.name} is not a valid "
+                           "command; nothing published"),
+            }],
+        }
+    acks = request.app.state.registry.send_command(robot_id, cmd)
+    refused = bool(acks) and acks[-1].state == "failed"
+    return {"refused": refused, "acks": [a.model_dump() for a in acks]}
