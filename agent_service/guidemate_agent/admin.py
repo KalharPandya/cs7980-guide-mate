@@ -13,6 +13,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import time
 from typing import Optional
 
@@ -184,6 +185,27 @@ def kill_switch(body: KillBody, request: Request, _: bool = Depends(admin_requir
     return {"ok": True, "thing": thing, "desired": desired}
 
 
+_UNSAFE_KEY_CHARS = re.compile(r"[^A-Za-z0-9._-]")
+
+
+def _safe_key(filename: Optional[str]) -> str:
+    """Reduce a caller-supplied filename/key to a flat, safe S3 key.
+
+    Takes the basename (drops any directory components / traversal), strips
+    leading dots and whitespace, and replaces anything outside
+    [A-Za-z0-9._-] with "_". Raises HTTP 400 if the input was missing/empty
+    or nothing safe remains after normalization.
+    """
+    if not filename:
+        raise HTTPException(status_code=400, detail="invalid filename")
+    base = os.path.basename(filename)
+    base = base.lstrip(". \t\r\n")
+    base = _UNSAFE_KEY_CHARS.sub("_", base)
+    if not base:
+        raise HTTPException(status_code=400, detail="invalid filename")
+    return base
+
+
 # --- KB management -------------------------------------------------------
 # KBManager methods now return dicts ({"ok": bool, "error"?: str}, plus
 # "job_id" from start_ingestion; latest_job_status -> {"status": ...}); these
@@ -199,15 +221,17 @@ async def kb_upload(
     file: UploadFile = File(...),
     _: bool = Depends(admin_required),
 ) -> dict:
+    key = _safe_key(file.filename)
     data = await file.read()
-    result = request.app.state.kb.upload(file.filename, data)
-    return {"key": file.filename, **result}
+    result = request.app.state.kb.upload(key, data)
+    return {"key": key, **result}
 
 
 @router.delete("/kb")
 def kb_delete(key: str, request: Request, _: bool = Depends(admin_required)) -> dict:
-    result = request.app.state.kb.delete(key)
-    return {"key": key, **result}
+    safe = _safe_key(key)
+    result = request.app.state.kb.delete(safe)
+    return {"key": safe, **result}
 
 
 @router.post("/kb/sync")

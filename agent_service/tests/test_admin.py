@@ -274,3 +274,64 @@ def test_kb_delete(monkeypatch):
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
         assert client.get("/api/admin/kb", headers=h).json()["docs"] == []
+
+
+def test_kb_upload_sanitizes_path_traversal_filename(monkeypatch):
+    app = _make_app(monkeypatch)
+    with TestClient(app) as client:
+        h = _auth_header()
+        up = client.post(
+            "/api/admin/kb",
+            files={"file": ("../../etc/passwd", b"pwned", "text/plain")},
+            headers=h,
+        )
+        assert up.status_code == 200
+        assert up.json()["key"] == "passwd"
+        assert client.get("/api/admin/kb", headers=h).json()["docs"][0]["key"] == "passwd"
+
+
+def test_safe_key_rejects_none_and_empty():
+    # A multipart part with filename="" never reaches our handler as an
+    # UploadFile (python-multipart treats it as a plain form field and
+    # FastAPI 422s first), so exercise the None/empty guard directly.
+    with pytest.raises(admin.HTTPException) as exc_info:
+        admin._safe_key(None)
+    assert exc_info.value.status_code == 400
+    with pytest.raises(admin.HTTPException) as exc_info:
+        admin._safe_key("")
+    assert exc_info.value.status_code == 400
+
+
+def test_kb_upload_rejects_dotdot_only_filename(monkeypatch):
+    app = _make_app(monkeypatch)
+    with TestClient(app) as client:
+        h = _auth_header()
+        resp = client.post(
+            "/api/admin/kb",
+            files={"file": ("..", b"data", "text/plain")},
+            headers=h,
+        )
+        assert resp.status_code == 400
+
+
+def test_kb_delete_normalizes_nested_key(monkeypatch):
+    app = _make_app(monkeypatch)
+    with TestClient(app) as client:
+        h = _auth_header()
+        client.post(
+            "/api/admin/kb",
+            files={"file": ("b", b"hello", "text/plain")},
+            headers=h,
+        )
+        resp = client.delete("/api/admin/kb", params={"key": "a/../b"}, headers=h)
+        assert resp.status_code == 200
+        assert resp.json()["key"] == "b"
+        assert client.get("/api/admin/kb", headers=h).json()["docs"] == []
+
+
+def test_kb_delete_rejects_empty_after_normalization(monkeypatch):
+    app = _make_app(monkeypatch)
+    with TestClient(app) as client:
+        h = _auth_header()
+        resp = client.delete("/api/admin/kb", params={"key": "../"}, headers=h)
+        assert resp.status_code == 400
