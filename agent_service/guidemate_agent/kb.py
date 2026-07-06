@@ -38,6 +38,70 @@ _KB_UNAVAILABLE = "knowledge base unavailable"
 _KB_EMPTY = "no relevant knowledge found"
 
 
+def _source_title(uri: str) -> str:
+    """Human-facing doc title from an S3 source URI: its basename (e.g.
+    ``s3://bucket/robert-facts.md`` -> ``robert-facts.md``). Falls back to the
+    raw URI when it has no path segment."""
+    if not uri:
+        return "unknown-source"
+    tail = uri.rstrip("/").rsplit("/", 1)[-1]
+    return tail or uri
+
+
+def retrieve_passages_with_sources(
+    query: str,
+    kb_id: str | None = None,
+    region: str | None = None,
+    top_k: int = 4,
+    client=None,
+) -> tuple[str, list[dict]]:
+    """Like :func:`retrieve_passages`, but also returns the ordered, de-duplicated
+    list of citation sources used for the answer.
+
+    Returns ``(text, sources)`` where ``sources`` is a list of
+    ``{"title": <doc key/name>, "url": <str|None>}`` (``url`` is always ``None``
+    for the S3-backed KB — there is no public link). ``sources`` is empty on any
+    error, on an empty KB result, and for the placeholder ``unknown-source``. The
+    ``text`` half is byte-for-byte what :func:`retrieve_passages` produces.
+    """
+    kb_id = kb_id or os.environ.get("GUIDEMATE_KB_ID") or _DEFAULT_KB_ID
+    region = region or os.environ.get("AWS_REGION") or _DEFAULT_REGION
+    try:
+        client = client or boto3.client("bedrock-agent-runtime", region_name=region)
+        resp = client.retrieve(
+            knowledgeBaseId=kb_id,
+            retrievalQuery={"text": query},
+            retrievalConfiguration={
+                "vectorSearchConfiguration": {"numberOfResults": top_k}
+            },
+        )
+    except Exception:  # noqa: BLE001 — degrade gracefully, agent still answers
+        logger.exception("KB retrieve failed for kb_id=%s", kb_id)
+        return _KB_UNAVAILABLE, []
+    results = resp.get("retrievalResults", [])
+    if not results:
+        return _KB_EMPTY, []
+    blocks = []
+    sources: list[dict] = []
+    seen: set[str] = set()
+    for item in results:
+        text = item.get("content", {}).get("text", "").strip()
+        src = (
+            item.get("location", {})
+            .get("s3Location", {})
+            .get("uri", "unknown-source")
+        )
+        blocks.append(f"[{src}] {text}")
+        # Real sources only (skip the placeholder), de-duplicated in first-seen
+        # order so a doc spanning several passages appears once in the citation.
+        if src and src != "unknown-source":
+            title = _source_title(src)
+            if title not in seen:
+                seen.add(title)
+                sources.append({"title": title, "url": None})
+    return "\n\n".join(blocks), sources
+
+
 def retrieve_passages(
     query: str,
     kb_id: str | None = None,
@@ -53,35 +117,13 @@ def retrieve_passages(
     the KB returns nothing.
 
     `kb_id` falls back to the GUIDEMATE_KB_ID env var, then a baked-in default.
-    `client` is injectable for offline tests.
+    `client` is injectable for offline tests. Thin wrapper over
+    :func:`retrieve_passages_with_sources` (returns only the text half).
     """
-    kb_id = kb_id or os.environ.get("GUIDEMATE_KB_ID") or _DEFAULT_KB_ID
-    region = region or os.environ.get("AWS_REGION") or _DEFAULT_REGION
-    try:
-        client = client or boto3.client("bedrock-agent-runtime", region_name=region)
-        resp = client.retrieve(
-            knowledgeBaseId=kb_id,
-            retrievalQuery={"text": query},
-            retrievalConfiguration={
-                "vectorSearchConfiguration": {"numberOfResults": top_k}
-            },
-        )
-    except Exception:  # noqa: BLE001 — degrade gracefully, agent still answers
-        logger.exception("KB retrieve failed for kb_id=%s", kb_id)
-        return _KB_UNAVAILABLE
-    results = resp.get("retrievalResults", [])
-    if not results:
-        return _KB_EMPTY
-    blocks = []
-    for item in results:
-        text = item.get("content", {}).get("text", "").strip()
-        src = (
-            item.get("location", {})
-            .get("s3Location", {})
-            .get("uri", "unknown-source")
-        )
-        blocks.append(f"[{src}] {text}")
-    return "\n\n".join(blocks)
+    text, _sources = retrieve_passages_with_sources(
+        query, kb_id=kb_id, region=region, top_k=top_k, client=client
+    )
+    return text
 
 
 def _safe_error(exc: Exception) -> str:

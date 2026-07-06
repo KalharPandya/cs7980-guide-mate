@@ -244,14 +244,34 @@ class DogAgent:
             return None
         return retrieve_passages
 
-    def _kb_impl(self, query: str) -> str:
+    def _kb_impl(self, query: str, captured: Optional[dict] = None) -> str:
         """Body of the retrieve_kb tool. The tool is only ever offered to the
-        model once the KB surface exists (see _kb_available), so this fallback
-        string is a belt-and-suspenders guard."""
-        retrieve_passages = self._load_retrieve_passages()
-        if retrieve_passages is None:
+        model once the KB surface exists (see _kb_available), so the fallback
+        string is a belt-and-suspenders guard.
+
+        When ``captured`` is provided, the citation sources for this retrieval
+        are accumulated onto ``captured["kb_sources"]`` (de-duplicated by title
+        across multiple retrieve_kb calls in one turn) so the WS/reply layer can
+        surface them to the frontend. A turn that never grounds leaves the list
+        empty. Sources capture is best-effort — any failure there degrades to the
+        plain-text passages so the turn still answers.
+        """
+        if captured is None:
+            retrieve_passages = self._load_retrieve_passages()
+            if retrieve_passages is None:
+                return "knowledge base is unavailable right now"
+            return retrieve_passages(query, region=self._region)
+        try:
+            from guidemate_agent.kb import retrieve_passages_with_sources
+        except ImportError:
             return "knowledge base is unavailable right now"
-        return retrieve_passages(query, region=self._region)
+        text, sources = retrieve_passages_with_sources(query, region=self._region)
+        existing = {s.get("title") for s in captured.get("kb_sources", [])}
+        for src in sources:
+            if src.get("title") not in existing:
+                existing.add(src.get("title"))
+                captured.setdefault("kb_sources", []).append(src)
+        return text
 
     # --- tool construction (per-turn registry mechanism) -----------------
     def _build_tools(self, names: list, target: Optional[str], captured: dict,
@@ -294,7 +314,7 @@ class DogAgent:
             @tool
             def retrieve_kb(query: str) -> str:
                 """Search Robert's knowledge base for facts about the project or Robert."""
-                return self._kb_impl(query)
+                return self._kb_impl(query, captured)
 
             tools.append(retrieve_kb)
         return tools
@@ -374,7 +394,7 @@ class DogAgent:
                 "turn_id": turn_id,
             })
 
-        captured = {"emote": None, "acks": []}
+        captured = {"emote": None, "acks": [], "kb_sources": []}
         names = self._enabled_tool_names(flags, physical)
         if not allow_motion:
             names = [n for n in names if n not in ("run_motion", "stop")]
@@ -406,5 +426,8 @@ class DogAgent:
             "reply_text": reply_text,
             "emote": captured["emote"],
             "robot": captured["acks"],
+            # KB citation sources for this turn ([] when the turn didn't ground on
+            # the KB). The WS/reply layer surfaces these to the frontend.
+            "sources": captured["kb_sources"],
             "turn_id": turn_id,
         })

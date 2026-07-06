@@ -311,3 +311,148 @@ def test_fake_registry_records_sent_and_refuses_motion():
     assert reg.sent[-1] == ("turtlebot468", "motion", "undock")
     assert [a.state for a in acks] == ["received", "failed"]
     assert "motion_disabled" in acks[-1].reason
+
+
+# =====================================================================
+# Wave-2 (no-motion): user-facing session map + arsenal routes.
+#
+# These are the caller's OWN session (NOT admin-gated). They resolve the robot
+# via sessions.robot_for_session and stream the map through app.state.s3 (the
+# app's IAM role); every failure path degrades to 404 / false-null, never 500.
+# =====================================================================
+import json as _json
+
+from guidemate_agent.maps import MAPS_BUCKET, map_key, meta_key
+
+
+class _FakeBody:
+    def __init__(self, data: bytes):
+        self._data = data
+
+    def read(self):
+        return self._data
+
+
+class _FakeS3:
+    """Minimal boto3-s3 stand-in: returns preset objects or raises for missing keys."""
+
+    def __init__(self, objects):
+        self._objects = objects  # {(bucket, key): bytes}
+
+    def get_object(self, Bucket, Key):  # noqa: N803 -- mirrors the boto3 signature
+        try:
+            data = self._objects[(Bucket, Key)]
+        except KeyError:
+            raise KeyError(Key)
+        return {"Body": _FakeBody(data)}
+
+
+_MAP_PNG = b"\x89PNG\r\n\x1a\nFAKEPNGBYTES"
+_MAP_META = {"captured_ts": "2026-07-06T12:00:00+00:00", "source": "/home/ubuntu/map.pgm"}
+
+
+def _bind(sid, robot_id="turtlebot468"):
+    sessions.approve_request(sessions.create_request(sid), robot_id)
+
+
+def test_session_map_bound_streams_png(monkeypatch, ddb):
+    _fake_bedrock(monkeypatch)
+    with _fake_client(monkeypatch) as client:
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        _bind(sid)
+        client.app.state.s3 = _FakeS3({(MAPS_BUCKET, map_key("turtlebot468")): _MAP_PNG})
+        res = client.get(f"/api/session/{sid}/map")
+        assert res.status_code == 200
+        assert res.headers["content-type"] == "image/png"
+        assert res.content == _MAP_PNG
+
+
+def test_session_map_no_robot_is_404(monkeypatch, ddb):
+    _fake_bedrock(monkeypatch)
+    with _fake_client(monkeypatch) as client:
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        # session created but never bound -> no robot -> clean 404 JSON
+        client.app.state.s3 = _FakeS3({(MAPS_BUCKET, map_key("turtlebot468")): _MAP_PNG})
+        res = client.get(f"/api/session/{sid}/map")
+        assert res.status_code == 404
+        assert "detail" in res.json()
+
+
+def test_session_map_missing_key_is_404(monkeypatch, ddb):
+    _fake_bedrock(monkeypatch)
+    with _fake_client(monkeypatch) as client:
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        _bind(sid)
+        client.app.state.s3 = _FakeS3({})  # bound, but no map object in S3
+        res = client.get(f"/api/session/{sid}/map")
+        assert res.status_code == 404
+        assert "detail" in res.json()
+
+
+def test_session_map_meta_bound_returns_json(monkeypatch, ddb):
+    _fake_bedrock(monkeypatch)
+    with _fake_client(monkeypatch) as client:
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        _bind(sid)
+        client.app.state.s3 = _FakeS3(
+            {(MAPS_BUCKET, meta_key("turtlebot468")): _json.dumps(_MAP_META).encode()}
+        )
+        res = client.get(f"/api/session/{sid}/map/meta")
+        assert res.status_code == 200
+        assert res.json() == _MAP_META
+
+
+def test_session_map_meta_no_robot_is_404(monkeypatch, ddb):
+    _fake_bedrock(monkeypatch)
+    with _fake_client(monkeypatch) as client:
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        res = client.get(f"/api/session/{sid}/map/meta")
+        assert res.status_code == 404
+
+
+def test_session_arsenal_unbound(monkeypatch, ddb):
+    _fake_bedrock(monkeypatch)
+    with _fake_client(monkeypatch) as client:
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        client.app.state.s3 = _FakeS3({})
+        body = client.get(f"/api/session/{sid}/arsenal").json()
+        assert body["knowledge"]["available"] is True   # cfg has a kb_id
+        assert body["maps"]["available"] is False        # no bound robot -> no map
+        assert body["human_handoff"]["available"] is True
+        assert body["robot"] == {
+            "bound": False, "robot_id": None, "dry_run": None, "motion_enabled": None
+        }
+        # unbound is dry-run by construction (can never move a robot)
+        assert body["safety"]["dry_run"] is True
+
+
+def test_session_arsenal_bound(monkeypatch, ddb):
+    _fake_bedrock(monkeypatch)
+    with _fake_client(monkeypatch) as client:
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        _bind(sid)
+        client.app.state.s3 = _FakeS3({(MAPS_BUCKET, map_key("turtlebot468")): _MAP_PNG})
+        body = client.get(f"/api/session/{sid}/arsenal").json()
+        assert body["knowledge"]["available"] is True
+        assert body["maps"]["available"] is True         # bound robot + map in S3
+        assert body["human_handoff"]["available"] is True
+        # FakeRobotRegistry reports the motion-locked / dry-run gate
+        assert body["robot"]["bound"] is True
+        assert body["robot"]["robot_id"] == "turtlebot468"
+        assert body["robot"]["motion_enabled"] is False
+        assert body["robot"]["dry_run"] is True
+        assert body["safety"]["dry_run"] is True

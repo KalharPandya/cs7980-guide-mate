@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 import guidemate_agent.app as appmod
 import guidemate_agent.ws_chat as ws_chat
-from guidemate_agent import dog_agent, sessions
+from guidemate_agent import dog_agent, kb, sessions
 from guidemate_agent.observability import Observability
 
 
@@ -296,3 +296,72 @@ def test_ws_physical_turn_publishes_to_bound_robot(monkeypatch, ddb):
         assert "get_status" in _FakeStrands.last.tool_names
         # single persistence still holds on the physical path
         assert [m["role"] for m in sessions.get_messages(sid)] == ["user", "dog"]
+
+
+# ============================================ KB citation sources on the reply ==
+class _FakeStrandsKB:
+    """strands.Agent stand-in that GROUNDS: it calls retrieve_kb (so the turn's
+    KB citations are captured) and then send_emote."""
+
+    last = None
+
+    def __init__(self, model=None, system_prompt=None, tools=None):
+        self.system_prompt = system_prompt
+        self.tools = list(tools or [])
+        self.tool_names = [t.tool_name for t in self.tools]
+        type(self).last = self
+
+    def __call__(self, message):
+        self.message = message
+        for t in self.tools:
+            if t.tool_name == "retrieve_kb":
+                t("who is robert")
+        for t in self.tools:
+            if t.tool_name == "send_emote":
+                t("happy")
+        return "woof! robert is a turtlebot 4"
+
+
+def test_ws_kb_grounded_reply_frame_includes_sources(monkeypatch, ddb):
+    """A turn that used KB retrieval carries its citations on the reply frame as
+    ``sources`` = [{"title", "url"}] (title = the KB doc key)."""
+    monkeypatch.setattr(dog_agent, "Agent", _FakeStrandsKB)
+    monkeypatch.setattr(dog_agent, "BedrockModel", lambda **kw: None)
+    monkeypatch.setattr(
+        kb,
+        "retrieve_passages_with_sources",
+        lambda *a, **k: (
+            "[s3://guidemate-kb-docs/robert-facts.md] robert is a turtlebot 4",
+            [{"title": "robert-facts.md", "url": None}],
+        ),
+    )
+    with _fake_client(monkeypatch) as client:
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        with client.websocket_connect(f"/ws/chat/{sid}") as ws:
+            ws.send_json({"type": "text", "message": "who is robert?"})
+            reply = ws.receive_json()
+            ws.receive_json()  # audio
+    assert reply["type"] == "reply"
+    assert reply["sources"] == [{"title": "robert-facts.md", "url": None}]
+    # existing reply-frame fields + emote-sync are untouched
+    assert reply["emote"] == "happy"
+    assert reply["gate_released"] is True
+    assert reply["turn_id"]
+
+
+def test_ws_non_kb_reply_frame_has_no_sources(monkeypatch, ddb):
+    """A turn that did NOT ground on the KB ships an empty ``sources`` list."""
+    _fake_bedrock(monkeypatch)  # _FakeStrands: only calls send_emote, never retrieve_kb
+    with _fake_client(monkeypatch) as client:
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        with client.websocket_connect(f"/ws/chat/{sid}") as ws:
+            ws.send_json({"type": "text", "message": "hi"})
+            reply = ws.receive_json()
+            ws.receive_json()  # audio
+    assert reply["type"] == "reply"
+    assert reply["sources"] == []
+    assert reply["emote"] == "happy"

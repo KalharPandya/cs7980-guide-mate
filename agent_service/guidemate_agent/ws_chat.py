@@ -147,12 +147,17 @@ async def _run_pipeline(ws: WebSocket, app: FastAPI, session_id: str, text: str)
                 obs.record_command(turn_id, target, cmd.cmd_id, sent, acks)
 
         # Release reply text + audio TOGETHER, once the gate is satisfied (or timed out).
+        # `sources` carries the KB citations for a grounded turn (title = the KB doc
+        # key, e.g. "robert-facts.md"; url is null unless a real link exists). It is
+        # an empty list for a turn that used no KB, so the frontend can rely on the
+        # field always being present. Does not disturb the existing reply fields.
         await ws.send_json({
             "type": "reply",
             "text": result["reply_text"],
             "emote": emote,
             "gate_released": released,
             "turn_id": turn_id,
+            "sources": result.get("sources", []),
         })
         try:
             mp3 = await loop.run_in_executor(

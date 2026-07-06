@@ -10,7 +10,7 @@ from typing import Optional
 
 import boto3
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -24,6 +24,7 @@ from guidemate_agent.config import Config
 from guidemate_agent.dog_agent import DogAgent
 from guidemate_agent.fakes import FakeRobotRegistry
 from guidemate_agent.kb import KBManager
+from guidemate_agent.maps import fetch_map_meta, fetch_map_png
 from guidemate_agent.mqtt_link import RobotRegistry
 from guidemate_agent.observability import Observability
 from guidemate_agent.store import ConfigStore
@@ -209,6 +210,101 @@ def session_state(session_id: str) -> dict:
     if sessions.get_session(session_id) is None:
         raise HTTPException(status_code=404, detail="unknown session")
     return sessions.get_session_state(session_id)
+
+
+# --- user-facing session capabilities (Wave-2, NOT admin-gated) --------------
+# These are the caller's OWN session: they only ever read the session's bound
+# robot (sessions.robot_for_session requires both a binding AND the live lock),
+# never another session's data. Every branch is best-effort — a lookup/S3/registry
+# failure degrades to 404 (maps) or false/null (arsenal), never a 500/traceback.
+def _session_robot(session_id: str) -> Optional[str]:
+    """The robot bound to (and locked by) this session, or None. Never raises."""
+    try:
+        return sessions.robot_for_session(session_id)
+    except Exception:  # noqa: BLE001 — a lookup failure degrades to "no robot"
+        log.exception("robot_for_session lookup failed for %s", session_id)
+        return None
+
+
+@app.get("/api/session/{session_id}/map")
+def session_map(session_id: str) -> Response:
+    """Stream the PNG of this session's bound robot's latest SLAM map (through the
+    app's own IAM role via app.state.s3). 404 (clean JSON) when the session has no
+    bound robot, no map exists yet, or any S3 read fails — never a 500."""
+    robot_id = _session_robot(session_id)
+    if robot_id is None:
+        raise HTTPException(status_code=404, detail="no robot bound to this session")
+    try:
+        png = fetch_map_png(app.state.s3, robot_id)
+    except Exception:  # noqa: BLE001 — missing key / any S3 error -> no map yet
+        raise HTTPException(status_code=404, detail="no map available for this session")
+    return Response(content=png, media_type="image/png")
+
+
+@app.get("/api/session/{session_id}/map/meta")
+def session_map_meta(session_id: str) -> JSONResponse:
+    """meta.json ({captured_ts, source}) for this session's bound robot's map.
+    Same 404-not-500 contract as the map route above."""
+    robot_id = _session_robot(session_id)
+    if robot_id is None:
+        raise HTTPException(status_code=404, detail="no robot bound to this session")
+    try:
+        meta = fetch_map_meta(app.state.s3, robot_id)
+    except Exception:  # noqa: BLE001 — missing key / any S3 error -> no map yet
+        raise HTTPException(status_code=404, detail="no map metadata for this session")
+    return JSONResponse(meta)
+
+
+@app.get("/api/session/{session_id}/arsenal")
+def session_arsenal(session_id: str) -> JSONResponse:
+    """Moses's capability/tool status for THIS session (user's own session, not
+    admin-gated). Every field is best-effort: any lookup error degrades that field
+    to false/null rather than 500ing the route."""
+    cfg = getattr(app.state, "config", None)
+    try:
+        kb_available = bool(getattr(cfg, "kb_id", None))
+    except Exception:  # noqa: BLE001
+        kb_available = False
+
+    robot_id = _session_robot(session_id)
+    bound = robot_id is not None
+
+    # A map is "available" only for a bound robot with an object actually in S3.
+    maps_available = False
+    if bound:
+        try:
+            fetch_map_png(app.state.s3, robot_id)
+            maps_available = True
+        except Exception:  # noqa: BLE001 — no map yet / S3 error -> not available
+            maps_available = False
+
+    # Safety gates come from the robot's live status (motion_enabled / dry_run).
+    motion_enabled: Optional[bool] = None
+    dry_run: Optional[bool] = None
+    if bound:
+        try:
+            gates = (app.state.registry.get_status(robot_id) or {}).get("gates") or {}
+            motion_enabled = gates.get("motion_enabled")
+            dry_run = gates.get("dry_run")
+        except Exception:  # noqa: BLE001 — status unreachable -> leave gates null
+            log.exception("arsenal get_status failed for %s", robot_id)
+
+    # Effective safety posture: an unbound session can never move a robot (dry-run
+    # by construction); a bound session is dry-run when its robot reports dry_run.
+    safety_dry_run = (not bound) or bool(dry_run)
+
+    return JSONResponse({
+        "knowledge": {"available": kb_available},
+        "maps": {"available": maps_available},
+        "human_handoff": {"available": True},
+        "robot": {
+            "bound": bound,
+            "robot_id": robot_id,
+            "dry_run": dry_run,
+            "motion_enabled": motion_enabled,
+        },
+        "safety": {"dry_run": safety_dry_run},
+    })
 
 
 @app.get("/")

@@ -5,7 +5,11 @@ from datetime import datetime, timezone
 
 from botocore.exceptions import ClientError, BotoCoreError
 
-from guidemate_agent.kb import KBManager, retrieve_passages
+from guidemate_agent.kb import (
+    KBManager,
+    retrieve_passages,
+    retrieve_passages_with_sources,
+)
 
 
 class FakeS3:
@@ -314,6 +318,45 @@ def test_retrieve_empty_results_message():
 def test_retrieve_error_is_swallowed():
     out = retrieve_passages("boom", "A1NIQYZ0KQ", client=FakeKBRuntime(boom=True))
     assert out == "knowledge base unavailable"
+
+
+# --- retrieve_passages_with_sources (citation capture) --------------------
+def test_with_sources_returns_dedup_titles():
+    client = FakeKBRuntime(
+        results=[
+            _kb_result("Robert is a TurtleBot 4.", "s3://guidemate-kb-docs/robert-facts.md"),
+            _kb_result("Robert maps indoor spaces.", "s3://guidemate-kb-docs/robert-facts.md"),
+            _kb_result("Glass handling is layered.", "s3://guidemate-kb-docs/glass.md"),
+        ]
+    )
+    text, sources = retrieve_passages_with_sources("q", "A1NIQYZ0KQ", client=client)
+    assert "Robert is a TurtleBot 4." in text            # text half unchanged
+    # doc keys (basename of the S3 uri), de-duplicated in first-seen order, url null
+    assert sources == [
+        {"title": "robert-facts.md", "url": None},
+        {"title": "glass.md", "url": None},
+    ]
+
+
+def test_with_sources_text_matches_retrieve_passages():
+    results = [_kb_result("x", "s3://b/doc.md")]
+    text, _ = retrieve_passages_with_sources("q", "K", client=FakeKBRuntime(results=results))
+    plain = retrieve_passages("q", "K", client=FakeKBRuntime(results=results))
+    assert text == plain
+
+
+def test_with_sources_empty_and_error_have_no_sources():
+    _text, empty = retrieve_passages_with_sources("q", "K", client=FakeKBRuntime(results=[]))
+    assert empty == []
+    _text, boom = retrieve_passages_with_sources("q", "K", client=FakeKBRuntime(boom=True))
+    assert boom == []
+
+
+def test_with_sources_skips_unknown_source_placeholder():
+    client = FakeKBRuntime(results=[{"content": {"text": "orphan"}}])
+    text, sources = retrieve_passages_with_sources("q", "K", client=client)
+    assert "orphan" in text
+    assert sources == []  # placeholder 'unknown-source' is not a real citation
 
 
 @pytest.mark.skipif(
