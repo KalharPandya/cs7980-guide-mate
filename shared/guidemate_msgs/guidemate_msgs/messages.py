@@ -43,6 +43,21 @@ class Ack(BaseModel):
     reason: Optional[str] = None
     simulated: bool = False
     battery: Optional[float] = None
+    # Gate snapshot at ack time, e.g. {"docked": true, "motion_enabled": false,
+    # "dry_run": true}. None on acks from pre-Phase-2 bridges.
+    gates: Optional[dict] = None
+    ts: str = Field(default_factory=_utc_now_iso)
+
+
+class Heartbeat(BaseModel):
+    """Periodic bridge liveness + robot truth: published to status_topic every 30 s."""
+
+    event: Literal["heartbeat"] = "heartbeat"
+    robot_id: str
+    battery: Optional[float] = None      # Create 3 charge fraction 0..1; None if unreadable
+    docked: Optional[bool] = None        # None = dock state unknown (telemetry not up)
+    uptime_s: float
+    gates: dict = Field(default_factory=dict)
     ts: str = Field(default_factory=_utc_now_iso)
 
 

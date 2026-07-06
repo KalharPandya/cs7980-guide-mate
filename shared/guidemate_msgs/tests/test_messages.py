@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from guidemate_msgs.messages import (
     Ack,
     Command,
+    Heartbeat,
     cmd_topic,
     new_cmd_id,
     status_topic,
@@ -53,3 +54,28 @@ def test_new_cmd_id_unique():
 def test_topic_helpers():
     assert cmd_topic("turtlebot468") == "guidemate/turtlebot468/cmd"
     assert status_topic("turtlebot468") == "guidemate/turtlebot468/status"
+
+
+def test_ack_gates_default_none_and_roundtrip():
+    ack = Ack(cmd_id="a", state="done")
+    assert ack.gates is None
+    gates = {"docked": True, "motion_enabled": False, "dry_run": True}
+    ack2 = Ack(cmd_id="a", state="failed", reason="docked", gates=gates)
+    restored = Ack.model_validate_json(ack2.model_dump_json())
+    assert restored.gates == gates
+
+
+def test_heartbeat_defaults_and_roundtrip():
+    hb = Heartbeat(
+        robot_id="turtlebot468",
+        uptime_s=12.5,
+        gates={"docked": None, "motion_enabled": False, "dry_run": True},
+    )
+    assert hb.event == "heartbeat"
+    assert hb.battery is None
+    assert hb.docked is None
+    assert hb.ts.endswith("+00:00")
+    data = json.loads(hb.model_dump_json())
+    assert data["event"] == "heartbeat"
+    restored = Heartbeat.model_validate(data)
+    assert restored == hb
