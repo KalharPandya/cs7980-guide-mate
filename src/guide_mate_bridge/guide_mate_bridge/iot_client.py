@@ -65,8 +65,25 @@ class IotClient:
         future.result()
 
     def publish(self, topic: str, payload_str: str) -> None:
-        self._conn.publish(
+        future, _ = self._conn.publish(
             topic=topic,
             payload=payload_str.encode("utf-8"),
             qos=mqtt.QoS.AT_LEAST_ONCE,
         )
+
+        # Non-blocking delivery check. NEVER call future.result() here: publish() is
+        # invoked from awscrt callback threads (e.g. the shadow delta handler), and
+        # blocking the event loop on its own puback would deadlock the connection.
+        def _warn_on_failure(f) -> None:
+            try:
+                f.result()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("publish to %s failed: %s", topic, exc)
+
+        future.add_done_callback(_warn_on_failure)
+
+    def disconnect(self) -> None:
+        try:
+            self._conn.disconnect().result()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("disconnect failed: %s", exc)

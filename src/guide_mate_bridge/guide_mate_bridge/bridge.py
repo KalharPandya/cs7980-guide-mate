@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import collections
+import json
 import logging
 import os
 import queue
+import signal
 import threading
 
 from guidemate_msgs.jsonlog import log_extra, setup
@@ -14,6 +16,7 @@ from pydantic import ValidationError
 from guide_mate_bridge.executor import ChoreographyRunner
 from guide_mate_bridge.iot_client import IotClient
 from guide_mate_bridge.safety import SafetyState
+from guide_mate_bridge.shadow import ShadowSync
 
 log = logging.getLogger(__name__)
 
@@ -74,17 +77,37 @@ class Bridge:
         self._client.subscribe(cmd_topic(self._robot_id), self.on_message)
 
 
+def _graceful_shutdown(client, shadow, robot_id, telemetry=None, heartbeat=None) -> None:
+    """SIGTERM path: offline(graceful) -> final reported -> disconnect -> stop rclpy."""
+    if heartbeat is not None:
+        heartbeat.stop()  # no more publishes racing the teardown
+    client.publish(
+        status_topic(robot_id),
+        json.dumps({"event": "offline", "robot_id": robot_id, "graceful": True}),
+    )
+    shadow.publish_reported()
+    client.disconnect()
+    if telemetry is not None:
+        telemetry.stop()
+
+
 def main() -> None:
     setup("bridge")
     robot_id = os.environ.get("GUIDEMATE_ROBOT_ID", "turtlebot468")
-    if not _truthy(os.environ.get("GUIDEMATE_DRY_RUN", "1")):
-        raise SystemExit(
-            "GUIDEMATE_DRY_RUN must be truthy in Phase 1 — motion paths do not exist yet"
+    thing_name = os.environ.get("GUIDEMATE_THING_NAME", "Turtlebot-468")
+    env_dry_run = _truthy(os.environ.get("GUIDEMATE_DRY_RUN", "1"))
+    if not env_dry_run:
+        log.warning(
+            "env dry-run is OFF — effective dry-run now follows the shadow "
+            "(which also defaults to locked). No cmd_vel publisher exists in "
+            "this phase, so nothing can move either way."
         )
     endpoint = os.environ["GUIDEMATE_IOT_ENDPOINT"]
     cert = os.environ["GUIDEMATE_CERT"]
     key = os.environ["GUIDEMATE_KEY"]
     ca = os.environ.get("GUIDEMATE_CA")
+
+    safety = SafetyState(env_dry_run=env_dry_run)
     client = IotClient(
         endpoint=endpoint,
         cert_filepath=cert,
@@ -93,11 +116,22 @@ def main() -> None:
         robot_id=robot_id,
         ca_filepath=ca,
     )
-    safety = SafetyState(env_dry_run=True)  # main() already exited above if env != truthy
     bridge = Bridge(client=client, robot_id=robot_id, safety=safety)
     bridge.start()
+    shadow = ShadowSync(client=client, thing_name=thing_name, safety=safety)
+    shadow.start()
+
+    stop_event = threading.Event()
+
+    def _on_signal(signum, frame):
+        stop_event.set()
+
+    signal.signal(signal.SIGTERM, _on_signal)
+    signal.signal(signal.SIGINT, _on_signal)
     log.info("bridge connected", extra=log_extra(robot_id=robot_id))
-    threading.Event().wait()  # block forever
+    stop_event.wait()
+    log.info("shutting down gracefully", extra=log_extra(robot_id=robot_id))
+    _graceful_shutdown(client=client, shadow=shadow, robot_id=robot_id)
 
 
 if __name__ == "__main__":

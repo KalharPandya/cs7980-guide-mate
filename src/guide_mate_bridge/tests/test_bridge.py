@@ -1,17 +1,19 @@
 import json
 
-import pytest
-
 from guidemate_msgs.messages import Command, cmd_topic, status_topic
 
-from guide_mate_bridge.bridge import Bridge, main
+from guide_mate_bridge.bridge import Bridge, _graceful_shutdown
 from guide_mate_bridge.iot_client import IotClient
 from guide_mate_bridge.safety import SafetyState
+from guide_mate_bridge.shadow import ShadowSync, shadow_topic
 
 
 class FakeFuture:
     def result(self, timeout=None):
         return None
+
+    def add_done_callback(self, fn):
+        fn(self)
 
 
 class FakeConnection:
@@ -20,11 +22,13 @@ class FakeConnection:
     def __init__(self):
         self.published = []          # list[(topic, payload_str)]
         self.subscriptions = {}      # topic -> callback
+        self.disconnected = False
 
     def connect(self):
         return FakeFuture()
 
     def disconnect(self):
+        self.disconnected = True
         return FakeFuture()
 
     def publish(self, topic, payload, qos, **kwargs):
@@ -89,10 +93,17 @@ def test_invalid_payload_is_ignored():
     assert bridge._queue.qsize() == 0
 
 
-def test_main_refuses_without_dry_run(monkeypatch):
-    monkeypatch.setenv("GUIDEMATE_DRY_RUN", "0")
-    monkeypatch.setenv("GUIDEMATE_IOT_ENDPOINT", "x")
-    monkeypatch.setenv("GUIDEMATE_CERT", "x")
-    monkeypatch.setenv("GUIDEMATE_KEY", "x")
-    with pytest.raises(SystemExit):
-        main()
+def test_graceful_shutdown_publishes_offline_then_reported_then_disconnects():
+    bridge, fake = _bridge()
+    safety = SafetyState(env_dry_run=True)
+    shadow = ShadowSync(client=bridge._client, thing_name="Turtlebot-468",
+                        safety=safety, get_timeout_s=0.05)
+    # Simulate an already-reconciled shadow layer (subscriptions succeeded earlier).
+    shadow._subscribed = True
+
+    _graceful_shutdown(client=bridge._client, shadow=shadow, robot_id="devtest")
+
+    offline = [json.loads(p) for t, p in fake.published if t == status_topic("devtest")]
+    assert {"event": "offline", "robot_id": "devtest", "graceful": True} in offline
+    assert any(t == shadow_topic("Turtlebot-468", "update") for t, _ in fake.published)
+    assert fake.disconnected is True
