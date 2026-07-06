@@ -36,6 +36,21 @@ function gatesTextHealth(gates) {
   return String(gates);
 }
 
+// Status pills: colour is ALWAYS paired with a text label (a11y — never
+// colour-only). The class is picked from a FIXED literal set here; the only
+// dynamic content is the label, which stays esc()'d because presence flows from
+// a spoofable MQTT heartbeat (see the SECURITY note above).
+function presencePillHealth(presence) {
+  const cls = presence === "online" ? "pill-ok" : "pill-muted";
+  return `<span class="pill ${cls}">${esc(presence || "?")}</span>`;
+}
+function modePillHealth(simulated) {
+  // "sim"/"real" are fixed literals (not user input) — safe class + label.
+  return simulated
+    ? '<span class="pill pill-plain pill-warn">sim</span>'
+    : '<span class="pill pill-plain pill-neutral">real</span>';
+}
+
 function renderHealth(data) {
   // fmtAge returns only safe literals ("Ns ago"/"—"); the `sim`/`real` literal is
   // fixed; EVERY other interpolated field is esc()'d (untrusted — see header note).
@@ -43,7 +58,7 @@ function renderHealth(data) {
   robotsBody.innerHTML = (data.robots || []).map((r) => {
     const hb = r.last_heartbeat || {};
     const battery = r.battery != null ? Math.round(r.battery * 100) + "%" : "—";
-    return `<tr><td>${esc(r.robot_id)}</td><td>${esc(r.presence || "?")}</td>` +
+    return `<tr><td>${esc(r.robot_id)}</td><td>${presencePillHealth(r.presence)}</td>` +
       `<td>${fmtAge(hb.ts)}</td><td>${esc(battery)}</td>` +
       `<td>${esc(gatesTextHealth(r.gates))}</td></tr>`;
   }).join("") || '<tr><td colspan="5" class="hint">No robots configured.</td></tr>';
@@ -53,7 +68,7 @@ function renderHealth(data) {
     `<tr><td>${esc((c.turn_id || "").slice(0, 8))}</td><td>${esc(c.robot_id)}</td>` +
     `<td>${esc((c.cmd_id || "").slice(0, 8))}</td><td>${esc((c.states || []).join("→"))}</td>` +
     `<td>${esc(c.total_ms)}ms</td><td>${esc(gatesTextHealth(c.gates))}</td>` +
-    `<td>${c.simulated ? "sim" : "real"}</td></tr>`
+    `<td>${modePillHealth(c.simulated)}</td></tr>`
   ).join("") || '<tr><td colspan="7" class="hint">No commands yet.</td></tr>';
 
   const latBody = document.querySelector("#health-latency-table tbody");

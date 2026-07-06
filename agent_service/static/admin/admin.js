@@ -142,21 +142,34 @@ async function loadRobots() {
     const card = document.createElement("div");
     card.className = "robot";
 
+    // Presence: online is online-dot + green "online" pill; anything else is a
+    // muted dot + muted pill. Colour is ALWAYS paired with the presence label.
+    const online = r.presence === "online";
     const title = document.createElement("div");
     title.className = "robot-title";
     const dot = document.createElement("span");
-    dot.className = "dot " + (r.presence === "online" ? "online" : "offline");
+    dot.className = "dot " + (online ? "online" : "offline");
     title.appendChild(dot);
-    title.appendChild(document.createTextNode(r.robot_id + " — " + (r.presence || "unknown")));
+    const name = document.createElement("span");
+    name.className = "robot-name";
+    name.textContent = r.robot_id;
+    title.appendChild(name);
+    const presencePill = document.createElement("span");
+    presencePill.className = "pill " + (online ? "pill-ok" : "pill-muted");
+    presencePill.textContent = r.presence || "unknown";
+    title.appendChild(presencePill);
 
     const battery = r.battery != null ? Math.round(r.battery * 100) + "%" : "?";
     const dock = r.docked == null ? "unknown" : r.docked ? "docked" : "undocked";
     const meta = document.createElement("div");
     meta.className = "robot-meta";
+    // battery + dock as pills; gates stays as an explicit labelled span so the
+    // safety-gate booleans (motion_enabled / dry_run) are always spelled out.
+    const dockCls = r.docked === false ? "pill-warn" : "pill-neutral";
     meta.innerHTML =
-      `<span>battery ${battery}</span>` +
-      `<span>${dock}</span>` +
-      `<span>gates: ${gatesText(r.gates)}</span>`;
+      `<span class="pill pill-plain pill-neutral">battery ${battery}</span>` +
+      `<span class="pill pill-plain ${dockCls}">${dock}</span>` +
+      `<span class="pill pill-plain pill-muted">gates: ${gatesText(r.gates)}</span>`;
 
     const kill = document.createElement("button");
     kill.textContent = "KILL SWITCH";
@@ -204,7 +217,7 @@ async function loadKb() {
   });
   if (!(data.docs || []).length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="4" class="hint">No documents.</td>';
+    tr.innerHTML = '<td colspan="4" class="hint">No documents yet. Upload a file above to seed the knowledge base, then Sync to ingest.</td>';
     tbody.appendChild(tr);
   }
 }
@@ -279,6 +292,7 @@ async function reloadRequests() {
 
     const approve = document.createElement("button");
     approve.textContent = "Approve";
+    approve.className = "btn-primary btn-sm";
     approve.dataset.testid = "approve-btn";
     approve.addEventListener("click", async () => {
       await api(`/requests/${r.request_id}/approve`, {
@@ -298,7 +312,7 @@ async function reloadRequests() {
     li.append(" ", robotSelect, " ", approve, " ", deny);
     ul.appendChild(li);
   });
-  if (!rs.length) ul.innerHTML = "<li class=\"hint\">No pending requests.</li>";
+  if (!rs.length) ul.innerHTML = "<li class=\"hint\">No pending requests. Approved companion requests will appear here for robot assignment.</li>";
 }
 
 async function reloadSessions() {
@@ -329,7 +343,7 @@ async function reloadSessions() {
     li.append(" ", view, " ", reassign);
     ul.appendChild(li);
   });
-  if (!ss.length) ul.innerHTML = "<li class=\"hint\">No sessions.</li>";
+  if (!ss.length) ul.innerHTML = "<li class=\"hint\">No active sessions. Visitor conversations will list here once they start.</li>";
 }
 
 $("reload-requests").addEventListener("click", reloadRequests);
