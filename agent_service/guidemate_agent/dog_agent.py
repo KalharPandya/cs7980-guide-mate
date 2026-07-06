@@ -21,10 +21,28 @@ PERSONA = (
 
 
 class DogAgent:
-    def __init__(self, registry, model_id: str, robot_ids: list[str]) -> None:
+    def __init__(
+        self,
+        registry,
+        model_id: str,
+        robot_ids: list[str],
+        region: str = "us-west-2",
+    ) -> None:
         self._registry = registry
         self._model_id = model_id
         self._robot_ids = robot_ids
+        self._region = region
+
+    def _emote_impl(self, name: str, target: Optional[str], captured: dict) -> str:
+        """Body of the send_emote tool, factored out so it's testable without Strands."""
+        captured["emote"] = name
+        if target is None:
+            return "robot did not respond — I'm probably napping offline"
+        acks = self._registry.send_command(target, Command(type="emote", name=name))
+        captured["acks"] = [a.model_dump() for a in acks]
+        if not acks:
+            return "robot did not respond — I'm probably napping offline"
+        return "emote delivered (simulated)"
 
     def chat(self, message: str, robot_id: Optional[str] = None) -> dict:
         turn_id = str(uuid.uuid4())
@@ -34,16 +52,9 @@ class DogAgent:
         @tool
         def send_emote(name: str) -> str:
             """Play a physical emote on the dog. name is one of happy, yes, no."""
-            captured["emote"] = name
-            if target is None:
-                return "robot did not respond — I'm probably napping offline"
-            acks = self._registry.send_command(target, Command(type="emote", name=name))
-            captured["acks"] = [a.model_dump() for a in acks]
-            if not acks:
-                return "robot did not respond — I'm probably napping offline"
-            return "emote delivered (simulated)"
+            return self._emote_impl(name, target, captured)
 
-        model = BedrockModel(model_id=self._model_id, region_name="us-west-2")
+        model = BedrockModel(model_id=self._model_id, region_name=self._region)
         agent = Agent(model=model, system_prompt=PERSONA, tools=[send_emote])
         result = agent(message)
         return {

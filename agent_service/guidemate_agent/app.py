@@ -36,7 +36,10 @@ async def lifespan(app: FastAPI):
         log.exception("registry connect failed — robots unreachable, chat still works")
     app.state.registry = registry
     app.state.agent = DogAgent(
-        registry=registry, model_id=cfg.model_id, robot_ids=cfg.robot_ids
+        registry=registry,
+        model_id=cfg.model_id,
+        robot_ids=cfg.robot_ids,
+        region=cfg.region,
     )
     yield
 

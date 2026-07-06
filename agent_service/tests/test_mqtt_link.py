@@ -75,6 +75,21 @@ def test_send_command_timeout_returns_empty():
     assert acks == []
 
 
+def test_send_command_returns_empty_when_never_connected():
+    reg = RobotRegistry(endpoint="x", region="us-west-2", robot_ids=["turtlebot468"])
+    cmd = Command(type="emote", name="happy")
+    assert reg.send_command("turtlebot468", cmd, timeout_s=0.1) == []
+
+
+def test_get_status_sane_when_never_connected():
+    reg = RobotRegistry(endpoint="x", region="us-west-2", robot_ids=["turtlebot468"])
+    status = reg.get_status("turtlebot468")
+    assert status["robot_id"] == "turtlebot468"
+    assert status["presence"] == "unknown"
+    assert status["last_ack"] is None
+    assert status["last_status"] is None
+
+
 def test_presence_tracked_from_events():
     reg, fake = _registry()
     fake.status_cb(

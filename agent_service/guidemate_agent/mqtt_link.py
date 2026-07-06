@@ -111,6 +111,9 @@ class RobotRegistry:
             event.set()
 
     def send_command(self, robot_id: str, cmd: Command, timeout_s: float = 5.0) -> list[Ack]:
+        if self._conn is None:
+            log.warning("send_command(%s) with no MQTT connection — robot unreachable", robot_id)
+            return []
         event = threading.Event()
         acks: list[Ack] = []
         with self._lock:
