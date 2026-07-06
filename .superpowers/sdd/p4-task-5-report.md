@@ -45,3 +45,19 @@ confirmed.
 ## Concerns
 - `test_admin.py` e2e (uvicorn subprocess) is among the skipped set — the fake's new
   dock/undock refusal path wasn't exercised live, only via unit test.
+
+## Follow-up (review findings, fixed)
+Two critical review findings on this task's routes/helpers:
+1. **`GET /api/session/{id}/state` returned 200 for unknown sessions.** Added the same
+   `sessions.get_session(session_id) is None → 404` guard the sibling `/api/chat` and
+   `/request-companion` routes already had. TDD: `test_state_unknown_session_is_404`
+   red→green.
+2. **No duplicate-pending guard on `request-companion`.** `sessions.create_request`
+   now checks the session's `request_status`; if already `"pending"` it returns the
+   existing pending request's id (found via `list_pending_requests` filtered by
+   `session_id`) instead of creating a second row, making the POST idempotent. Falls
+   through to normal creation if no matching pending row is found (defensive). TDD:
+   `test_request_companion_twice_is_idempotent` (same `request_id` on both calls, only
+   one pending row) red→green.
+
+Full suite: `120 passed, 13 skipped`.

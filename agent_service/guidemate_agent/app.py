@@ -113,6 +113,8 @@ def request_companion(session_id: str) -> dict:
 
 @app.get("/api/session/{session_id}/state")
 def session_state(session_id: str) -> dict:
+    if sessions.get_session(session_id) is None:
+        raise HTTPException(status_code=404, detail="unknown session")
     return sessions.get_session_state(session_id)
 
 

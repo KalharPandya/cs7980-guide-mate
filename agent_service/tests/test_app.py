@@ -241,6 +241,26 @@ def test_request_companion_unknown_session_is_404(monkeypatch, ddb):
         assert client.post("/api/session/nope/request-companion").status_code == 404
 
 
+def test_state_unknown_session_is_404(monkeypatch, ddb):
+    with _fake_client(monkeypatch) as client:
+        client.app.state.agent = _RecordingAgent()
+        assert client.get("/api/session/nope/state").status_code == 404
+
+
+def test_request_companion_twice_is_idempotent(monkeypatch, ddb):
+    with _fake_client(monkeypatch) as client:
+        client.app.state.agent = _RecordingAgent()
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        first = client.post(f"/api/session/{sid}/request-companion").json()
+        second = client.post(f"/api/session/{sid}/request-companion").json()
+        assert first["request_id"] == second["request_id"]
+        assert second["status"] == "pending"
+        pending = [r for r in sessions.list_pending_requests() if r["session_id"] == sid]
+        assert len(pending) == 1
+
+
 def test_fake_registry_records_sent_and_refuses_motion():
     from guidemate_agent.fakes import FakeRobotRegistry
     from guidemate_msgs.messages import Command
