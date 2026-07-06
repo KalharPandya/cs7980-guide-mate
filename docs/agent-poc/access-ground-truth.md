@@ -230,3 +230,36 @@ SUBACK via the returned QoS (`0x80`) rather than relying on an exception.
 ## Work branch
 All POC work happens on branch **`kalhar/dog-agent-poc`** (pushed to origin). Warm-up
 instructions for a new machine/session: [linux-agent-warmup.md](linux-agent-warmup.md).
+
+## Phase 7 — production (EC2 + observability)
+Launched by `agent_service/deploy/launch_ec2.sh` (idempotent-ish, no console clicking):
+| Resource | Name / id | Notes |
+|---|---|---|
+| EC2 instance | tag `Name=guidemate-poc-ec2`, t3.large, AL2023 | instance profile `guidemate-agent-profile` (zero-cred); user-data brings up the prod Compose stack |
+| Security group | `guidemate-poc-sg` | ingress 80/443 from 0.0.0.0/0, 22 from the launcher IP/32 |
+| Elastic IP | tag `Name=guidemate-poc-eip` | reused across relaunches; domain `<eip-dashes>.nip.io` |
+| Admin password | generated **on the instance** by `user_data.sh` (`openssl rand -hex 16`) | stored in **SSM Parameter Store** `/guidemate/admin-password` (SecureString) **and** `/etc/guidemate.env` (mode 600) on the instance. **Never** passed through EC2 user-data (which is API-readable via `DescribeInstanceAttribute` for the instance lifetime). |
+| Manage | `aws ssm start-session --target <iid>` | SSM Session Manager — no SSH key on the instance |
+
+**Retrieve the admin password** (after bootstrap finishes, ~2-3 min):
+```bash
+aws ssm get-parameter --name /guidemate/admin-password \
+  --with-decryption --query Parameter.Value --output text --region us-west-2
+```
+The `guidemate-agent-profile` instance role has `ssm:PutParameter` so the instance
+self-publishes it at first boot. The bootstrap log (`/var/log/guidemate-bootstrap.log`)
+is `chmod 640` and the bootstrap runs **without** `set -x`, so the secret never lands in a
+world-readable log.
+
+**`launch_ec2.sh --plan`** does a dry run: the read-only discovery/idempotency lookups
+(describe instances/SG/addresses, SSM AMI param, launcher-IP) run for real, but the
+mutating calls (create-SG, allocate/associate EIP, run-instances) are only printed. No
+password is generated or handled by `launch_ec2.sh` at all.
+Redeploy without SSH via `agent_service/deploy/redeploy.sh` (one SSM `send-command`);
+tear down via `agent_service/deploy/teardown.sh` — **requires `--yes`** (a bare invocation
+prints what would be deleted and exits 1); pass `--keep-eip` to retain the address.
+
+**⚠️ No default VPC in us-west-2 (verified 2026-07-05):** the account has only one
+non-default VPC (`vpc-0657dd5b506f043a9`); `describe-vpcs Name=isDefault,Values=true`
+returns empty. The launch script (and `run-instances`) will need a `--vpc-id` +
+`--subnet-id` for that VPC before the real Task-7 launch — resolve at launch time.
