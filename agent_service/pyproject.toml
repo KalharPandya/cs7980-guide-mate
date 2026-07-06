@@ -9,6 +9,7 @@ dependencies = [
     "strands-agents",
     "awsiotsdk",
     "boto3",
+    "amazon-transcribe",
     "itsdangerous",
     "python-multipart",
     "guidemate-msgs",
