@@ -27,6 +27,9 @@ class Bridge:
         self._robot_id = robot_id
         self._seen = collections.deque(maxlen=256)
         self._seen_set: set[str] = set()
+        # awscrt dispatches callbacks single-threaded per connection today, but that's
+        # not a documented contract — guard the check-evict-insert sequence explicitly.
+        self._dedupe_lock = threading.Lock()
         self._queue: "queue.Queue[Command]" = queue.Queue()
         self._runner = ChoreographyRunner(publish_ack=self._publish_ack, dry_run=dry_run)
         self._worker = threading.Thread(target=self._run, daemon=True)
@@ -43,13 +46,14 @@ class Bridge:
         except (ValidationError, ValueError) as exc:
             log.warning("ignoring invalid command: %s", exc)
             return
-        if cmd.cmd_id in self._seen_set:
-            log.info("duplicate cmd_id ignored", extra=log_extra(cmd_id=cmd.cmd_id))
-            return
-        if len(self._seen) == self._seen.maxlen:
-            self._seen_set.discard(self._seen[0])  # oldest, about to be evicted
-        self._seen.append(cmd.cmd_id)
-        self._seen_set.add(cmd.cmd_id)
+        with self._dedupe_lock:
+            if cmd.cmd_id in self._seen_set:
+                log.info("duplicate cmd_id ignored", extra=log_extra(cmd_id=cmd.cmd_id))
+                return
+            if len(self._seen) == self._seen.maxlen:
+                self._seen_set.discard(self._seen[0])  # oldest, about to be evicted
+            self._seen.append(cmd.cmd_id)
+            self._seen_set.add(cmd.cmd_id)
         self._queue.put(cmd)
 
     def _run(self) -> None:
