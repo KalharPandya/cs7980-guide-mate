@@ -30,3 +30,17 @@ def test_emit_metric_stringifies_dimension_values(capsys):
     emit_metric("X", 1, dimensions={"robot_id": 468})
     data = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert data["robot_id"] == "468"  # dimension values are always strings for CW
+
+
+def test_emit_metric_never_raises_on_broken_stdout(monkeypatch):
+    import io, sys as _sys
+    from guidemate_msgs import metrics as _m
+
+    class _Broken(io.StringIO):
+        def write(self, *a, **k):
+            raise ValueError("stdout is closed")
+
+    monkeypatch.setattr(_sys, "stdout", _Broken())
+    # Must return the payload and NOT propagate the write failure.
+    out = _m.emit_metric("TurnLatencyMs", 12.5, "Milliseconds", {"robot_id": "sim"})
+    assert out["TurnLatencyMs"] == 12.5

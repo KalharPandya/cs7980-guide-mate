@@ -38,6 +38,12 @@ def emit_metric(
         name: value,
     }
     payload.update(dims)
-    sys.stdout.write(json.dumps(payload) + "\n")
-    sys.stdout.flush()
+    # Telemetry is best-effort and must NEVER crash the caller: a request turn,
+    # ack round-trip, or heartbeat must not fail because stdout is closed/broken
+    # or the payload can't serialize. Swallow and continue.
+    try:
+        sys.stdout.write(json.dumps(payload) + "\n")
+        sys.stdout.flush()
+    except Exception:
+        pass
     return payload
