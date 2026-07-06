@@ -65,6 +65,15 @@ def test_ack_gates_default_none_and_roundtrip():
     assert restored.gates == gates
 
 
+def test_motion_accepts_dock_and_undock_roundtrip():
+    for name in ("dock", "undock"):
+        cmd = Command(type="motion", name=name)
+        restored = Command.model_validate_json(cmd.model_dump_json())
+        assert restored == cmd
+        assert restored.type == "motion"
+        assert restored.name == name
+
+
 def test_heartbeat_defaults_and_roundtrip():
     hb = Heartbeat(
         robot_id="turtlebot468",

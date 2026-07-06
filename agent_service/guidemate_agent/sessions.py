@@ -9,6 +9,7 @@ tables — DynamoDB rejects an item missing the table's range-key attribute.)
 """
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -16,6 +17,8 @@ from typing import Optional
 import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
+
+from guidemate_msgs.messages import Command
 
 REGION = "us-west-2"
 TABLE_SESSIONS = "guidemate-sessions"
@@ -188,3 +191,109 @@ def robot_for_session(session_id: str) -> Optional[str]:
     if get_lock_holder(robot_id) == session_id:
         return robot_id
     return None
+
+
+# ------------------------------------------------------------ orchestration ----
+ASSIGN_EVENTS_KEEP = 10
+
+
+def get_session_state(session_id: str) -> dict:
+    session = get_session(session_id) or {}
+    return {
+        "request_status": session.get("request_status", "none"),
+        "robot_id": robot_for_session(session_id),
+    }
+
+
+def _mark_session_aborted(session_id: str) -> None:
+    _update_session(session_id, request_status="aborted", robot_id=None)
+
+
+# ---- assignment-triggered undock/dock (spec delta, commit 91d9bcb) ----
+# Phase 4 only SENDS these and records the outcome; bridge-side execution
+# (Create 3 dock actions + dock-guard exemption) is Phase 8. On robot 468 the
+# expected outcome is a refusal ack — that is evidence, not an error.
+def _record_assign_event(robot_id: str, action: str, acks: list) -> dict:
+    event = {
+        "action": action,                       # "undock" | "dock"
+        "ts": _now_iso(),
+        "acks": [a.model_dump() for a in acks],
+        "refused": bool(acks) and acks[-1].state == "failed",
+    }
+    key = {CONFIG_PK: f"robot_assign_events#{robot_id}"}
+    item = _table(TABLE_CONFIG).get_item(Key=key).get("Item")
+    events = json.loads(item["events_json"]) if item else []
+    events.append(event)
+    events = events[-ASSIGN_EVENTS_KEEP:]
+    # Stored as a JSON string: sidesteps DynamoDB's float restriction on ack
+    # fields (e.g. battery) and keeps the item a single small attribute.
+    new_item = dict(key)
+    new_item["events_json"] = json.dumps(events)
+    _table(TABLE_CONFIG).put_item(Item=new_item)
+    return event
+
+
+def get_assign_events(robot_id: str) -> list[dict]:
+    key = {CONFIG_PK: f"robot_assign_events#{robot_id}"}
+    item = _table(TABLE_CONFIG).get_item(Key=key).get("Item")
+    return json.loads(item["events_json"]) if item else []
+
+
+def _send_assignment_command(registry, robot_id: str, name: str) -> dict:
+    """Best-effort dock/undock on (un)assignment. Never raises."""
+    acks = []
+    if registry is not None:
+        try:
+            acks = registry.send_command(
+                robot_id, Command(type="motion", name=name)
+            )
+        except Exception:  # noqa: BLE001 — best-effort by design
+            acks = []
+    return _record_assign_event(robot_id, name, acks)
+
+
+def _bind_robot(robot_id: str, session_id: str, registry=None) -> Optional[str]:
+    aborted = None
+    holder = get_lock_holder(robot_id)
+    if holder and holder != session_id:
+        release_robot_lock(robot_id)
+        _mark_session_aborted(holder)
+        _send_assignment_command(registry, robot_id, "dock")     # unassign -> dock
+        aborted = holder
+    if not acquire_robot_lock(robot_id, session_id):
+        # Lost a race (or same session re-binding): reset and take it.
+        release_robot_lock(robot_id)
+        acquire_robot_lock(robot_id, session_id)
+    _update_session(session_id, robot_id=robot_id, request_status="approved")
+    _send_assignment_command(registry, robot_id, "undock")       # assign -> undock
+    return aborted
+
+
+def approve_request(request_id: str, robot_id: str, registry=None) -> dict:
+    req = get_request(request_id)
+    if not req:
+        raise KeyError(f"no such request {request_id}")
+    aborted = _bind_robot(robot_id, req["session_id"], registry=registry)
+    _set_request_status(request_id, "approved")
+    return {"session_id": req["session_id"], "aborted_session_id": aborted}
+
+
+def deny_request(request_id: str) -> None:
+    req = get_request(request_id)
+    if not req:
+        raise KeyError(f"no such request {request_id}")
+    _set_request_status(request_id, "denied")
+    _update_session(req["session_id"], request_status="denied")
+
+
+def abort_robot(robot_id: str, registry=None) -> Optional[str]:
+    holder = get_lock_holder(robot_id)
+    release_robot_lock(robot_id)
+    if holder:
+        _mark_session_aborted(holder)
+        _send_assignment_command(registry, robot_id, "dock")     # unassign -> dock
+    return holder
+
+
+def reassign_robot(robot_id: str, session_id: str, registry=None) -> Optional[str]:
+    return _bind_robot(robot_id, session_id, registry=registry)
