@@ -27,6 +27,10 @@
   const stopBar = $("stop-bar");
   const stopBtn = $("stop-btn");
   const toast = $("toast");
+  const soundToggle = $("sound-toggle");
+  const soundLabel = $("sound-label");
+  const voiceHint = $("voice-hint");
+  const speakingIndicator = $("speaking-indicator");
 
   // --- session id: minted by POST /api/session at intake, mirrored in
   // localStorage. A real session row is required for /api/session/{id}/state
@@ -48,15 +52,169 @@
     showToast._t = setTimeout(() => toast.classList.add("hidden"), 3500);
   }
 
+  // ==========================================================================
+  //  SAFE MARKDOWN  (dog bubbles only)
+  // --------------------------------------------------------------------------
+  //  Reply text is MODEL OUTPUT — semi-trusted. The security-critical rule is
+  //  a strict, unbreakable ORDER:
+  //
+  //      (1) escapeHtml() the ENTIRE raw string FIRST, so every `<`, `>`, `"`,
+  //         `'`, `&` the model emitted becomes an inert entity. After this
+  //         step the string can contain NO live HTML.
+  //      (2) THEN, and only then, apply a WHITELIST of formatting by inserting
+  //         our own known-safe tags (<strong> <em> <code> <pre> <ul> <ol> <li>
+  //         <p> <br> <a>). Every captured group we splice back in
+  //         (link text, code, emphasis body) is a substring of the ALREADY
+  //         escaped text, so it can never reintroduce a tag or an attribute
+  //         breakout. Links only accept an http/https href (javascript:/data:
+  //         etc. fall through and render literally).
+  //
+  //  Because of that order, this is the ONLY place we assign innerHTML from
+  //  model text, and it is provably XSS-safe. NEVER call innerHTML on raw
+  //  (un-escaped) model text anywhere else. User/transcript bubbles stay
+  //  textContent (plain) — see addBubble().
+  // ==========================================================================
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  // Inline formatting on an ALREADY-escaped line. Code spans are pulled out to
+  // placeholders first so `*`/`_` inside them are left literal.
+  function renderInline(escaped) {
+    const codes = [];
+    let s = escaped.replace(/`([^`]+)`/g, (_m, c) => {
+      codes.push(c);
+      return "\u0000" + (codes.length - 1) + "\u0000";
+    });
+    // Links: [text](url) — href whitelisted to http/https only. url is a
+    // substring of the escaped text (quotes already &quot;), so it is
+    // attribute-safe.
+    s = s.replace(/\[([^\]]+)\]\((\S+?)\)/g, (m, txt, url) => {
+      if (/^https?:\/\//i.test(url)) {
+        return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + txt + "</a>";
+      }
+      return m; // not an allowed scheme -> render literally
+    });
+    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+    s = s.replace(/(^|[^*])\*(?!\s)([^*]+?)\*/g, "$1<em>$2</em>");
+    s = s.replace(/(^|[^_\w])_(?!\s)([^_]+?)_/g, "$1<em>$2</em>");
+    s = s.replace(/\u0000(\d+)\u0000/g, (_m, i) => "<code>" + codes[i] + "</code>");
+    return s;
+  }
+
+  function renderMarkdown(src) {
+    const lines = escapeHtml(src).split(/\r?\n/); // ESCAPE FIRST (see banner)
+    let out = "";
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (/^\s*```/.test(line)) { // fenced code block
+        i++;
+        const buf = [];
+        while (i < lines.length && !/^\s*```/.test(lines[i])) { buf.push(lines[i]); i++; }
+        i++; // consume closing fence
+        out += "<pre><code>" + buf.join("\n") + "</code></pre>";
+        continue;
+      }
+      if (/^\s*[-*+]\s+/.test(line)) { // unordered list
+        const items = [];
+        while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {
+          items.push("<li>" + renderInline(lines[i].replace(/^\s*[-*+]\s+/, "")) + "</li>");
+          i++;
+        }
+        out += "<ul>" + items.join("") + "</ul>";
+        continue;
+      }
+      if (/^\s*\d+\.\s+/.test(line)) { // ordered list
+        const items = [];
+        while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+          items.push("<li>" + renderInline(lines[i].replace(/^\s*\d+\.\s+/, "")) + "</li>");
+          i++;
+        }
+        out += "<ol>" + items.join("") + "</ol>";
+        continue;
+      }
+      if (line.trim() === "") { i++; continue; }
+      const para = [];
+      while (
+        i < lines.length && lines[i].trim() !== "" &&
+        !/^\s*```/.test(lines[i]) && !/^\s*[-*+]\s+/.test(lines[i]) &&
+        !/^\s*\d+\.\s+/.test(lines[i])
+      ) { para.push(lines[i]); i++; }
+      out += "<p>" + para.map(renderInline).join("<br>") + "</p>";
+    }
+    return out;
+  }
+
   // The emote is metadata: it drives the avatar animation (armPendingEmote),
   // never rendered as text in the answer bubble. Signature keeps the `emote`
   // param for call-site compatibility but no dev label is printed.
+  //
+  // DOG bubbles render sanitized Markdown (renderMarkdown -> known-safe HTML).
+  // YOU/transcript bubbles stay textContent (plain) — user text is never HTML.
   function addBubble(role, text) {
     const div = document.createElement("div");
     div.className = "bubble " + (role === "you" ? "you" : "dog");
-    div.textContent = text;
+    const body = document.createElement("div");
+    body.className = "bubble-body";
+    if (role === "you") {
+      body.textContent = text;
+    } else {
+      body.innerHTML = renderMarkdown(text); // safe: escape-then-whitelist
+    }
+    div.appendChild(body);
     messages.appendChild(div);
     messages.scrollTop = messages.scrollHeight;
+    return div;
+  }
+
+  // --- "Moses is thinking…" indicator (bridges the 7-9s Bedrock round-trip) --
+  let thinkingEl = null;
+  function showThinking() {
+    if (thinkingEl) return;
+    thinkingEl = document.createElement("div");
+    thinkingEl.className = "bubble dog thinking";
+    thinkingEl.setAttribute("aria-label", "Moses is thinking");
+    thinkingEl.innerHTML =
+      '<span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span>' +
+      "<span>Moses is thinking…</span>";
+    messages.appendChild(thinkingEl);
+    messages.scrollTop = messages.scrollHeight;
+  }
+  function hideThinking() {
+    if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
+  }
+
+  // --- per-message TTS replay ------------------------------------------------
+  // The "audio" frame arrives just after its "reply" frame; we bind the audio
+  // to the most recent dog bubble so the user can replay the spoken answer.
+  let lastDogBubble = null;
+  function attachReplay(bubble, url) {
+    if (!bubble) return;
+    let btn = bubble.querySelector(".bubble-replay");
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "bubble-replay";
+      btn.innerHTML =
+        '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" ' +
+        'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+        '<path d="M4 9v6h4l5 4V5L8 9H4z" /><path d="M16 8a5 5 0 0 1 0 8" /></svg>' +
+        "<span>Replay</span>";
+      bubble.appendChild(btn);
+    }
+    // Replay is an explicit user action -> plays regardless of the session
+    // sound toggle (which only gates AUTOPLAY of new replies).
+    btn.onclick = () => {
+      player.src = url;
+      player.play().catch(() => {});
+    };
   }
 
   // --- emote <-> audio sync -------------------------------------------------
@@ -93,13 +251,47 @@
     }
   }
 
-  player.addEventListener("play", () => {
+  function releasePendingEmote() {
     if (pendingEmote) {
       clearTimeout(pendingTimer);
       triggerEmote(pendingEmote);
       pendingEmote = null;
     }
+  }
+
+  // --- visible "speaking" state: a pulsing ring on the avatar + a caption for
+  // the duration of TTS playback, tied to the <audio> play/ended/pause events.
+  function setSpeaking(on) {
+    avatar.classList.toggle("speaking", on);
+    if (speakingIndicator) speakingIndicator.classList.toggle("hidden", !on);
+  }
+
+  // Emote/audio-sync contract preserved: the emote is still released on the
+  // audio element's own "play" event. Speaking-ring is added here too.
+  player.addEventListener("play", () => {
+    setSpeaking(true);
+    releasePendingEmote();
   });
+  player.addEventListener("ended", () => setSpeaking(false));
+  player.addEventListener("pause", () => setSpeaking(false));
+
+  // --- session sound toggle (gates AUTOPLAY only; replay is always allowed) --
+  let soundEnabled = localStorage.getItem("guidemate_sound") !== "0";
+  function renderSound() {
+    if (!soundToggle) return;
+    soundToggle.setAttribute("aria-pressed", String(soundEnabled));
+    if (soundLabel) soundLabel.textContent = soundEnabled ? "Sound on" : "Sound off";
+    soundToggle.title = soundEnabled ? "Spoken replies on" : "Spoken replies muted";
+  }
+  if (soundToggle) {
+    soundToggle.addEventListener("click", () => {
+      soundEnabled = !soundEnabled;
+      localStorage.setItem("guidemate_sound", soundEnabled ? "1" : "0");
+      renderSound();
+      if (!soundEnabled) { player.pause(); setSpeaking(false); }
+    });
+  }
+  renderSound();
 
   // --- WebSocket -------------------------------------------------------------
   const wsProto = location.protocol === "https:" ? "wss" : "ws";
@@ -123,8 +315,12 @@
       }
       if (msg.type === "transcript") {
         if (msg.text) addBubble("you", msg.text);
+        // The thinking indicator was shown when recording stopped; keep it, but
+        // move it below the just-added transcript so ordering reads correctly.
+        if (thinkingEl) messages.appendChild(thinkingEl);
       } else if (msg.type === "reply") {
-        addBubble("dog", msg.text);
+        hideThinking();
+        lastDogBubble = addBubble("dog", msg.text);
         armPendingEmote(msg.emote);
       } else if (msg.type === "stopped") {
         showToast(msg.sent ? "Stop sent to the robot." : "Nothing to stop — no robot moving.");
@@ -132,22 +328,21 @@
         try {
           const bytes = Uint8Array.from(atob(msg.b64), (c) => c.charCodeAt(0));
           const blob = new Blob([bytes], { type: "audio/mpeg" });
-          player.src = URL.createObjectURL(blob);
-          player.play().catch(() => {
-            // Autoplay blocked (no user gesture in this tick) -- still
-            // release the emote so the avatar isn't stuck waiting forever.
-            if (pendingEmote) {
-              triggerEmote(pendingEmote);
-              pendingEmote = null;
-            }
-          });
-        } catch (e) {
-          if (pendingEmote) {
-            triggerEmote(pendingEmote);
-            pendingEmote = null;
+          const url = URL.createObjectURL(blob);
+          // Always expose a replay control on the bubble...
+          attachReplay(lastDogBubble, url);
+          if (soundEnabled) {
+            // ...but only AUTOPLAY when the session sound toggle is on.
+            player.src = url;
+            player.play().catch(() => releasePendingEmote());
+          } else {
+            releasePendingEmote(); // muted: don't leave the avatar waiting
           }
+        } catch (e) {
+          releasePendingEmote();
         }
       } else if (msg.type === "error") {
+        hideThinking();
         showToast(msg.message || "Something went wrong, try again.");
       }
     };
@@ -179,6 +374,7 @@
     if (!text) return;
     addBubble("you", text);
     input.value = "";
+    showThinking();
     wsSend(JSON.stringify({ type: "text", message: text }));
   });
 
@@ -257,12 +453,16 @@
     wsSend(JSON.stringify({ type: "start_audio", sample_rate: TARGET_RATE }));
     recording = true;
     micBtn.classList.add("recording");
+    if (voiceHint) voiceHint.classList.remove("hidden");
   }
 
   async function stopRecording() {
     recording = false;
     micBtn.classList.remove("recording");
     micBar.style.width = "0%";
+    if (voiceHint) voiceHint.classList.add("hidden");
+    // Voice turn: STT + Bedrock is now in flight -> show the thinking cue.
+    showThinking();
     wsSend(JSON.stringify({ type: "stop_audio" }));
     if (workletNode) workletNode.disconnect();
     if (micStream) micStream.getTracks().forEach((t) => t.stop());

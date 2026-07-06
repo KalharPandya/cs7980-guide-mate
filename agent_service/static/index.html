@@ -31,6 +31,17 @@
         <span id="virtual-pet-badge" data-testid="virtual-pet-badge" class="chip chip-virtual-pet hidden">
           <span class="chip-dot" aria-hidden="true"></span>Virtual pet
         </span>
+        <!-- Session sound toggle: gates AUTOPLAY of spoken replies. Per-bubble
+             replay controls ignore this (explicit user action). Labelled, not
+             icon-only (brief). -->
+        <button id="sound-toggle" class="chip chip-sound" type="button" aria-pressed="true" title="Spoken replies">
+          <svg class="chip-ico" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 9v6h4l5 4V5L8 9H4z" />
+            <path class="sound-wave" d="M16 8a5 5 0 0 1 0 8" />
+          </svg>
+          <span id="sound-label">Sound on</span>
+        </button>
       </div>
     </header>
 
@@ -101,59 +112,83 @@
         </button>
       </div>
 
-      <section id="companion-banner" class="banner" aria-live="polite">
-        <span class="banner-status">
-          <span class="banner-dot" aria-hidden="true"></span>
-          <span id="companion-status">Virtual dog (avatar only)</span>
-        </span>
-        <button id="request-companion" class="btn btn-ghost banner-btn" type="button">
-          Request physical companion
-        </button>
-      </section>
-
-      <section class="stage">
-        <div class="stage-card">
-          <div id="avatar" class="avatar">
-            <!-- Companion avatar derived from the official Moses husky mark (single,
-                 coherent dog depiction with the header brand — no competing cartoon).
-                 Emote classes on #avatar drive the CSS animations, triggered in JS
-                 the moment reply audio starts playing. -->
-            <span class="avatar-mark">
-              <img src="/brand/moses-husky-head.svg" alt="Moses husky companion" />
+      <!-- Desktop (>=1024px) becomes a two-pane grid: this rail (companion +
+           status + quick actions + voice) on the left, the message thread +
+           composer on the right. On mobile the rail/main wrappers collapse to
+           the original single-column flow (rail on top, thread fills, composer
+           pinned) so the good phone layout is preserved unchanged. -->
+      <div class="chat-grid">
+        <aside class="chat-rail">
+          <section id="companion-banner" class="banner" aria-live="polite">
+            <span class="banner-status">
+              <span class="banner-dot" aria-hidden="true"></span>
+              <span id="companion-status">Virtual dog (avatar only)</span>
             </span>
-            <!-- Kept for assistive tech + emote/audio-sync tests; visually the
-                 animation is the cue, so this label is not printed as UI copy. -->
-            <span id="emote-label" class="emote-label sr-only" aria-live="polite"></span>
+            <button id="request-companion" class="btn btn-ghost banner-btn" type="button">
+              Request physical companion
+            </button>
+          </section>
+
+          <section class="stage">
+            <div class="stage-card">
+              <div id="avatar" class="avatar">
+                <!-- Companion avatar derived from the official Moses husky mark (single,
+                     coherent dog depiction with the header brand — no competing cartoon).
+                     Emote classes on #avatar drive the CSS animations, triggered in JS
+                     the moment reply audio starts playing. The `.speaking` class adds a
+                     pulsing ring for the duration of TTS playback (coexists with emote). -->
+                <span class="avatar-mark">
+                  <img src="/brand/moses-husky-head.svg" alt="Moses husky companion" />
+                </span>
+                <!-- Kept for assistive tech + emote/audio-sync tests; visually the
+                     animation is the cue, so this label is not printed as UI copy. -->
+                <span id="emote-label" class="emote-label sr-only" aria-live="polite"></span>
+              </div>
+              <p class="stage-caption">Robert · your Husky companion</p>
+              <!-- Visible TTS surface: shown by chat.js for the duration of reply
+                   audio playback (bound to the <audio> play/ended events). -->
+              <p id="speaking-indicator" class="speaking-indicator hidden" aria-live="polite">
+                <span class="speaking-bars" aria-hidden="true"><i></i><i></i><i></i></span>
+                Speaking…
+              </p>
+            </div>
+          </section>
+
+          <div class="quick-actions" aria-label="Quick actions">
+            <button class="chip chip-action" type="button" data-prompt="Help me find a room on campus.">Find a room</button>
+            <button class="chip chip-action" type="button" data-prompt="What campus services are available right now?">Campus services</button>
+            <button class="chip chip-action" type="button" data-prompt="Can you connect me with a person?">Talk to a person</button>
           </div>
-          <p class="stage-caption">Robert · your Husky companion</p>
+        </aside>
+
+        <div class="chat-main">
+          <section id="messages" class="messages" aria-live="polite"></section>
+
+          <!-- Recording state: shown while push-to-talk is capturing. -->
+          <p id="voice-hint" class="voice-hint hidden" aria-live="polite">
+            <span class="voice-hint-dot" aria-hidden="true"></span>
+            Listening… tap Talk again to send
+          </p>
+
+          <form id="chat-form" class="composer">
+            <button id="mic" class="mic" type="button" aria-label="Push to talk">
+              <svg class="mic-glyph" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"
+                   fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="3" width="6" height="11" rx="3" />
+                <path d="M5 11a7 7 0 0 0 14 0" />
+                <line x1="12" y1="18" x2="12" y2="21" />
+              </svg>
+              <span class="mic-text">Talk</span>
+              <span class="mic-level"><span id="mic-level-bar"></span></span>
+            </button>
+            <input id="message" class="text-input" autocomplete="off"
+                   placeholder="Message Moses…" />
+            <button type="submit" class="btn btn-primary send">Send</button>
+            <button id="new-session" class="btn btn-ghost" type="button" title="Start a new session">New</button>
+          </form>
         </div>
-      </section>
-
-      <div class="quick-actions" aria-label="Quick actions">
-        <button class="chip chip-action" type="button" data-prompt="Help me find a room on campus.">Find a room</button>
-        <button class="chip chip-action" type="button" data-prompt="What campus services are available right now?">Campus services</button>
-        <button class="chip chip-action" type="button" data-prompt="Can you connect me with a person?">Talk to a person</button>
       </div>
-
-      <section id="messages" class="messages" aria-live="polite"></section>
-
-      <form id="chat-form" class="composer">
-        <button id="mic" class="mic" type="button" aria-label="Push to talk">
-          <svg class="mic-glyph" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"
-               fill="none" stroke="currentColor" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round">
-            <rect x="9" y="3" width="6" height="11" rx="3" />
-            <path d="M5 11a7 7 0 0 0 14 0" />
-            <line x1="12" y1="18" x2="12" y2="21" />
-          </svg>
-          <span class="mic-text">Talk</span>
-          <span class="mic-level"><span id="mic-level-bar"></span></span>
-        </button>
-        <input id="message" class="text-input" autocomplete="off"
-               placeholder="Message Moses…" />
-        <button type="submit" class="btn btn-primary send">Send</button>
-        <button id="new-session" class="btn btn-ghost" type="button" title="Start a new session">New</button>
-      </form>
     </div>
   </main>
   <audio id="player" hidden></audio>
