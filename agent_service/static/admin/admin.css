@@ -22,6 +22,7 @@
   --gm-shadow: 0 14px 34px rgba(0, 0, 0, 0.10);
   --gm-radius: 8px;
   --gm-radius-sm: 4px;
+  --gm-radius-lg: 12px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -107,7 +108,7 @@ h1, h2, h3 { margin: 0; line-height: 1.1; letter-spacing: -0.01em; }
   background: #111111;
   color: #ffffff;
   border: 1px solid #343434;
-  border-radius: 12px;
+  border-radius: var(--gm-radius-lg);
   padding: 30px 30px 22px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
 }
@@ -129,7 +130,7 @@ h1, h2, h3 { margin: 0; line-height: 1.1; letter-spacing: -0.01em; }
 .login-affiliation {
   margin: 22px -30px -22px; padding: 16px 30px;
   border-top: 1px solid #343434;
-  background: #fff; border-radius: 0 0 12px 12px;
+  background: #fff; border-radius: 0 0 var(--gm-radius-lg) var(--gm-radius-lg);
 }
 .login-affiliation img { display: block; max-width: 220px; height: auto; }
 

@@ -120,7 +120,10 @@ body:has(#chat:not([hidden])) { background: var(--bg); }
 }
 .chip-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .chip-virtual     { color: var(--muted); }
-.chip-physical    { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, var(--border)); background: color-mix(in srgb, var(--success) 10%, var(--surface)); }
+/* Physical is a MODE indicator, not a link-state readout — the banner's
+   "Connected" chip already owns green success for that. Keep this one a
+   neutral/outline badge so the two never read as the same signal twice. */
+.chip-physical    { color: var(--text); border-color: var(--text); background: var(--surface); font-weight: 900; }
 .chip-locked      { color: var(--danger); }
 /* Virtual-pet is an informational state, NOT danger/action — keep it neutral
    and muted so red stays reserved for Stop/primary. */
