@@ -123,6 +123,24 @@ def test_delta_applies_live_and_republishes_reported():
     assert reported[-1]["max_speed"] == 0.08
 
 
+def test_reported_dry_run_converges_no_delta_storm():
+    # Finding 1: reported.dry_run must echo the SHADOW-level value so the shadow
+    # converges (desired.dry_run == reported.dry_run) and AWS stops re-emitting a
+    # delta on every reported publish. The effective (env OR shadow) value is exposed
+    # separately as effective_dry_run, which is NOT a desired key so it never deltas.
+    fake = FakeConnection()
+    fake.auto_get_response = ("accepted", json.dumps({"state": {"desired": {}}}))
+    safety = SafetyState(env_dry_run=True)
+    _sync(fake, safety, timeout=1.0).start()
+    # Operator sets desired.dry_run=False while env dry-run stays ON.
+    fake.deliver(shadow_topic("Turtlebot-468", "update/delta"),
+                 json.dumps({"state": {"dry_run": False}}))
+    rep = _reported_payloads(fake)[-1]
+    assert rep["dry_run"] is False           # echoes shadow desired -> converges
+    assert rep["effective_dry_run"] is True  # informational; env dry-run still wins
+    assert safety.gates()["dry_run"] is True  # enforcement surface uses effective
+
+
 def test_shadow_delta_cannot_loosen_env_dry_run():
     fake = FakeConnection()
     fake.auto_get_response = ("accepted", json.dumps({"state": {"desired": {}}}))

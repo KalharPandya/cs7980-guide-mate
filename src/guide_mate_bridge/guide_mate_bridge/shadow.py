@@ -44,6 +44,9 @@ class ShadowSync:
             self._client.subscribe(shadow_topic(self._thing, "get/rejected"), self._on_get_rejected)
             self._client.subscribe(shadow_topic(self._thing, "update/delta"), self._on_delta)
             self._client.subscribe(shadow_topic(self._thing, "update/accepted"), self._on_update_accepted)
+            # FUTURE OBSERVABILITY: we deliberately do NOT subscribe to update/rejected.
+            # A rejected reported update is currently only visible via the async publish()
+            # puback warn-log; wiring update/rejected would surface the AWS reason string.
         except Exception as exc:  # noqa: BLE001 — e.g. policy-denied SUBACK (dev cert)
             # Do NOT publish to shadow topics after a denial: AWS IoT drops the whole
             # connection on an unauthorized publish, which would wedge the bridge.
@@ -58,7 +61,8 @@ class ShadowSync:
     def _on_get_accepted(self, topic: str, payload: str) -> None:
         try:
             desired = json.loads(payload).get("state", {}).get("desired") or {}
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            # Bad JSON, or valid-but-non-object JSON (null/number/list -> no .get).
             log.warning("unparseable shadow get/accepted — %s", _LOCKED_MSG)
             self._got.set()
             return
@@ -74,7 +78,8 @@ class ShadowSync:
     def _on_delta(self, topic: str, payload: str) -> None:
         try:
             delta = json.loads(payload).get("state") or {}
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            # Bad JSON, or valid-but-non-object JSON (null/number/list -> no .get).
             log.warning("unparseable shadow delta ignored")
             return
         self._safety.apply_shadow(delta)
@@ -85,13 +90,17 @@ class ShadowSync:
     def _on_update_accepted(self, topic: str, payload: str) -> None:
         log.debug("shadow update accepted")
 
-    def publish_reported(self) -> None:
+    def publish_reported(self, sync: bool = False) -> None:
         if not self._subscribed:
             return  # never touch shadow topics if we couldn't subscribe (see start())
-        reported = dict(self._safety.reported())
+        reported = self._safety.reported()  # already a fresh dict — no copy needed
         reported["bridge_version"] = BRIDGE_VERSION
         reported["uptime_s"] = round(self._safety.uptime_s(), 1)
-        self._client.publish(
-            shadow_topic(self._thing, "update"),
-            json.dumps({"state": {"reported": reported}}),
-        )
+        topic = shadow_topic(self._thing, "update")
+        payload = json.dumps({"state": {"reported": reported}})
+        if sync:
+            # Shutdown path (main thread): block on the puback so the final reported
+            # lands before a clean disconnect. Never set sync=True from a callback.
+            self._client.publish_sync(topic, payload)
+        else:
+            self._client.publish(topic, payload)

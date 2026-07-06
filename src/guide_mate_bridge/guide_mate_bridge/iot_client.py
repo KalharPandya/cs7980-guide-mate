@@ -82,6 +82,25 @@ class IotClient:
 
         future.add_done_callback(_warn_on_failure)
 
+    def publish_sync(self, topic: str, payload_str: str, timeout_s: float = 3.0) -> None:
+        """Blocking publish: returns only after the puback (or timeout/failure).
+
+        Safe ONLY from the main thread (e.g. graceful shutdown) — NEVER from an awscrt
+        callback thread, where blocking on the puback would deadlock the connection
+        (that is exactly why publish() is fire-and-forget). Used at shutdown so the
+        final offline event + reported actually reach the broker before a clean
+        disconnect suppresses the LWT. Warns instead of raising so shutdown still
+        proceeds to disconnect."""
+        future, _ = self._conn.publish(
+            topic=topic,
+            payload=payload_str.encode("utf-8"),
+            qos=mqtt.QoS.AT_LEAST_ONCE,
+        )
+        try:
+            future.result(timeout=timeout_s)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("sync publish to %s not confirmed within %ss: %s", topic, timeout_s, exc)
+
     def disconnect(self) -> None:
         try:
             self._conn.disconnect().result()

@@ -81,11 +81,15 @@ def _graceful_shutdown(client, shadow, robot_id, telemetry=None, heartbeat=None)
     """SIGTERM path: offline(graceful) -> final reported -> disconnect -> stop rclpy."""
     if heartbeat is not None:
         heartbeat.stop()  # no more publishes racing the teardown
-    client.publish(
+    # Main thread here (SIGTERM set stop_event, main() called us) — blocking on the
+    # puback IS safe, unlike the awscrt callback threads that must use async publish().
+    # A clean disconnect suppresses the LWT, so these final messages must actually land
+    # before we disconnect; publish_sync blocks (and warns on timeout) to guarantee it.
+    client.publish_sync(
         status_topic(robot_id),
         json.dumps({"event": "offline", "robot_id": robot_id, "graceful": True}),
     )
-    shadow.publish_reported()
+    shadow.publish_reported(sync=True)
     client.disconnect()
     if telemetry is not None:
         telemetry.stop()

@@ -63,12 +63,23 @@ class SafetyState:
             }
 
     def reported(self) -> dict:
-        """Shadow 'reported' payload: same keys as desired; dry_run is EFFECTIVE."""
+        """Shadow 'reported' payload.
+
+        `dry_run` echoes the SHADOW-level value (what desired asked for), NOT the
+        effective value, so the shadow CONVERGES: with env dry-run forced ON, an
+        operator setting desired.dry_run=false would otherwise leave desired!=reported
+        forever, and AWS re-emits update/delta on every reported publish -> a delta
+        storm (see _on_delta -> publish_reported). The effective (env OR shadow) value
+        is still surfaced, but as the SEPARATE `effective_dry_run` key. AWS computes
+        the delta ONLY over keys that also appear in `desired`; `effective_dry_run` is
+        never a desired key, so it can never trigger a delta. gates() remains the
+        enforcement surface and keeps using the effective value."""
         with self._lock:
             return {
                 "motion_enabled": self._motion_enabled,
                 "max_speed": self._max_speed,
-                "dry_run": self._env_dry_run or self._shadow_dry_run,
+                "dry_run": self._shadow_dry_run,
+                "effective_dry_run": self._env_dry_run or self._shadow_dry_run,
             }
 
     def uptime_s(self) -> float:

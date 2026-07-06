@@ -107,3 +107,62 @@ def test_graceful_shutdown_publishes_offline_then_reported_then_disconnects():
     assert {"event": "offline", "robot_id": "devtest", "graceful": True} in offline
     assert any(t == shadow_topic("Turtlebot-468", "update") for t, _ in fake.published)
     assert fake.disconnected is True
+
+
+def test_graceful_shutdown_flushes_publishes_before_disconnect():
+    # Finding 2: a clean disconnect suppresses the LWT, so the final offline event +
+    # reported must actually reach the broker before disconnect. _graceful_shutdown
+    # publishes them synchronously (blocks on puback) THEN disconnects.
+    events = []
+
+    class RecordingFuture:
+        def result(self, timeout=None):
+            # Only a blocking wait (publish_sync / disconnect) records a flush.
+            events.append("flushed")
+            return None
+
+        def add_done_callback(self, fn):
+            # Deferred like the real IO thread: does NOT resolve synchronously, so the
+            # async publish() path records no flush before disconnect (that is the bug).
+            pass
+
+    class RecordingConnection:
+        def __init__(self):
+            self.published = []
+            self.subscriptions = {}
+            self.disconnected = False
+
+        def connect(self):
+            return RecordingFuture()
+
+        def disconnect(self):
+            self.disconnected = True
+            events.append("disconnect")
+            return RecordingFuture()
+
+        def publish(self, topic, payload, qos, **kwargs):
+            text = payload.decode("utf-8") if isinstance(payload, (bytes, bytearray)) else payload
+            self.published.append((topic, text))
+            return RecordingFuture(), 1
+
+        def subscribe(self, topic, qos, callback):
+            self.subscriptions[topic] = callback
+            return RecordingFuture(), 1
+
+    fake = RecordingConnection()
+    client = IotClient(
+        endpoint="x", cert_filepath="x", pri_key_filepath="x",
+        client_id="guidemate-bridge-test", robot_id="devtest", connection=fake,
+    )
+    safety = SafetyState(env_dry_run=True)
+    shadow = ShadowSync(client=client, thing_name="Turtlebot-468",
+                        safety=safety, get_timeout_s=0.05)
+    shadow._subscribed = True  # pretend reconcile already succeeded
+
+    _graceful_shutdown(client=client, shadow=shadow, robot_id="devtest")
+
+    # Both final publishes flushed (puback awaited) BEFORE the disconnect.
+    disconnect_pos = events.index("disconnect")
+    flush_before = [e for e in events[:disconnect_pos] if e == "flushed"]
+    assert len(flush_before) >= 2, f"final publishes not flushed before disconnect: {events}"
+    assert fake.disconnected is True
