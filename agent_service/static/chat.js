@@ -181,6 +181,17 @@
     wsSend(JSON.stringify({ type: "text", message: text }));
   });
 
+  // --- quick-action chips: prefill the composer (Moses concierge affordances).
+  // Prefill-only (not auto-send) so the user reviews before sending -- reuses
+  // the existing form submit path, no new protocol.
+  document.querySelectorAll(".chip-action").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const prompt = btn.getAttribute("data-prompt") || btn.textContent.trim();
+      input.value = prompt;
+      input.focus();
+    });
+  });
+
   // --- push-to-talk mic: capture -> 16k Int16 PCM -> WS binary --------------
   const TARGET_RATE = 16000;
   let audioCtx = null, micStream = null, workletNode = null, recording = false;

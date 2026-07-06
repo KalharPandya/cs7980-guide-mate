@@ -3,75 +3,141 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Robert the Robot Dog</title>
+  <title>Moses — Northeastern Vancouver concierge AI</title>
   <link rel="stylesheet" href="/chat.css" />
 </head>
 <body>
   <main class="app">
-    <header class="topbar">
-      <div class="brand">
-        <span class="paw">🐾</span>
-        <h1>Robert</h1>
+    <!-- Direction A app header (shown in chat mode): black-framed Husky + Moses. -->
+    <header class="topbar" aria-label="Moses">
+      <div class="lockup">
+        <span class="mark mark-app">
+          <img src="/brand/moses-husky-head.svg" alt="Moses Husky head mark" />
+        </span>
+        <span class="lockup-text">
+          <span class="wordmark">Moses</span>
+          <span class="subtitle">Northeastern Vancouver</span>
+        </span>
       </div>
-      <div id="status-chip" class="chip chip-virtual" title="connection status">
-        <span id="status-mode">virtual</span>
+      <div class="status">
+        <div id="status-chip" class="chip chip-virtual" title="connection status">
+          <span class="chip-dot" aria-hidden="true"></span>
+          <span id="status-mode">virtual</span>
+        </div>
+        <!-- Task 7 (virtual-pet grant): shown only while connected robot_id ==
+             "turtlebotsim" (vs a physical robot). Hidden by default; chat.js
+             toggles it from the same /api/session/{id}/state poll that drives
+             the companion banner. -->
+        <span id="virtual-pet-badge" data-testid="virtual-pet-badge" class="chip chip-virtual-pet hidden">
+          <span class="chip-dot" aria-hidden="true"></span>Virtual pet
+        </span>
       </div>
-      <!-- Task 7 (virtual-pet grant): shown only while connected robot_id ==
-           "turtlebotsim" (vs a physical robot). Hidden by default; chat.js
-           toggles it from the same /api/session/{id}/state poll that already
-           drives the companion banner above. -->
-      <span id="virtual-pet-badge" data-testid="virtual-pet-badge" class="chip chip-virtual-pet hidden">🐾 Virtual pet</span>
     </header>
 
-    <!-- Intake gate: collected once, mints the real session row so the
-         companion-request + status-poll endpoints work from message one. -->
-    <section id="intake" class="card intake">
-      <p class="intake-lead">What's your name, and are you comfortable around Physical AI Dogs?</p>
-      <input id="name" class="text-input" placeholder="Your name" autocomplete="off" />
-      <label class="check-row">
-        <input type="checkbox" id="comfortable" />
-        I'm comfortable around Physical AI Dogs
-      </label>
-      <button id="start" class="send" type="button">Start chatting</button>
+    <!-- Direction B black hero (landing / consent / intake). Ceremonial,
+         red-framed Husky mark, Northeastern Vancouver affiliation. Intake is
+         collected once, minting the real session row so the companion-request +
+         status-poll endpoints work from message one. -->
+    <section id="intake" class="hero">
+      <div class="hero-inner">
+        <div class="hero-lockup reveal reveal-1">
+          <span class="mark mark-hero">
+            <img src="/brand/moses-husky-head.svg" alt="Moses Husky head mark" />
+          </span>
+          <span class="lockup-text">
+            <span class="wordmark wordmark-lg">Moses</span>
+            <span class="subtitle subtitle-hero">King Husky–inspired concierge AI</span>
+          </span>
+        </div>
+
+        <h1 class="hero-title reveal reveal-2">Experience campus with a guide who knows the way.</h1>
+        <p class="hero-lede reveal reveal-2">
+          Moses answers questions, finds places, and hands off to a person when that's
+          the right call. Robert the robot dog is one tool in the kit — an optional
+          physical companion you can request any time.
+        </p>
+
+        <div class="intake-card reveal reveal-3">
+          <div class="field">
+            <label for="name">What should we call you?</label>
+            <input id="name" class="text-input" placeholder="Your name" autocomplete="off" />
+          </div>
+
+          <label class="check-row" for="comfortable">
+            <input type="checkbox" id="comfortable" />
+            <span>I'm comfortable around physical AI dogs</span>
+          </label>
+
+          <p class="privacy">
+            Cameras help navigation only. No face recognition. Robot guidance is always optional.
+          </p>
+
+          <button id="start" class="btn btn-primary btn-block" type="button">Start with Moses</button>
+          <a class="human-help" href="mailto:help@northeastern.example">Prefer a person? Talk to campus staff</a>
+        </div>
+
+        <div class="campus-strip reveal reveal-3">
+          <img src="/brand/northeastern-vancouver-lockup.png"
+               alt="Northeastern University Vancouver" />
+        </div>
+        <p class="affiliation-note reveal reveal-3">
+          A Northeastern Vancouver student project. Not an official University product.
+        </p>
+      </div>
     </section>
 
     <div id="chat" hidden>
       <section id="companion-banner" class="banner" aria-live="polite">
-        <span id="companion-status">Virtual dog (avatar only)</span>
-        <button id="request-companion" class="banner-btn" type="button">Request physical companion</button>
+        <span class="banner-status">
+          <span class="banner-dot" aria-hidden="true"></span>
+          <span id="companion-status">Virtual dog (avatar only)</span>
+        </span>
+        <button id="request-companion" class="btn btn-ghost banner-btn" type="button">
+          Request physical companion
+        </button>
       </section>
 
       <section class="stage">
-        <div id="avatar" class="avatar">
-          <!-- Pure inline SVG dog. Emote classes on #avatar drive the CSS animations,
-               triggered in JS at the moment reply audio starts playing (not on arrival). -->
-          <svg viewBox="0 0 120 120" width="140" height="140" aria-hidden="true">
-            <g class="dog-body">
-              <ellipse cx="60" cy="92" rx="34" ry="18" class="dog-shadow" />
-              <path class="dog-ear ear-left" d="M34 40 q-14 6 -8 30 q10 -6 14 -18 z" />
-              <path class="dog-ear ear-right" d="M86 40 q14 6 8 30 q-10 -6 -14 -18 z" />
-              <circle cx="60" cy="56" r="30" class="dog-head" />
-              <circle cx="50" cy="52" r="4.5" class="dog-eye" />
-              <circle cx="70" cy="52" r="4.5" class="dog-eye" />
-              <ellipse cx="60" cy="66" rx="7" ry="5" class="dog-snout" />
-              <circle cx="60" cy="63" r="3.2" class="dog-nose" />
-            </g>
-          </svg>
-          <span id="emote-label" class="emote-label"></span>
+        <div class="stage-card">
+          <div id="avatar" class="avatar">
+            <!-- Pure inline SVG husky-companion. Emote classes on #avatar drive the CSS
+                 animations, triggered in JS the moment reply audio starts playing. -->
+            <svg viewBox="0 0 120 120" width="132" height="132" aria-hidden="true">
+              <g class="dog-body">
+                <ellipse cx="60" cy="96" rx="32" ry="8" class="dog-shadow" />
+                <path class="dog-ear ear-left" d="M34 40 q-14 6 -8 30 q10 -6 14 -18 z" />
+                <path class="dog-ear ear-right" d="M86 40 q14 6 8 30 q-10 -6 -14 -18 z" />
+                <circle cx="60" cy="56" r="30" class="dog-head" />
+                <circle cx="50" cy="52" r="4.5" class="dog-eye" />
+                <circle cx="70" cy="52" r="4.5" class="dog-eye" />
+                <ellipse cx="60" cy="66" rx="8" ry="5.5" class="dog-snout" />
+                <circle cx="60" cy="63" r="3.2" class="dog-nose" />
+              </g>
+            </svg>
+            <span id="emote-label" class="emote-label"></span>
+          </div>
+          <p class="stage-caption">Robert · your Husky companion</p>
         </div>
       </section>
+
+      <div class="quick-actions" aria-label="Quick actions">
+        <button class="chip chip-action" type="button" data-prompt="Help me find a room on campus.">Find a room</button>
+        <button class="chip chip-action" type="button" data-prompt="What campus services are available right now?">Campus services</button>
+        <button class="chip chip-action" type="button" data-prompt="Can you connect me with a person?">Talk to a person</button>
+      </div>
 
       <section id="messages" class="messages" aria-live="polite"></section>
 
       <form id="chat-form" class="composer">
         <button id="mic" class="mic" type="button" aria-label="Push to talk">
-          <span class="mic-glyph">🎙️</span>
+          <span class="mic-glyph" aria-hidden="true">🎙️</span>
+          <span class="mic-text">Talk</span>
           <span class="mic-level"><span id="mic-level-bar"></span></span>
         </button>
         <input id="message" class="text-input" autocomplete="off"
                placeholder="Say something to Robert…" />
-        <button type="submit" class="send">Send</button>
-        <button id="new-session" class="ghost" type="button" title="Start a new session">New session</button>
+        <button type="submit" class="btn btn-primary send">Send</button>
+        <button id="new-session" class="btn btn-ghost" type="button" title="Start a new session">New</button>
       </form>
     </div>
   </main>
