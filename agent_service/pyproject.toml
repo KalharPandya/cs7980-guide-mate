@@ -17,6 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "moto[dynamodb]>=5",
     "httpx",
     "playwright",
     "pytest-playwright",
