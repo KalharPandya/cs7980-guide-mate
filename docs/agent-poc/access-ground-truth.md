@@ -194,6 +194,39 @@ wz=±1.200 dur=0.40s` lines and **published no twists**. Robot 468 untouched bey
 additive unit; shadow not modified. Manage only via `sudo systemctl … guidemate-bridge`
 (never `pkill`).
 
+## Phase 2 "robot truth" verification (2026-07-05)
+No new AWS resources (shadow + robot policy already existed). Phase-2 bridge
+(`bridge_version 0.2.0`) redeployed to the Pi via `scripts/install_bridge_on_pi.sh`
+(now renders `GUIDEMATE_THING_NAME`, `GUIDEMATE_ROS`, and a ROS-sourcing `ExecStart`
+wrapper: `source /opt/ros/humble/setup.bash && source /etc/turtlebot4/setup.bash &&
+export ROS_SUPER_CLIENT=True`). Unit still carries `GUIDEMATE_DRY_RUN=1` (verified in the
+rendered unit before and after every restart); robot 468 docked and motionless throughout.
+
+| Check | Result |
+|---|---|
+| Heartbeats on `guidemate/turtlebot468/status` | every 30 s: `uptime_s` + `gates`, **battery/docked = null** (see telemetry row) |
+| Telemetry rclpy layer | node comes **up** (`"telemetry ROS node up", namespace=/turtlebot468, battery_topic=battery_state, dock_topic=dock_status`) but **battery/docked = null (Discovery-Server fallback)**. Topics `/turtlebot468/battery_state` + `/turtlebot468/dock_status` **exist** in the boot graph (visible to an ad-hoc `ROS_SUPER_CLIENT=True` `ros2 topic list`, 29 topics) but `ros2 topic echo` returns **0 frames** for them — the documented ephemeral-super-client "lists but can't receive" limitation. An `/etc/systemd/system/guidemate-bridge.service.d/10-abs-topics.conf` drop-in forcing absolute `GUIDEMATE_BATTERY_TOPIC=/turtlebot468/battery_state` etc. changed **nothing** (relative names already resolve identically under the node namespace); the drop-in was **removed** so the Pi config matches the committed unit. Accepted degradation — heartbeats still prove liveness/uptime/gates. |
+| Shadow drill (`desired.max_speed` 0.15→0.10→0.15) | reported followed **both ways within ~6 s** (delta handler: `"shadow delta applied: ['max_speed']"`); `motion_enabled` untouched (`false` in every `get-thing-shadow`) |
+| Restart persistence | `systemctl restart` → `"shutting down gracefully"` logged (graceful SIGTERM path) → reported re-converged to `desired` on boot (`reported.max_speed=0.10`, fresh `uptime_s=0.6`) |
+| Refusal evidence (item 4, dry-run held) | motion ack `gates={docked: null, motion_enabled: false, dry_run: true}`, `simulated=true`; integration test `test_motion_command_dry_run_ack_carries_gate_state` **PASS** |
+| Robot-cert shadow publishes | robot cert `Turtlebot-468` **can** publish `reported` (delta reconcile + reported both work) — unlike the dev cert |
+| Integration tests (this box, `GUIDEMATE_INTEGRATION=1`) | `test_robot_truth.py` **2 passed** (heartbeat ≤35 s + refusal gates). Full default suite **134 passed, 6 skipped** |
+
+**Checklist status:** item 2 (shadow) ✅, item 4 (refusals, dry-run-held ack gates) ✅,
+item 5 (telemetry liveness/gates ✅; battery/dock null-fallback documented).
+
+**Known issue (not a Phase-2 regression, dev-cert only):** `test_roundtrip.py` (local
+dev-cert bridge subprocess) **FAILS** — `[]` acks. Root cause in shared bridge
+`shadow.py`: the shadow-denial guard assumes `client.subscribe()` **raises** on a
+policy-denied SUBACK, but awscrt reports the denial via SUBACK failure-QoS **without
+raising**, so `_subscribed=True` and the bridge publishes `$aws/things/Turtlebot-468/
+shadow/get` → **unauthorized publish → AWS IoT drops the whole connection** → command
+delivery flaps → the live test command lands in a disconnect window. The dev-cert bridge
+never logs `"bridge connected"` (blocks/flaps in `shadow.start()`), yet still executes a
+queued command once (proving the cmd subscription). The **robot cert is unaffected**
+(it has shadow permissions). Fix belongs to the bridge/shadow owner: detect denied
+SUBACK via the returned QoS (`0x80`) rather than relying on an exception.
+
 ## Work branch
 All POC work happens on branch **`kalhar/dog-agent-poc`** (pushed to origin). Warm-up
 instructions for a new machine/session: [linux-agent-warmup.md](linux-agent-warmup.md).
