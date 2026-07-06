@@ -10,8 +10,15 @@ MAX_LINEAR = 0.15    # m/s
 MAX_ANGULAR = 1.5    # rad/s
 MAX_TOTAL_S = 30.0   # s total per primitive
 
+# Max radius for the "circle" primitive that still completes a full loop
+# (2*pi*radius / vx) within MAX_TOTAL_S at vx=0.12 m/s. Above this radius
+# _cap_total() would silently truncate the sequence mid-arc, leaving a
+# partial arc instead of a closed circle. 30 * 0.12 / (2*pi) ~= 0.573,
+# rounded down so the cap in _cap_total() stays authoritative (never binds).
+CIRCLE_MAX_RADIUS = 0.57
 
-@dataclass
+
+@dataclass(frozen=True)
 class TwistStep:
     vx: float
     wz: float
@@ -72,7 +79,7 @@ def _happy() -> list[TwistStep]:
 
 
 def _circle(params: dict) -> list[TwistStep]:
-    radius = _clamp(float(params.get("radius", 0.5)), 0.2, 1.0)
+    radius = _clamp(float(params.get("radius", 0.5)), 0.2, CIRCLE_MAX_RADIUS)
     vx = 0.12
     wz = vx / radius
     duration = 2 * math.pi / wz
@@ -82,9 +89,6 @@ def _circle(params: dict) -> list[TwistStep]:
 def _spin() -> list[TwistStep]:
     wz = 0.9
     return [_step(0.0, wz, 2 * math.pi / wz)]
-
-
-_STOP = [TwistStep(0.0, 0.0, 0.0)]
 
 
 def build(command: Command, max_speed: float = MAX_LINEAR) -> list[TwistStep]:
@@ -100,7 +104,7 @@ def build(command: Command, max_speed: float = MAX_LINEAR) -> list[TwistStep]:
     elif key == ("motion", "spin"):
         steps = _spin()
     elif key == ("stop", "stop"):
-        return list(_STOP)
+        return [TwistStep(0.0, 0.0, 0.0)]
     else:
         raise ValueError(
             f"unknown choreography for type={command.type!r} name={command.name!r}"

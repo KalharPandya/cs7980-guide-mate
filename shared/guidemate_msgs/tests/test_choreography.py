@@ -69,6 +69,17 @@ def test_circle_closes_with_full_turn():
     assert abs(abs(theta) - 2 * math.pi) < 0.1
 
 
+@pytest.mark.parametrize("radius_param", [0.05, 0.57, 2.0])
+def test_circle_closes_at_radius_clamp_boundaries(radius_param):
+    cmd = Command(type="motion", name="circle", params={"radius": radius_param})
+    steps = build(cmd)
+    total = sum(s.duration for s in steps)
+    assert total <= MAX_TOTAL_S + 1e-9
+    x, y, theta, _ = simulate(steps)
+    assert math.hypot(x, y) < 0.05
+    assert abs(abs(theta) - 2 * math.pi) < 0.1
+
+
 def test_spin_no_displacement_full_turn():
     x, y, theta, _ = simulate(build(PRIMITIVES["spin"]))
     assert math.hypot(x, y) < 0.02
