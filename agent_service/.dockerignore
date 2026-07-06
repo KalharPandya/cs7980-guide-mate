@@ -1,0 +1,11 @@
+**/__pycache__/
+**/*.pyc
+**/*.egg-info/
+.venv/
+**/artifacts/
+build/
+install/
+log/
+*.pem
+*.key
+agent_service/deploy/*.env

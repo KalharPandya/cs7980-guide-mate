@@ -1,0 +1,16 @@
+services:
+  app:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-west-2
+        awslogs-group: /guidemate/agent-service
+        awslogs-create-group: "true"
+
+  caddy:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-west-2
+        awslogs-group: /guidemate/caddy
+        awslogs-create-group: "true"
