@@ -1,158 +1,300 @@
-/* Robert the Robot Dog — warm, hand-drawn companion chat. Not a bootstrap
-   template: a custom amber/ink palette, an inline-SVG mascot with its own
-   idle breathing motion, and pill-shaped everything to read as "companion"
-   rather than "form". Theme-aware (prefers-color-scheme). */
+/* ============================================================================
+   Moses — Northeastern Vancouver concierge AI. Product-facing chat surface.
+
+   A/B identity (docs/agent-poc/design-package):
+     A. Black-framed Husky + Moses  -> everyday chat app on soft-gray/white.
+     B. Black hero + red #C8102E     -> ceremonial landing / consent / intake.
+
+   The landing is the signature moment: a full black stage, a red-framed Husky
+   mark, a heavy compact "Moses" wordmark, the Northeastern Vancouver lockup,
+   and a quiet staged reveal. Everything else stays disciplined and legible.
+   Tokens are taken verbatim from tokens.json / themes.css.
+   ========================================================================== */
 
 :root {
-  --bg: #fbf3e7;
-  --card: #ffffff;
-  --accent: #d9711f;
-  --accent-ink: #ffffff;
-  --accent-soft: #ffe2c2;
-  --ink: #2c211b;
-  --muted: #8a7768;
-  --you: #ffe6c8;
-  --dog: #eef1fb;
-  --ok: #2f8f4e;
-  --ok-soft: #dff4e3;
-  --warn: #c23b3b;
-  --warn-soft: #fbe4e4;
-  --pend-soft: #fff1c2;
-  --border: rgba(44, 33, 27, 0.12);
-  --shadow: 0 10px 30px rgba(44, 33, 27, 0.08);
-}
+  /* Light app theme (Direction A surfaces). */
+  --bg: #f7f7f7;
+  --surface: #ffffff;
+  --surface-soft: #f2f2f2;
+  --text: #000000;
+  --muted: #5b6170;
+  --border: #d9d9d9;
+  --primary: #c8102e;
+  --primary-text: #ffffff;
+  --route: #1f6feb;
+  --success: #168a4a;
+  --warning: #b76b00;
+  --danger: #c8102e;
+  --focus: #c8102e;
+  --shadow: 0 14px 34px rgba(0, 0, 0, 0.10);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1c1611;
-    --card: #241d17;
-    --accent: #f0954a;
-    --accent-ink: #1c1611;
-    --accent-soft: #3a2b1a;
-    --ink: #f3e9dd;
-    --muted: #b6a591;
-    --you: #3a2b1a;
-    --dog: #232a3d;
-    --ok: #5fce85;
-    --ok-soft: #1c3324;
-    --warn: #f47272;
-    --warn-soft: #3a1f1f;
-    --pend-soft: #3a3018;
-    --border: rgba(243, 233, 221, 0.12);
-    --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-  }
-}
-
-:root[data-theme="dark"] {
-  --bg: #1c1611; --card: #241d17; --accent: #f0954a; --accent-ink: #1c1611;
-  --accent-soft: #3a2b1a; --ink: #f3e9dd; --muted: #b6a591; --you: #3a2b1a;
-  --dog: #232a3d; --ok: #5fce85; --ok-soft: #1c3324; --warn: #f47272;
-  --warn-soft: #3a1f1f; --pend-soft: #3a3018; --border: rgba(243, 233, 221, 0.12);
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-}
-:root[data-theme="light"] {
-  --bg: #fbf3e7; --card: #ffffff; --accent: #d9711f; --accent-ink: #ffffff;
-  --accent-soft: #ffe2c2; --ink: #2c211b; --muted: #8a7768; --you: #ffe6c8;
-  --dog: #eef1fb; --ok: #2f8f4e; --ok-soft: #dff4e3; --warn: #c23b3b;
-  --warn-soft: #fbe4e4; --pend-soft: #fff1c2; --border: rgba(44, 33, 27, 0.12);
-  --shadow: 0 10px 30px rgba(44, 33, 27, 0.08);
+  --font: "Real Head Pro", "FF Real Head", Lato, Arial, sans-serif;
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-pill: 999px;
 }
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body {
   margin: 0;
-  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, "Segoe UI", system-ui, sans-serif;
-  background: var(--bg);
-  color: var(--ink);
+  font-family: var(--font);
+  font-size: 18px;
+  line-height: 1.5;
+  color: var(--text);
+  /* Default surface = the black hero (landing shows first). Once the chat
+     shell is revealed, we flip to the light app surface. */
+  background: #000000;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
+body:has(#chat:not([hidden])) { background: var(--bg); }
 
 .app {
-  max-width: 560px;
+  max-width: 620px;
   margin: 0 auto;
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
+.app:has(#chat:not([hidden])) { max-width: 560px; }
 
-.topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 18px 6px;
-}
-.brand { display: flex; align-items: center; gap: 8px; }
-.brand h1 {
-  margin: 0; font-size: 24px; letter-spacing: .3px; font-weight: 600;
-}
-.paw { font-size: 20px; }
-
-.chip {
-  display: inline-flex; gap: 6px; align-items: center;
-  padding: 5px 12px; border-radius: 999px; font-size: 12px; font-weight: 700;
-  letter-spacing: .3px; text-transform: uppercase;
-  background: var(--accent-soft); color: var(--accent);
-  border: 1px solid transparent;
-}
-.chip-physical { background: var(--ok-soft); color: var(--ok); }
-.chip-virtual { background: var(--accent-soft); color: var(--accent); }
-.chip-locked { background: var(--warn-soft); color: var(--warn); }
-.chip-virtual-pet { background: var(--accent-soft); color: var(--accent); }
-
-/* --- intake card --- */
-.card {
-  background: var(--card);
-  border-radius: 18px;
-  box-shadow: var(--shadow);
-  margin: 14px 18px;
-  padding: 20px;
-}
-.intake-lead { margin: 0 0 12px; font-size: 15px; color: var(--muted); }
-.check-row {
-  display: flex; align-items: center; gap: 8px; margin: 12px 0 16px;
-  font-size: 14px; color: var(--ink);
-}
-.check-row input { width: 16px; height: 16px; }
-.intake .send { width: 100%; }
-
-/* --- companion banner --- */
-.banner {
-  margin: 6px 18px 4px; padding: 10px 14px; border-radius: 14px;
-  background: var(--accent-soft); display: flex; align-items: center;
-  justify-content: space-between; gap: 10px; font-size: 13.5px;
-}
-.banner.approved, .banner.physical { background: var(--ok-soft); color: var(--ok); }
-.banner.pending { background: var(--pend-soft); }
-.banner.denied, .banner.aborted { background: var(--warn-soft); }
-.banner-btn {
-  border: none; background: var(--accent); color: var(--accent-ink);
-  border-radius: 999px; padding: 6px 14px; font-weight: 700; font-size: 12.5px;
-  cursor: pointer; white-space: nowrap;
-}
-.banner-btn:disabled { opacity: .5; cursor: default; }
 .hidden { display: none !important; }
 
-/* --- avatar stage --- */
-.stage { display: flex; justify-content: center; padding: 6px 0 2px; }
+/* ---- Shared Moses lockup pieces ---------------------------------------- */
+.mark {
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.mark img { width: 78%; height: 78%; object-fit: contain; display: block; }
+.mark-app  { width: 46px; height: 46px; border: 5px solid #000000; border-radius: var(--r-sm); }
+.mark-hero { width: 72px; height: 72px; border: 6px solid var(--primary); border-radius: var(--r-sm); }
+
+.lockup-text { display: flex; flex-direction: column; line-height: 1; }
+.wordmark {
+  font-weight: 900;
+  font-size: 27px;
+  letter-spacing: -0.045em;
+  line-height: 0.92;
+}
+.wordmark-lg { font-size: 40px; letter-spacing: -0.055em; }
+.subtitle {
+  margin-top: 4px;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+/* ============================================================================
+   Direction A — app header (chat mode only)
+   ========================================================================== */
+.topbar { display: none; }
+.app:has(#chat:not([hidden])) .topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.lockup { display: flex; align-items: center; gap: 12px; }
+.status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  min-height: 30px; padding: 5px 12px;
+  border-radius: var(--r-pill);
+  font-size: 13px; font-weight: 800; letter-spacing: 0.01em;
+  background: var(--surface-soft); color: var(--text);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.chip-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.chip-virtual     { color: var(--muted); }
+.chip-physical    { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, var(--border)); background: color-mix(in srgb, var(--success) 10%, var(--surface)); }
+.chip-locked      { color: var(--danger); }
+.chip-virtual-pet { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); background: color-mix(in srgb, var(--primary) 9%, var(--surface)); }
+
+/* ============================================================================
+   Direction B — black hero (landing / consent / intake). Signature moment.
+   Self-contained dark surface, independent of the app theme.
+   ========================================================================== */
+.hero {
+  --muted: #d6d6d6;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 22px calc(40px + env(safe-area-inset-bottom));
+  color: #ffffff;
+  background:
+    radial-gradient(120% 90% at 82% -8%, rgba(200, 16, 46, 0.30), transparent 55%),
+    radial-gradient(100% 70% at -12% 108%, rgba(200, 16, 46, 0.12), transparent 60%),
+    #000000;
+}
+.hero-inner { width: 100%; min-width: 0; max-width: 460px; }
+
+.hero-lockup { display: flex; align-items: center; gap: 16px; margin-bottom: 30px; }
+.subtitle-hero { color: #d6d6d6; }
+
+.hero-title {
+  margin: 0 0 16px;
+  font-size: clamp(34px, 8.5vw, 52px);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+  font-weight: 900;
+  text-wrap: balance;
+}
+.hero-lede {
+  margin: 0 0 26px;
+  font-size: 18px;
+  line-height: 1.5;
+  color: #d6d6d6;
+  max-width: 42ch;
+}
+
+.intake-card {
+  background: #111111;
+  border: 1px solid #343434;
+  border-radius: var(--r-lg);
+  padding: 22px;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.42);
+}
+.field { display: grid; gap: 8px; }
+label { font-weight: 800; font-size: 14.5px; }
+.hero .field label { color: #ffffff; }
+
+.check-row {
+  display: flex; align-items: center; gap: 11px;
+  margin: 16px 0 4px;
+  font-size: 16px; font-weight: 600; color: #ffffff;
+  cursor: pointer; min-height: 44px;
+}
+.check-row input {
+  width: 22px; height: 22px; flex-shrink: 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.privacy {
+  margin: 16px 0 20px;
+  padding: 13px 15px;
+  border-radius: var(--r-md);
+  border: 1px solid #343434;
+  border-left: 4px solid var(--primary);
+  background: #1d1d1d;
+  color: #d6d6d6;
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+
+.human-help {
+  display: block;
+  margin-top: 16px;
+  text-align: center;
+  color: #d6d6d6;
+  font-weight: 700;
+  font-size: 15px;
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+.human-help:hover { color: #ffffff; text-decoration: underline; }
+
+.campus-strip {
+  margin-top: 26px;
+  background: #ffffff;
+  border-radius: var(--r-md);
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+}
+.campus-strip img { max-width: 100%; max-height: 46px; object-fit: contain; object-position: left center; }
+
+.affiliation-note {
+  margin: 12px 2px 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: #8f8f8f;
+}
+
+/* Staged reveal — quiet, confident. Disabled under reduced-motion. */
+.reveal { opacity: 0; transform: translateY(14px); animation: rise 0.66s cubic-bezier(0.22, 0.61, 0.36, 1) forwards; }
+.reveal-1 { animation-delay: 0.05s; }
+.reveal-2 { animation-delay: 0.16s; }
+.reveal-3 { animation-delay: 0.30s; }
+@keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+/* ============================================================================
+   Companion banner (chat mode). Container restyled; strings owned by chat.js.
+   ========================================================================== */
+.banner {
+  margin: 14px 18px 2px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--muted);
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px;
+  box-shadow: var(--shadow-sm);
+}
+.banner-status { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 700; flex: 1 1 200px; min-width: 0; }
+.banner-btn { margin-left: auto; }
+.banner-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+.banner.approved, .banner.physical { border-left-color: var(--success); }
+.banner.approved .banner-dot, .banner.physical .banner-dot { background: var(--success); }
+.banner.pending  { border-left-color: var(--warning); }
+.banner.pending .banner-dot { background: var(--warning); }
+.banner.denied, .banner.aborted { border-left-color: var(--danger); }
+.banner.denied .banner-dot, .banner.aborted .banner-dot { background: var(--danger); }
+.banner-btn { flex-shrink: 0; }
+
+/* ============================================================================
+   Avatar stage — Robert, the Husky companion (one tool in Moses's kit).
+   Emote classes fire in JS the instant reply audio starts (voice + motion land
+   together). Do NOT rename emote-happy / emote-yes / emote-no.
+   ========================================================================== */
+.stage { display: flex; justify-content: center; padding: 16px 18px 4px; }
+.stage-card {
+  width: 100%;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 20px 16px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  background-image: radial-gradient(90% 120% at 50% 0%, color-mix(in srgb, var(--primary) 6%, var(--surface)), var(--surface) 70%);
+}
 .avatar {
   position: relative;
   transform-origin: 50% 82%;
-  animation: breathe 3.2s ease-in-out infinite;
+  animation: breathe 3.4s ease-in-out infinite;
 }
+.stage-caption { margin: 2px 0 0; font-size: 13px; font-weight: 800; letter-spacing: 0.02em; color: var(--muted); text-transform: uppercase; }
 .emote-label {
-  position: absolute; bottom: -2px; left: 50%; transform: translateX(-50%);
+  position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%);
   font-size: 11px; color: var(--muted); white-space: nowrap;
 }
-.dog-shadow { fill: rgba(0, 0, 0, .1); }
-.dog-head, .dog-ear { fill: #c9955f; }
-.dog-snout { fill: #e8c39a; }
-.dog-eye, .dog-nose { fill: #2c211b; }
+
+/* Husky palette for the companion mark. */
+.dog-shadow { fill: rgba(0, 0, 0, 0.10); }
+.dog-head, .dog-ear { fill: #4b515c; }
+.dog-snout { fill: #f2f2f2; }
+.dog-eye, .dog-nose { fill: #0a0a0a; }
 
 @keyframes breathe {
   0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.015); }
+  50% { transform: scale(1.02); }
 }
-/* Emote animations, fired by JS the instant reply audio starts playing --
-   NOT when the reply text/emote first arrives -- so motion and voice land
-   together. */
+/* Emote animations — fired by JS the instant reply audio starts playing. */
 @keyframes wiggle {
   0%, 100% { transform: rotate(0); }
   20% { transform: rotate(-10deg); }
@@ -170,68 +312,171 @@ body {
   50% { transform: translateX(9px) rotate(4deg); }
   80% { transform: translateX(-4px) rotate(-2deg); }
 }
-.avatar.emote-happy { animation: wiggle .5s ease-in-out 2; }
-.avatar.emote-yes { animation: nod .55s ease-in-out 2; }
-.avatar.emote-no { animation: shake .45s ease-in-out 2; }
+.avatar.emote-happy { animation: wiggle 0.5s ease-in-out 2; }
+.avatar.emote-yes { animation: nod 0.55s ease-in-out 2; }
+.avatar.emote-no { animation: shake 0.45s ease-in-out 2; }
 
-/* --- messages --- */
+/* ============================================================================
+   Quick actions (prefill helpers — Moses is a concierge, not just a pet).
+   ========================================================================== */
+.quick-actions {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  padding: 12px 18px 4px;
+}
+.chip-action {
+  cursor: pointer;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  min-height: 38px;
+  padding: 7px 14px;
+  border-radius: var(--r-pill);
+  transition: border-color 0.15s ease, transform 0.12s ease, background 0.15s ease;
+}
+.chip-action:hover {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 7%, var(--surface));
+  transform: translateY(-1px);
+}
+
+/* ============================================================================
+   Messages
+   ========================================================================== */
 .messages {
-  flex: 1; overflow-y: auto; padding: 6px 18px 12px;
-  display: flex; flex-direction: column; gap: 9px;
+  flex: 1; overflow-y: auto;
+  padding: 12px 18px 14px;
+  display: flex; flex-direction: column; gap: 10px;
 }
 .bubble {
-  max-width: 78%; padding: 10px 14px; border-radius: 18px; font-size: 15px;
-  line-height: 1.4; box-shadow: 0 1px 2px rgba(0, 0, 0, .04);
+  max-width: 82%;
+  padding: 11px 15px;
+  border-radius: var(--r-lg);
+  font-size: 16px;
+  line-height: 1.5;
 }
 .bubble.you {
-  align-self: flex-end; background: var(--you); border-bottom-right-radius: 4px;
+  align-self: flex-end;
+  background: var(--primary);
+  color: var(--primary-text);
+  border-bottom-right-radius: var(--r-sm);
 }
 .bubble.dog {
-  align-self: flex-start; background: var(--dog); border-bottom-left-radius: 4px;
+  align-self: flex-start;
+  background: var(--surface-soft);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: var(--r-sm);
 }
-.bubble .emote-tag { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); }
+.bubble .emote-tag { display: block; margin-top: 5px; font-size: 11px; opacity: 0.75; }
 
-/* --- composer --- */
+/* ============================================================================
+   Composer
+   ========================================================================== */
 .composer {
   display: flex; gap: 8px; align-items: center;
-  padding: 12px 18px calc(12px + env(safe-area-inset-bottom));
-  background: var(--card);
+  padding: 12px 18px calc(14px + env(safe-area-inset-bottom));
+  background: var(--surface);
   border-top: 1px solid var(--border);
 }
 .text-input {
-  flex: 1; border: 1px solid var(--border); border-radius: 999px;
-  padding: 11px 16px; font-size: 15px; outline: none;
-  background: var(--bg); color: var(--ink); font-family: inherit;
+  flex: 1; min-width: 0;
+  min-height: 46px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 0 16px;
+  font: inherit; font-size: 16px;
+  background: var(--bg);
+  color: var(--text);
 }
-.text-input:focus { border-color: var(--accent); }
-.send {
-  border: none; background: var(--accent); color: var(--accent-ink);
-  border-radius: 999px; padding: 11px 18px; font-weight: 700; cursor: pointer;
-  font-family: inherit; font-size: 14px;
-}
-.ghost {
-  border: 1px solid var(--border); background: transparent; color: var(--muted);
-  border-radius: 999px; padding: 11px 14px; font-size: 12.5px; cursor: pointer;
-  font-family: inherit;
-}
-.mic {
-  position: relative; border: none; background: var(--accent-soft);
-  border-radius: 50%; width: 46px; height: 46px; cursor: pointer;
-  display: grid; place-items: center; flex-shrink: 0;
-}
-.mic.recording { background: var(--warn); }
-.mic-glyph { font-size: 19px; }
-.mic-level {
-  position: absolute; bottom: -3px; left: 8px; right: 8px; height: 3px;
-  background: rgba(0, 0, 0, .1); border-radius: 2px; overflow: hidden;
-}
-#mic-level-bar { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .07s linear; }
+.hero .text-input { background: #1d1d1d; color: #ffffff; border-color: #343434; }
+.text-input::placeholder { color: var(--muted); }
+.text-input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-color: var(--primary); }
 
-/* --- toast (errors) --- */
-.toast {
-  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
-  background: var(--warn); color: #fff; padding: 10px 18px; border-radius: 999px;
-  font-size: 13.5px; box-shadow: var(--shadow); z-index: 10;
-  transition: opacity .25s ease, transform .25s ease;
+.btn {
+  min-height: 46px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit; font-weight: 800; font-size: 15px;
+  padding: 0 18px;
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.15s ease, background 0.15s ease;
 }
-.toast.hidden { opacity: 0; pointer-events: none; transform: translate(-50%, 8px); }
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn-primary { border-color: var(--primary); background: var(--primary); color: var(--primary-text); }
+.btn-primary:hover { filter: brightness(1.06); }
+.btn-ghost { background: transparent; color: var(--muted); }
+.hero .btn-ghost { color: #d6d6d6; border-color: #343434; }
+.btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+.hero .btn-ghost:hover { color: #ffffff; }
+.btn-block { width: 100%; }
+.btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+.send { flex-shrink: 0; }
+#new-session { flex-shrink: 0; padding: 0 14px; }
+
+.mic {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 7px;
+  min-height: 46px; padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface-soft);
+  color: var(--text);
+  font: inherit; font-weight: 800; font-size: 14px;
+  cursor: pointer; flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.mic-glyph { font-size: 18px; }
+.mic-text { line-height: 1; }
+.mic.recording { background: var(--danger); color: #ffffff; border-color: var(--danger); }
+.mic-level {
+  position: absolute; bottom: -3px; left: 10px; right: 10px; height: 3px;
+  background: rgba(0, 0, 0, 0.10); border-radius: 2px; overflow: hidden;
+}
+#mic-level-bar { display: block; height: 100%; width: 0%; background: var(--primary); transition: width 0.07s linear; }
+
+/* ============================================================================
+   Toast
+   ========================================================================== */
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: var(--danger); color: #ffffff;
+  padding: 11px 18px; border-radius: var(--r-pill);
+  font-size: 15px; font-weight: 700;
+  box-shadow: var(--shadow); z-index: 10;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.toast.hidden { opacity: 0; pointer-events: none; transform: translate(-50%, 8px); display: block !important; }
+
+/* ============================================================================
+   Focus + accessibility
+   ========================================================================== */
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.btn:focus-visible, .chip-action:focus-visible, .mic:focus-visible, .check-row input:focus-visible, .human-help:focus-visible {
+  outline: 3px solid var(--focus); outline-offset: 3px;
+}
+
+/* ---- Narrow screens ---------------------------------------------------- */
+@media (max-width: 430px) {
+  .wordmark { font-size: 24px; }
+  /* Keep every control labelled (brief: no icon-only buttons). Tighten the
+     composer instead of dropping the mic's "Talk" label. */
+  .composer { gap: 6px; padding-left: 14px; padding-right: 14px; }
+  .btn { padding: 0 14px; }
+  #new-session { padding: 0 12px; }
+  .mic { padding: 0 12px; gap: 6px; }
+  .text-input { padding: 0 14px; }
+  .quick-actions { padding-bottom: 2px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; animation: none; }
+  .avatar { animation: none; }
+  .btn, .chip-action { transition: none; }
+  .avatar.emote-happy, .avatar.emote-yes, .avatar.emote-no { animation-iteration-count: 1; }
+}

@@ -228,6 +228,24 @@ def chat_css() -> FileResponse:
     return FileResponse(STATIC_DIR / "chat.css", media_type="text/css")
 
 
+# Moses brand assets (Husky head mark + Northeastern Vancouver affiliation
+# lockup). Explicit routes -- same pattern as `chat_css()` above -- so the chat
+# page never references docs/ paths at runtime.
+@app.get("/brand/moses-husky-head.svg")
+def brand_husky() -> FileResponse:
+    return FileResponse(
+        STATIC_DIR / "brand" / "moses-husky-head.svg", media_type="image/svg+xml"
+    )
+
+
+@app.get("/brand/northeastern-vancouver-lockup.png")
+def brand_campus_lockup() -> FileResponse:
+    return FileResponse(
+        STATIC_DIR / "brand" / "northeastern-vancouver-lockup.png",
+        media_type="image/png",
+    )
+
+
 # Admin UI (index.html + admin.js + admin.css). Mounted AFTER the API routes so
 # /api/admin/* is handled by the router, not the static files.
 app.mount(
