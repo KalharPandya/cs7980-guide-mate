@@ -34,7 +34,7 @@ scp "guidemate:${YAML_REMOTE}" "${WORK}/map.yaml" 2>/dev/null \
   || echo "    (no sidecar .yaml alongside the .pgm; continuing with the image only)"
 
 echo "[3/5] Converting .pgm -> .png locally (Pillow)..."
-PYTHONPATH="${REPO}/scripts" "${VENV_PY}" -c "from maps import pgm_to_png; pgm_to_png('${WORK}/map.pgm', '${WORK}/latest.png')"
+"${VENV_PY}" -c "from guidemate_agent.maps import pgm_to_png; pgm_to_png('${WORK}/map.pgm', '${WORK}/latest.png')"
 
 echo "[4/5] Writing meta.json..."
 CAPTURED_TS="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
