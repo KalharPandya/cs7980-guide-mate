@@ -155,6 +155,22 @@ deactivate the cert (`aws iot update-certificate --new-status INACTIVE`).
    Query: `aws bedrock-agent-runtime retrieve --knowledge-base-id A1NIQYZ0KQ --retrieval-query '{"text":"…"}'`.
 4. Pin the agent service to `us.anthropic.claude-sonnet-4-6` (still applies).
 
+## Dog-agent POC dev resources (created 2026-07-05, Phase 0-1)
+| Resource | Id / name | Notes |
+|---|---|---|
+| IoT policy `guidemate-dev-policy` | attached to dev cert `aec82bf4…` | Connect `client/guidemate-*`; Pub/Receive `guidemate/devtest/*`; Receive `guidemate/+/status`; Subscribe `guidemate/devtest/*` + `guidemate/+/status`. Additive; robot policy untouched. Tag `project=guidemate-poc`. ARN `arn:aws:iot:us-west-2:852373397000:policy/guidemate-dev-policy`. |
+| IAM role `guidemate-iot-logging-role` | trusts `iot.amazonaws.com` | `AWSIoTLogging` managed policy (`arn:aws:iam::aws:policy/service-role/AWSIoTLogging` — note: not `AWSIotLoggingRole`, which does not exist); used by IoT v2 logging (default level WARN). Tag `project=guidemate-poc`. Role ARN `arn:aws:iam::852373397000:role/guidemate-iot-logging-role`. No prior logging role existed. |
+| IoT v2 logging | default level `WARN` | Denials land in CloudWatch `AWSIotLogsV2`. |
+
+**Real IoT Core round-trip verified 2026-07-05:** the gated integration test
+(`agent_service/tests/integration/test_roundtrip.py`, `GUIDEMATE_INTEGRATION=1`) runs the
+real bridge subprocess (dev cert, `robot_id=devtest`, dry-run) against live IoT Core and
+observes the full `received→running→done` (`simulated=True`) round-trip in ~0.16–0.27 s.
+**Gotcha:** AWS IoT QoS1 does **not** preserve order across separate publishes — the three
+acks can arrive out of order (observed `received → done → running`), so consumers that stop
+collecting on the terminal `done` (e.g. `RobotRegistry.send_command`) may return a partial
+list. The test asserts on the complete captured set, not on arrival order.
+
 ## Work branch
 All POC work happens on branch **`kalhar/dog-agent-poc`** (pushed to origin). Warm-up
 instructions for a new machine/session: [linux-agent-warmup.md](linux-agent-warmup.md).
