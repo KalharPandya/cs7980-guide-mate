@@ -112,6 +112,26 @@
         </button>
       </div>
 
+      <!-- Wave-2 in-app navigation: a segmented control (tablist) that swaps the
+           four Moses sections. Chat is the default active view so the existing
+           chat DOM (#chat-form/#messages/#avatar) is present + visible on load,
+           preserving every id/e2e contract. Keyboard: buttons are tab-focusable,
+           Enter/Space activate, Left/Right arrows move between tabs. 44px targets,
+           #C8102E focus (global :focus-visible). -->
+      <nav class="view-nav" role="tablist" aria-label="Moses sections">
+        <button class="view-tab is-active" type="button" role="tab" id="tab-chat"
+                aria-selected="true" aria-controls="view-chat" data-view="chat">Chat</button>
+        <button class="view-tab" type="button" role="tab" id="tab-wayfinding"
+                aria-selected="false" tabindex="-1" aria-controls="view-wayfinding" data-view="wayfinding">Wayfinding</button>
+        <button class="view-tab" type="button" role="tab" id="tab-arsenal"
+                aria-selected="false" tabindex="-1" aria-controls="view-arsenal" data-view="arsenal">Arsenal</button>
+        <button class="view-tab" type="button" role="tab" id="tab-map"
+                aria-selected="false" tabindex="-1" aria-controls="view-map" data-view="map">Map</button>
+      </nav>
+
+      <div class="views">
+       <!-- ===================== CHAT (existing) ===================== -->
+       <section id="view-chat" class="view" role="tabpanel" aria-labelledby="tab-chat" tabindex="0">
       <!-- Desktop (>=1024px) becomes a two-pane grid: this rail (companion +
            status + quick actions + voice) on the left, the message thread +
            composer on the right. On mobile the rail/main wrappers collapse to
@@ -162,7 +182,21 @@
         </aside>
 
         <div class="chat-main">
-          <section id="messages" class="messages" aria-live="polite"></section>
+          <section id="messages" class="messages" aria-live="polite">
+            <!-- Empty-state: gives a brand-new thread a tasteful greeting + a
+                 min-height treatment (desktop no longer looks empty). chat.js
+                 hides this the moment the first bubble is added. -->
+            <div id="thread-empty" class="thread-empty">
+              <span class="thread-empty-mark">
+                <img src="/brand/moses-husky-head.svg" alt="" aria-hidden="true" />
+              </span>
+              <p class="thread-empty-title">Hi, I'm Moses.</p>
+              <p class="thread-empty-lede">
+                Ask me anything about campus — find a room, campus services, or
+                talk to a person. Robert the robot dog is one tool in the kit.
+              </p>
+            </div>
+          </section>
 
           <!-- Recording state: shown while push-to-talk is capturing. -->
           <p id="voice-hint" class="voice-hint hidden" aria-live="polite">
@@ -188,6 +222,96 @@
             <button id="new-session" class="btn btn-ghost" type="button" title="Start a new session">New</button>
           </form>
         </div>
+      </div>
+       </section>
+
+       <!-- ===================== WAYFINDING ===================== -->
+       <!-- Motion-free: the campus/robot map (falls back to a placeholder when
+            no robot has produced one), a destination input, and turn-by-turn
+            TEXT directions produced by asking Moses over the SAME chat/WS turn
+            (no new protocol). The persistent Stop bar above the nav covers the
+            "Stop when a robot can move" requirement across every view. -->
+       <section id="view-wayfinding" class="view view-pad" role="tabpanel" aria-labelledby="tab-wayfinding" tabindex="0" hidden>
+         <div class="view-inner">
+           <header class="view-head">
+             <h2 class="view-title">Wayfinding</h2>
+             <p class="view-sub">Directions with or without the robot. Moses writes the turn-by-turn steps.</p>
+           </header>
+
+           <div class="wf-map map-viewport" id="wf-map-viewport" data-state="loading">
+             <img id="wf-map-img" class="map-img" alt="Campus map for your route" hidden />
+             <div class="map-empty" id="wf-map-empty">
+               <span class="map-empty-ico" aria-hidden="true">🗺️</span>
+               <p class="map-empty-title">Map appears once a robot is guiding you</p>
+               <p class="map-empty-lede">You can still get written directions below.</p>
+             </div>
+           </div>
+
+           <form id="wf-form" class="wf-form">
+             <label class="field-label" for="wf-input">Where do you want to go?</label>
+             <div class="wf-row">
+               <input id="wf-input" class="text-input" autocomplete="off"
+                      placeholder="e.g. the library, room 468, nearest washroom" />
+               <button type="submit" class="btn btn-primary send">Get directions</button>
+             </div>
+           </form>
+
+           <section class="wf-directions" aria-live="polite">
+             <p class="subhead">Turn-by-turn</p>
+             <div id="wf-directions-body" class="wf-directions-body">
+               <p class="empty-note">Ask above and Moses will lay out the steps here.</p>
+             </div>
+           </section>
+
+           <div class="wf-help">
+             <button id="wf-lost" class="btn btn-ghost btn-block" type="button">
+               Lost? Get help from a person
+             </button>
+           </div>
+         </div>
+       </section>
+
+       <!-- ===================== AGENT ARSENAL ===================== -->
+       <!-- "Moses is more than the robot": labelled status rows (label + colour
+            pill, never colour-only) driven by GET /api/session/{sid}/arsenal.
+            Degrades to "Checking…" pills if the route 404s. -->
+       <section id="view-arsenal" class="view view-pad" role="tabpanel" aria-labelledby="tab-arsenal" tabindex="0" hidden>
+         <div class="view-inner">
+           <header class="view-head">
+             <h2 class="view-title">Agent arsenal</h2>
+             <p class="view-sub">Everything Moses can do for you. The robot dog is just one tool in the kit.</p>
+           </header>
+           <div id="arsenal-list" class="arsenal-list" aria-live="polite">
+             <!-- rows injected by chat.js -->
+           </div>
+           <p class="view-foot">
+             <button id="arsenal-refresh" class="btn btn-ghost" type="button">Refresh</button>
+           </p>
+         </div>
+       </section>
+
+       <!-- ===================== USER MAP ===================== -->
+       <section id="view-map" class="view view-pad" role="tabpanel" aria-labelledby="tab-map" tabindex="0" hidden>
+         <div class="view-inner">
+           <header class="view-head">
+             <h2 class="view-title">Map</h2>
+             <p class="view-sub">The latest map from the robot guiding you.</p>
+           </header>
+
+           <div class="map-viewport map-viewport-lg" id="map-viewport" data-state="loading">
+             <img id="map-img" class="map-img" alt="Latest robot map" hidden />
+             <div class="map-empty" id="map-empty">
+               <span class="map-empty-ico" aria-hidden="true">🗺️</span>
+               <p class="map-empty-title">No map yet</p>
+               <p class="map-empty-lede">A map shows up here once a robot is guiding you.</p>
+             </div>
+           </div>
+           <div class="map-toolbar">
+             <p id="map-meta" class="map-meta empty-note">—</p>
+             <button id="map-zoom" class="btn btn-ghost btn-sm" type="button" aria-pressed="false" hidden>Actual size</button>
+           </div>
+         </div>
+       </section>
       </div>
     </div>
   </main>

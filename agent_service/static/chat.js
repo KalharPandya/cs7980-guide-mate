@@ -31,6 +31,25 @@
   const soundLabel = $("sound-label");
   const voiceHint = $("voice-hint");
   const speakingIndicator = $("speaking-indicator");
+  const threadEmpty = $("thread-empty");
+  const chatEl = $("chat");
+
+  // Wave-2 view elements (nav + wayfinding + arsenal + map). All optional —
+  // every handler below no-ops if its node is absent.
+  const viewTabs = Array.from(document.querySelectorAll(".view-tab"));
+  const views = {
+    chat: $("view-chat"),
+    wayfinding: $("view-wayfinding"),
+    arsenal: $("view-arsenal"),
+    map: $("view-map"),
+  };
+  const wfForm = $("wf-form");
+  const wfInput = $("wf-input");
+  const wfDirections = $("wf-directions-body");
+  const wfLost = $("wf-lost");
+  const arsenalList = $("arsenal-list");
+  const arsenalRefresh = $("arsenal-refresh");
+  const mapZoomBtn = $("map-zoom");
 
   // --- session id: minted by POST /api/session at intake, mirrored in
   // localStorage. A real session row is required for /api/session/{id}/state
@@ -171,7 +190,51 @@
     div.appendChild(body);
     messages.appendChild(div);
     messages.scrollTop = messages.scrollHeight;
+    // First real message: retire the empty-state greeting and collapse the
+    // mobile rail (nit a) so the thread + composer are reachable sooner.
+    if (threadEmpty) threadEmpty.classList.add("hidden");
+    if (chatEl) chatEl.classList.add("has-conversation");
     return div;
+  }
+
+  // ==========================================================================
+  //  KB SOURCE / PROVENANCE CHIPS  (Wave-2)
+  // --------------------------------------------------------------------------
+  //  A "reply" frame MAY carry sources: [{title, url}] (url may be null). Render
+  //  small "Source: <title>" chips under the reply bubble. Titles/urls are
+  //  escaped; links only ever open http/https (same whitelist as the markdown
+  //  renderer). No sources -> render nothing.
+  // ==========================================================================
+  function attachSources(bubble, sources) {
+    if (!bubble || !Array.isArray(sources) || sources.length === 0) return;
+    const wrap = document.createElement("div");
+    wrap.className = "bubble-sources";
+    let rendered = 0;
+    sources.forEach((s) => {
+      if (!s) return;
+      const title = String(s.title == null ? "" : s.title).trim();
+      if (!title) return;
+      const url = s.url == null ? "" : String(s.url);
+      const safeLink = /^https?:\/\//i.test(url);
+      const chip = document.createElement(safeLink ? "a" : "span");
+      chip.className = "source-chip";
+      if (safeLink) {
+        chip.href = url; // http/https only
+        chip.target = "_blank";
+        chip.rel = "noopener noreferrer";
+      }
+      const lab = document.createElement("span");
+      lab.className = "source-label";
+      lab.textContent = "Source:";
+      const t = document.createElement("span");
+      t.className = "source-title";
+      t.textContent = title; // textContent -> inert, no HTML
+      chip.appendChild(lab);
+      chip.appendChild(t);
+      wrap.appendChild(chip);
+      rendered++;
+    });
+    if (rendered > 0) bubble.appendChild(wrap);
   }
 
   // --- "Moses is thinking…" indicator (bridges the 7-9s Bedrock round-trip) --
@@ -321,7 +384,14 @@
       } else if (msg.type === "reply") {
         hideThinking();
         lastDogBubble = addBubble("dog", msg.text);
+        attachSources(lastDogBubble, msg.sources); // optional KB provenance
         armPendingEmote(msg.emote);
+        // If this turn was a wayfinding request, mirror the answer into the
+        // Wayfinding directions panel (the chat transcript keeps its copy too).
+        if (pendingWayfinding) {
+          renderWayfindingDirections(msg.text);
+          pendingWayfinding = false;
+        }
       } else if (msg.type === "stopped") {
         showToast(msg.sent ? "Stop sent to the robot." : "Nothing to stop — no robot moving.");
       } else if (msg.type === "audio") {
@@ -344,6 +414,10 @@
       } else if (msg.type === "error") {
         hideThinking();
         showToast(msg.message || "Something went wrong, try again.");
+        if (pendingWayfinding) {
+          setWayfindingState("Couldn't reach Moses for directions — try again.", false);
+          pendingWayfinding = false;
+        }
       }
     };
     ws.onclose = () => {
@@ -594,6 +668,225 @@
       wsSend(JSON.stringify({ type: "stop" }));
     });
   }
+
+  // ==========================================================================
+  //  WAVE-2 — in-app navigation (Chat / Wayfinding / Arsenal / Map)
+  // --------------------------------------------------------------------------
+  //  A tablist swaps the four sections. Chat is the default. Every fetch below
+  //  degrades to a clean empty/"checking" state if its route 404s — the backend
+  //  routes may not exist until merge, so nothing here may throw.
+  // ==========================================================================
+  function activateView(name) {
+    if (!views[name]) return;
+    Object.keys(views).forEach((k) => { if (views[k]) views[k].hidden = k !== name; });
+    viewTabs.forEach((t) => {
+      const active = t.dataset.view === name;
+      t.classList.toggle("is-active", active);
+      t.setAttribute("aria-selected", String(active));
+      t.tabIndex = active ? 0 : -1;
+    });
+    if (name === "arsenal") loadArsenal();
+    else if (name === "map") loadMapView();
+    else if (name === "wayfinding") loadWayfindingMap();
+  }
+
+  viewTabs.forEach((tab, idx) => {
+    tab.addEventListener("click", () => activateView(tab.dataset.view));
+    tab.addEventListener("keydown", (e) => {
+      let ni = null;
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") ni = (idx + 1) % viewTabs.length;
+      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") ni = (idx - 1 + viewTabs.length) % viewTabs.length;
+      else if (e.key === "Home") ni = 0;
+      else if (e.key === "End") ni = viewTabs.length - 1;
+      if (ni != null) {
+        e.preventDefault();
+        activateView(viewTabs[ni].dataset.view);
+        viewTabs[ni].focus();
+      }
+    });
+  });
+
+  // ---- shared map fetch (Wayfinding thumbnail + Map view) ------------------
+  function formatMapMeta(md) {
+    const parts = [];
+    if (md && md.captured_ts != null) {
+      let ts = md.captured_ts, d = null;
+      if (typeof ts === "number") d = new Date(ts > 1e12 ? ts : ts * 1000);
+      else { const p = Date.parse(ts); if (!isNaN(p)) d = new Date(p); }
+      parts.push("Captured " + (d ? d.toLocaleString() : String(ts)));
+    }
+    if (md && md.source) parts.push(String(md.source));
+    return parts.length ? parts.join(" · ") : "Map from your robot";
+  }
+
+  async function fetchMapInto(opts) {
+    const { img, empty, meta, zoomBtn } = opts;
+    if (!img) return;
+    if (!sessionId) { showMapEmpty(opts); return; }
+    try {
+      const r = await fetch(`/api/session/${sessionId}/map`, { credentials: "same-origin" });
+      if (!r.ok) throw new Error("no map");
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      if (img.dataset.objurl) URL.revokeObjectURL(img.dataset.objurl);
+      img.dataset.objurl = url;
+      img.src = url;
+      img.hidden = false;
+      if (empty) empty.hidden = true;
+      if (zoomBtn) zoomBtn.hidden = false;
+      if (meta) {
+        meta.classList.remove("empty-note");
+        meta.textContent = "Loading map details…";
+        try {
+          const m = await fetch(`/api/session/${sessionId}/map/meta`, { credentials: "same-origin" });
+          meta.textContent = m.ok ? formatMapMeta(await m.json()) : "Map from your robot";
+        } catch (e) { meta.textContent = "Map from your robot"; }
+      }
+    } catch (e) {
+      showMapEmpty(opts);
+    }
+  }
+  function showMapEmpty(opts) {
+    const { img, empty, meta, zoomBtn } = opts;
+    if (img) { img.hidden = true; img.removeAttribute("src"); }
+    if (empty) empty.hidden = false;
+    if (zoomBtn) zoomBtn.hidden = true;
+    if (meta) { meta.classList.add("empty-note"); meta.textContent = "—"; }
+  }
+  function loadMapView() {
+    fetchMapInto({ img: $("map-img"), empty: $("map-empty"), meta: $("map-meta"), zoomBtn: mapZoomBtn });
+  }
+  function loadWayfindingMap() {
+    fetchMapInto({ img: $("wf-map-img"), empty: $("wf-map-empty"), meta: null, zoomBtn: null });
+  }
+
+  if (mapZoomBtn) {
+    mapZoomBtn.addEventListener("click", () => {
+      const img = $("map-img");
+      if (!img) return;
+      const actual = img.classList.toggle("zoom-actual");
+      mapZoomBtn.setAttribute("aria-pressed", String(actual));
+      mapZoomBtn.textContent = actual ? "Fit to view" : "Actual size";
+    });
+  }
+
+  // ---- Wayfinding: written directions via the SAME chat/WS turn ------------
+  let pendingWayfinding = false;
+  function setWayfindingState(text, loading) {
+    if (!wfDirections) return;
+    wfDirections.classList.toggle("is-loading", !!loading);
+    wfDirections.textContent = "";
+    const p = document.createElement("p");
+    if (!loading) p.className = "empty-note";
+    p.textContent = text;
+    wfDirections.appendChild(p);
+  }
+  function renderWayfindingDirections(text) {
+    if (!wfDirections) return;
+    wfDirections.classList.remove("is-loading");
+    wfDirections.textContent = "";
+    const body = document.createElement("div");
+    body.className = "bubble-body";
+    body.innerHTML = renderMarkdown(text); // safe: escape-then-whitelist (same path as bubbles)
+    wfDirections.appendChild(body);
+  }
+  if (wfForm) {
+    wfForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const dest = (wfInput.value || "").trim();
+      if (!dest) return;
+      const q = "I'm trying to get to " + dest +
+        ". Give me clear turn-by-turn walking directions from where I am now on campus.";
+      addBubble("you", q);
+      showThinking();
+      pendingWayfinding = true;
+      setWayfindingState("Finding the best route…", true);
+      if (!wsSend(JSON.stringify({ type: "text", message: q }))) {
+        pendingWayfinding = false;
+        hideThinking();
+        setWayfindingState("Not connected yet — try again in a moment.", false);
+      }
+    });
+  }
+  if (wfLost) {
+    wfLost.addEventListener("click", () => {
+      const q = "I'm lost and I'd like help from a real person, please.";
+      activateView("chat");
+      addBubble("you", q);
+      showThinking();
+      wsSend(JSON.stringify({ type: "text", message: q }));
+    });
+  }
+
+  // ---- Agent Arsenal: capability status rows (label + colour pill) ---------
+  function pillFor(available) {
+    if (available === true) return ["pill pill-ok", "Available"];
+    if (available === false) return ["pill pill-muted", "Unavailable"];
+    return ["pill pill-muted", "Checking…"];
+  }
+  function robotRow(robot) {
+    if (!robot) return { desc: "Optional physical dog you can request any time.", pill: ["pill pill-muted", "Checking…"] };
+    if (robot.bound) {
+      const id = robot.robot_id ? String(robot.robot_id) : "";
+      return { desc: "One tool in the kit — currently bound to your session.", pill: ["pill pill-ok", id ? "Bound · " + id : "Bound"] };
+    }
+    return { desc: "Optional physical dog you can request any time.", pill: ["pill pill-muted", "Virtual (no robot)"] };
+  }
+  function safetyRow(safety, robot) {
+    let dry = null;
+    if (safety && typeof safety.dry_run === "boolean") dry = safety.dry_run;
+    else if (robot && typeof robot.dry_run === "boolean") dry = robot.dry_run;
+    if (dry === true) return ["pill pill-ok", "Dry-run · no motion"];
+    if (dry === false) return ["pill pill-warn", "Motion enabled"];
+    return ["pill pill-muted", "Checking…"];
+  }
+  function renderArsenal(d) {
+    if (!arsenalList) return;
+    const avail = (o) => (o && typeof o.available === "boolean" ? o.available : null);
+    const robot = robotRow(d && d.robot);
+    const rows = [
+      { ico: "📚", name: "Knowledge & search", desc: "Answers campus questions from Moses's knowledge base.", pill: pillFor(avail(d && d.knowledge)) },
+      { ico: "🧭", name: "Maps & wayfinding", desc: "Turn-by-turn directions and campus maps.", pill: pillFor(avail(d && d.maps)) },
+      { ico: "🤝", name: "Human handoff", desc: "Connects you with a real person when that's the right call.", pill: pillFor(avail(d && d.human_handoff)) },
+      { ico: "🐾", name: "Robot companion", desc: robot.desc, pill: robot.pill },
+      { ico: "🛡️", name: "Safety — dry-run", desc: "Motion is default-deny; the robot stays put unless explicitly enabled.", pill: safetyRow(d && d.safety, d && d.robot) },
+    ];
+    arsenalList.textContent = "";
+    rows.forEach((row) => {
+      const el = document.createElement("div");
+      el.className = "arsenal-row";
+      const ico = document.createElement("span");
+      ico.className = "arsenal-ico"; ico.setAttribute("aria-hidden", "true"); ico.textContent = row.ico;
+      const txt = document.createElement("div");
+      txt.className = "arsenal-text";
+      const nm = document.createElement("div"); nm.className = "arsenal-name"; nm.textContent = row.name;
+      const ds = document.createElement("p"); ds.className = "arsenal-desc"; ds.textContent = row.desc;
+      txt.appendChild(nm); txt.appendChild(ds);
+      const pill = document.createElement("span");
+      pill.className = row.pill[0]; pill.textContent = row.pill[1];
+      el.appendChild(ico); el.appendChild(txt); el.appendChild(pill);
+      arsenalList.appendChild(el);
+    });
+  }
+  let arsenalTimer = null;
+  async function loadArsenal() {
+    if (!arsenalList) return;
+    if (!arsenalList.children.length) renderArsenal(null); // instant "Checking…" rows
+    if (sessionId) {
+      try {
+        const r = await fetch(`/api/session/${sessionId}/arsenal`, { credentials: "same-origin" });
+        renderArsenal(r.ok ? await r.json() : null);
+      } catch (e) {
+        renderArsenal(null);
+      }
+    }
+    if (!arsenalTimer) {
+      arsenalTimer = setInterval(() => {
+        if (views.arsenal && !views.arsenal.hidden) loadArsenal();
+      }, 5000);
+    }
+  }
+  if (arsenalRefresh) arsenalRefresh.addEventListener("click", loadArsenal);
 
   // --- intake ----------------------------------------------------------------
   async function beginSession(name, comfortable) {
