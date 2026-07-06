@@ -95,6 +95,7 @@ body {
 .chip-physical { background: var(--ok-soft); color: var(--ok); }
 .chip-virtual { background: var(--accent-soft); color: var(--accent); }
 .chip-locked { background: var(--warn-soft); color: var(--warn); }
+.chip-virtual-pet { background: var(--accent-soft); color: var(--accent); }
 
 /* --- intake card --- */
 .card {

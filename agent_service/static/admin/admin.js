@@ -244,19 +244,46 @@ $("kb-sync").addEventListener("click", async () => {
 // evidence and is shown deliberately in the assignment-events panel below.
 const ROBOT_ID = "turtlebot468";
 
+// Task 7 (virtual-pet grant): the approve control is multi-robot -- the admin
+// picks which registered robot (physical turtlebot468 OR virtual turtlebotsim)
+// a pending request gets bound to, instead of always hardcoding ROBOT_ID. The
+// option list comes from the same /status registry the Robot + Maps tabs use.
+async function _registryRobotIds() {
+  const data = await (await api("/status")).json();
+  const ids = (data.robots || []).map((r) => r.robot_id);
+  return ids.length ? ids : [ROBOT_ID];
+}
+
 async function reloadRequests() {
-  const rs = await (await api("/requests")).json();
+  const [rs, robotIds] = await Promise.all([
+    (await api("/requests")).json(),
+    _registryRobotIds(),
+  ]);
   const ul = $("requests-list");
   ul.innerHTML = "";
   rs.forEach((r) => {
     const li = document.createElement("li");
+    li.dataset.testid = "request-row";
     li.textContent = `${r.name} (comfortable=${r.comfortable}) — ${r.session_id}`;
+
+    const robotSelect = document.createElement("select");
+    robotSelect.dataset.testid = "approve-robot-select";
+    robotSelect.className = "approve-robot-select";
+    robotIds.forEach((id) => {
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = id === "turtlebotsim" ? "Virtual pet — turtlebotsim" : id;
+      robotSelect.appendChild(opt);
+    });
+    if (robotIds.includes(ROBOT_ID)) robotSelect.value = ROBOT_ID;
+
     const approve = document.createElement("button");
     approve.textContent = "Approve";
+    approve.dataset.testid = "approve-btn";
     approve.addEventListener("click", async () => {
       await api(`/requests/${r.request_id}/approve`, {
         method: "POST", headers: jsonHeaders,
-        body: JSON.stringify({ robot_id: ROBOT_ID }),
+        body: JSON.stringify({ robot_id: robotSelect.value }),
       });
       reloadRequests();
       reloadAssignEvents();
@@ -268,7 +295,7 @@ async function reloadRequests() {
       await api(`/requests/${r.request_id}/deny`, { method: "POST" });
       reloadRequests();
     });
-    li.append(" ", approve, " ", deny);
+    li.append(" ", robotSelect, " ", approve, " ", deny);
     ul.appendChild(li);
   });
   if (!rs.length) ul.innerHTML = "<li class=\"hint\">No pending requests.</li>";

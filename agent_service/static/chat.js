@@ -23,6 +23,7 @@
   const banner = $("companion-banner");
   const bannerText = $("companion-status");
   const requestBtn = $("request-companion");
+  const virtualPetBadge = $("virtual-pet-badge");
   const toast = $("toast");
 
   // --- session id: minted by POST /api/session at intake, mirrored in
@@ -276,6 +277,14 @@
     const physical = !!s.robot_id;
     chip.className = "chip " + (physical ? "chip-physical" : "chip-virtual");
     chipMode.textContent = physical ? "physical" : "virtual";
+
+    // Task 7 (virtual-pet grant): the sim is bound like any other robot (still
+    // goes through the "physical" branch below, "Connected to turtlebotsim");
+    // this badge is the only extra cue that the bound robot is virtual, not
+    // the real turtlebot468 -- companion-banner strings stay untouched.
+    if (virtualPetBadge) {
+      virtualPetBadge.classList.toggle("hidden", s.robot_id !== "turtlebotsim");
+    }
 
     banner.classList.remove("pending", "approved", "denied", "aborted");
     if (physical) {

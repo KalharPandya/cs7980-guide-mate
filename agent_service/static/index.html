@@ -16,6 +16,11 @@
       <div id="status-chip" class="chip chip-virtual" title="connection status">
         <span id="status-mode">virtual</span>
       </div>
+      <!-- Task 7 (virtual-pet grant): shown only while connected robot_id ==
+           "turtlebotsim" (vs a physical robot). Hidden by default; chat.js
+           toggles it from the same /api/session/{id}/state poll that already
+           drives the companion banner above. -->
+      <span id="virtual-pet-badge" data-testid="virtual-pet-badge" class="chip chip-virtual-pet hidden">🐾 Virtual pet</span>
     </header>
 
     <!-- Intake gate: collected once, mints the real session row so the

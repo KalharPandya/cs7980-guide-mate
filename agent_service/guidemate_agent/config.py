@@ -30,7 +30,11 @@ class Config:
 
     @classmethod
     def from_env(cls) -> "Config":
-        robots = os.environ.get("GUIDEMATE_ROBOTS", "turtlebot468")
+        # turtlebotsim (the Ignition sim) is grantable out of the box alongside
+        # the physical turtlebot468 -- Phase 8 Task 7 "virtual-pet grant". Still
+        # fully env-overridable (GUIDEMATE_ROBOTS=turtlebot468 restores the old
+        # physical-only default).
+        robots = os.environ.get("GUIDEMATE_ROBOTS", "turtlebot468,turtlebotsim")
         robot_ids = [r.strip() for r in robots.split(",") if r.strip()]
         return cls(
             robot_ids=robot_ids,
