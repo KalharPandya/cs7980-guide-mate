@@ -168,9 +168,11 @@ def _graceful_shutdown(client, shadow, robot_id, telemetry=None, heartbeat=None)
 
 
 def _build_motion_sinks(env: "Mapping[str, str]"):
-    """Construct the ONLY real cmd_vel sink + dock/undock action clients. Called ONLY
-    after the triple gate (resolve_motion_enabled) has already passed, so this is never
-    reached on robot 468. Requires GUIDEMATE_ROS=1 (an rclpy node to publish/act on).
+    """Construct the ONLY real cmd_vel sink + dock/undock action clients. Called only
+    on the env opt-in (GUIDEMATE_ENABLE_MOTION), which assert_motion_identity_safe()
+    hard-guards to sim/436, so this is never reached on robot 468. The runtime shadow
+    lock (default-deny) still gates every real publish LIVE in the executor.
+    Requires GUIDEMATE_ROS=1 (an rclpy node to publish/act on).
     Returns (publish_twist, run_action). Lazily imports rclpy so the bridge still runs
     on ROS-less machines when motion is off."""
     if not _truthy(env.get("GUIDEMATE_ROS", "0")):
@@ -247,25 +249,42 @@ def main() -> None:
     # command subscription (awscrt replays the pending subscribe on every reconnect).
     # Production enables it via systemd with the authorized robot cert; the dev cert
     # (integration test) leaves it off, so defaults stay locked = fail-safe.
+    # Connect BEFORE shadow.start(): the shadow reconcile SUBSCRIBEs to the reserved
+    # $aws shadow topics and blocks on the SUBACK, which never arrives on an unconnected
+    # socket. connect() is idempotent, so bridge.start()'s own connect() below is a no-op.
+    client.connect()
+
     shadow = ShadowSync(
         client=client, thing_name=thing_name, safety=safety,
         enabled=_truthy(os.environ.get("GUIDEMATE_SHADOW", "0")),
     )
     shadow.start()  # reconcile motion_enabled/dry_run/max_speed from desired
 
-    # ---- TRIPLE GATE for the real motion sinks ----
-    # Build the cmd_vel publisher + dock/undock action clients ONLY when the operator
-    # opted in via env AND the shadow allows motion AND we are not in effective dry-run.
+    # ---- Build the real motion sinks on the ENV opt-in (guarded to sim/436) ----
+    # Build the cmd_vel publisher + dock/undock action clients whenever the operator
+    # opted in via env (GUIDEMATE_ENABLE_MOTION). This is hard-guarded to sim/436 by
+    # assert_motion_identity_safe() above (robot 468 exits before here) and requires
+    # GUIDEMATE_ROS=1.
+    #
+    # The sinks are built EAGERLY, NOT gated on the current shadow snapshot: the shadow
+    # is default-deny (motion_enabled=false, dry_run=true) at bridge boot, and a runtime
+    # shadow flip (Task 6 / the assignment-approve hook) must actually reach a REAL sink
+    # instead of a None one frozen at boot. The default-deny lock stays fully in force —
+    # it is enforced LIVE downstream by the executor's _is_dry_run() + _motion_gate
+    # (see resolve_motion_enabled's triple-gate semantics), so until the shadow is
+    # unlocked every command still takes the dry-run/refusal path and never moves a wheel.
     publish_twist = None
     run_action = None
-    if resolve_motion_enabled(
-        os.environ, safety.effective_dry_run, safety.gates()["motion_enabled"]
-    ):
+    if _truthy(os.environ.get("GUIDEMATE_ENABLE_MOTION", "0")):
         publish_twist, run_action = _build_motion_sinks(os.environ)
+        log.info(
+            "motion sinks built (env opt-in) — real drive gated LIVE by shadow "
+            "dry_run + motion_gate; locked shadow still acks simulated",
+            extra=log_extra(robot_id=robot_id),
+        )
     else:
         log.info(
-            "motion sinks NOT built (dry-run / shadow-locked / env-not-opted-in) — "
-            "commands ack but never move",
+            "motion sinks NOT built (env not opted in) — commands ack but never move",
             extra=log_extra(robot_id=robot_id),
         )
 

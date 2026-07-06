@@ -13,12 +13,17 @@ AWS="${AWS:-$(command -v aws || echo "$HOME/.local/bin/aws")}"
 GUI="${1:-}"   # pass --gui for a window; default headless.
 
 echo "== sourcing ROS 2 Humble + repo overlay =="
+# ROS/ament setup scripts are NOT `set -u`-clean (they reference AMENT_* vars before
+# defining them), so nounset must be relaxed across the sourcing or the whole script
+# aborts on the first unbound ament var when launched from a non-interactive shell.
+set +u
 # shellcheck disable=SC1091
 source /opt/ros/humble/setup.bash
 if [[ -f "$REPO/install/setup.bash" ]]; then
   # shellcheck disable=SC1091
   source "$REPO/install/setup.bash"
 fi
+set -u
 # shellcheck disable=SC1091
 source "$REPO/sim/sim_facts.env"     # SIM_CMD_VEL_TOPIC etc. (Task 2, verified)
 

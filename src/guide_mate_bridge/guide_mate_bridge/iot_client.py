@@ -26,6 +26,7 @@ class IotClient:
     ) -> None:
         self._robot_id = robot_id
         self._status_topic = status_topic(robot_id)
+        self._connected = False
         if connection is not None:
             self._conn = connection
             return
@@ -49,7 +50,14 @@ class IotClient:
         self._conn = mqtt_connection_builder.mtls_from_path(**kwargs)
 
     def connect(self) -> None:
+        # Idempotent: the shadow sync must SUBSCRIBE before bridge.start() runs, which
+        # requires the socket already be up, so main() connects once up front. bridge.start()
+        # then calls connect() again — this guard makes that second call a no-op instead of
+        # a double awscrt connect (and avoids re-publishing "online").
+        if self._connected:
+            return
         self._conn.connect().result()
+        self._connected = True
         self.publish(
             self._status_topic,
             json.dumps({"event": "online", "robot_id": self._robot_id}),
