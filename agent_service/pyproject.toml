@@ -17,6 +17,7 @@ dependencies = [
     # with --no-deps after this package — see agent_service/Dockerfile and README.
     "itsdangerous",
     "python-multipart",
+    "apscheduler",
     "guidemate-msgs",
 ]
 

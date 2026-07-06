@@ -334,10 +334,21 @@ class DogAgent:
     # --- main turn --------------------------------------------------------
     def chat(
         self,
-        message: str,
+        message: Optional[str] = None,
         session_id: Optional[str] = None,
         robot_id: Optional[str] = None,
+        system_event: Optional[str] = None,
+        allow_motion: bool = True,
     ) -> dict:
+        """Run one turn.
+
+        Normal (user-driven) turns pass `message`. Agent-initiated ("autonomy")
+        turns pass `system_event` instead (message=None) — there is no user
+        utterance, just a fact the dog reacts to unprompted (e.g. low battery,
+        morning stretch). `allow_motion=False` strips run_motion/stop from the
+        tool list regardless of flags/lock state, so autonomy turns can never
+        drive the robot — only speak/emote.
+        """
         turn_id = str(uuid.uuid4())
         flags = self._flags()
 
@@ -365,11 +376,19 @@ class DogAgent:
 
         captured = {"emote": None, "acks": []}
         names = self._enabled_tool_names(flags, physical)
+        if not allow_motion:
+            names = [n for n in names if n not in ("run_motion", "stop")]
         tools = self._build_tools(names, target, captured, physical)
         system_prompt = self._build_system_prompt(user_name, history, flags)
+        if system_event is not None:
+            system_prompt += (
+                "\n\nThis turn was triggered by a system event, not a user message — "
+                "there is no one to greet by name; react to the event naturally."
+            )
         model = BedrockModel(model_id=self._model_id, region_name=self._region)
         agent = Agent(model=model, system_prompt=system_prompt, tools=tools)
-        result = agent(message)
+        agent_input = message if system_event is None else system_event
+        result = agent(agent_input)
         reply_text = str(result)
         usage = _usage_from_result(result)
         if usage is not None:
@@ -379,7 +398,8 @@ class DogAgent:
         if session_id is not None:
             from guidemate_agent import sessions
 
-            sessions.append_message(session_id, "user", message)
+            if message is not None:
+                sessions.append_message(session_id, "user", message)
             sessions.append_message(session_id, "dog", reply_text)
 
         return _wrap({

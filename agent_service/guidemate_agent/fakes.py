@@ -25,6 +25,16 @@ class FakeRobotRegistry:
     def connect(self) -> None:
         return None
 
+    def on_event(self, callback) -> None:
+        """No-op registration: the fake registry has no MQTT status stream to
+        drive callbacks from, but app.py's lifespan wires
+        registry.on_event(engine.on_status_event) unconditionally, so this
+        keeps GUIDEMATE_FAKE_ROBOT=1 startup working. Stashed for tests that
+        want to fire it manually via app.state.registry._event_callbacks.
+        """
+        self._event_callbacks = getattr(self, "_event_callbacks", [])
+        self._event_callbacks.append(callback)
+
     @property
     def is_connected(self) -> bool:
         # No real MQTT link, but the fake registry is always "up" for demos/tests.
