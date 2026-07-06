@@ -263,3 +263,22 @@ prints what would be deleted and exits 1); pass `--keep-eip` to retain the addre
 non-default VPC (`vpc-0657dd5b506f043a9`); `describe-vpcs Name=isDefault,Values=true`
 returns empty. The launch script (and `run-instances`) will need a `--vpc-id` +
 `--subnet-id` for that VPC before the real Task-7 launch — resolve at launch time.
+
+### Observability (scripts/setup_observability.sh) — created & verified 2026-07-06
+Idempotent (re-runnable), tags what it creates where the API supports tags, no console
+clicking. `scripts/setup_observability.sh --clean` deletes everything it created.
+| Resource | Name | Notes |
+|---|---|---|
+| Log groups | `/guidemate/agent-service`, `/guidemate/caddy`, `/guidemate/bridge`, `/guidemate/bedrock` | 30-day retention; EMF auto-extracts metrics in namespace `GuideMate` |
+| Bedrock logging | model-invocation logging → `/guidemate/bedrock` | role `guidemate-bedrock-logging-role` (trusts bedrock.amazonaws.com; inline policy `guidemate-bedrock-logging`, tag `project=guidemate-poc`) |
+| Metric filters | `guidemate-service-errors` (`$.level=ERROR`→`AgentServiceErrors`), `guidemate-bedrock-throttle` (`ThrottlingException`→`BedrockThrottles`) | on `/guidemate/agent-service`; both `defaultValue=0` |
+| Dashboard | `guidemate-poc` | turn latency, ack RTT, tokens, errors/throttles, PiHeartbeat presence, EC2 CPU |
+| Alarms (no SNS) | `guidemate-poc-service-errors`, `-bedrock-throttle`, `-bridge-offline` (PiHeartbeat SampleCount<1 for 15 min = breaching), `-ec2-cpu` (>85% avg 10 min) | state visible in console/dashboard; `-ec2-cpu` is created **only when a running `guidemate-poc-ec2` instance exists** — re-run the script after `launch_ec2.sh` to add it |
+| Pi log-ship | `guidemate-logship.timer` (5 min) | ships the `guidemate-bridge` journal (via `journalctl --cursor-file`, only new lines) + one `PiHeartbeat` EMF event to `/guidemate/bridge` with the Pi's `credential_process` creds; unit `guidemate-logship.service` (oneshot); installed additively by `src/guide_mate_bridge/scripts/install_bridge_on_pi.sh` (extends the bridge installer, reuses `~/guidemate-venv`) |
+
+**Verified 2026-07-06** (`list-dashboards`→`guidemate-poc`; `describe-alarms guidemate-poc*`→
+service-errors/bedrock-throttle/bridge-offline present, ec2-cpu pending instance;
+`get-model-invocation-logging-configuration`→cloudWatchConfig on `/guidemate/bedrock`;
+4 log groups @ 30-day retention; 2 metric filters on agent-service). Alarms sit
+INSUFFICIENT_DATA until traffic (service-errors is OK because its filter has
+`defaultValue=0`) — expected pre-launch.

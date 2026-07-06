@@ -37,6 +37,9 @@ if [ "${YES}" -ne 1 ]; then
   exit 1
 fi
 
+echo ">> Deleting SSM admin-password parameter"
+q ssm delete-parameter --name /guidemate/admin-password >/dev/null 2>&1 || true
+
 if [ -n "${IID}" ] && [ "${IID}" != "None" ]; then
   echo ">> Terminating ${IID}"
   q ec2 terminate-instances --instance-ids "${IID}" >/dev/null
