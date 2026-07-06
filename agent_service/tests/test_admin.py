@@ -335,3 +335,123 @@ def test_kb_delete_rejects_empty_after_normalization(monkeypatch):
         h = _auth_header()
         resp = client.delete("/api/admin/kb", params={"key": "../"}, headers=h)
         assert resp.status_code == 400
+
+
+# --- Task 6: requests / sessions / robot-control endpoints ---------------
+# These drive the REAL app (guidemate_agent.app) so app.state.registry is the
+# GUIDEMATE_FAKE_ROBOT FakeRobotRegistry (records .sent, refuses dock/undock).
+# DynamoDB is moto (the `ddb` fixture). Auth rides a pre-signed raw Cookie header
+# (httpx will not resend a Secure cookie over http, so we inject it directly —
+# the same pattern the flag/prompt tests above use via _auth_header).
+#
+# Router prefix is /api/admin (Phase 3), so the Task-6 paths resolve under
+# /api/admin/... — the brief drafted them as /admin/api/... (reality wins).
+from guidemate_agent import sessions  # noqa: E402
+
+
+def _admin_client(monkeypatch, password="letmein"):
+    monkeypatch.setenv("GUIDEMATE_FAKE_ROBOT", "1")
+    monkeypatch.setenv("GUIDEMATE_ADMIN_PASSWORD", password)
+    admin._failures.clear()
+    import guidemate_agent.app as appmod
+    client = TestClient(appmod.app)
+    # Verify Phase 3's real login route works, then inject the signed cookie on
+    # every subsequent request (Secure cookie is not resent over http).
+    resp = client.post("/api/admin/login", json={"password": password})
+    assert resp.status_code == 200, "align with Phase 3's /api/admin/login route"
+    client.headers.update(_auth_header(password))
+    return appmod, client
+
+
+def test_list_and_approve_request(monkeypatch, ddb):
+    appmod, client = _admin_client(monkeypatch)
+    with client:
+        sid = sessions.create_session("Ada", True)
+        rid = sessions.create_request(sid)
+        pending = client.get("/api/admin/requests").json()
+        assert any(r["request_id"] == rid for r in pending)
+        out = client.post(f"/api/admin/requests/{rid}/approve",
+                          json={"robot_id": "turtlebot468"}).json()
+        assert out["session_id"] == sid
+        assert sessions.get_lock_holder("turtlebot468") == sid
+
+
+def test_deny_request(monkeypatch, ddb):
+    appmod, client = _admin_client(monkeypatch)
+    with client:
+        sid = sessions.create_session("Ada", True)
+        rid = sessions.create_request(sid)
+        out = client.post(f"/api/admin/requests/{rid}/deny").json()
+        assert out["ok"] is True
+        assert sessions.get_request(rid)["status"] == "denied"
+
+
+def test_reassign_and_abort(monkeypatch, ddb):
+    appmod, client = _admin_client(monkeypatch)
+    with client:
+        a = sessions.create_session("A", True)
+        b = sessions.create_session("B", True)
+        sessions.approve_request(sessions.create_request(a), "turtlebot468")
+        out = client.post("/api/admin/robot/turtlebot468/reassign",
+                          json={"session_id": b}).json()
+        assert out["aborted_session_id"] == a
+        freed = client.post("/api/admin/robot/turtlebot468/abort").json()
+        assert freed["freed_session_id"] == b
+
+
+def test_dock_command_is_refused(monkeypatch, ddb):
+    appmod, client = _admin_client(monkeypatch)
+    with client:
+        out = client.post("/api/admin/robot/turtlebot468/command",
+                          json={"type": "motion", "name": "dock"}).json()
+        assert out["refused"] is True
+        assert "motion" in out["acks"][-1]["reason"].lower()
+
+
+def test_invalid_command_synthesizes_refusal_without_publishing(monkeypatch, ddb):
+    appmod, client = _admin_client(monkeypatch)
+    with client:
+        before = list(client.app.state.registry.sent)
+        out = client.post("/api/admin/robot/turtlebot468/command",
+                          json={"type": "motion", "name": "teleport"}).json()
+        assert out["refused"] is True
+        assert out["acks"][-1]["state"] == "failed"
+        # Nothing was published for an invalid command shape.
+        assert client.app.state.registry.sent == before
+
+
+def test_stop_command_is_accepted(monkeypatch, ddb):
+    appmod, client = _admin_client(monkeypatch)
+    with client:
+        out = client.post("/api/admin/robot/turtlebot468/command",
+                          json={"type": "stop", "name": "stop"}).json()
+        assert out["refused"] is False
+        assert ("turtlebot468", "stop", "stop") in client.app.state.registry.sent
+
+
+def test_approve_fires_undock_and_event_is_visible(monkeypatch, ddb):
+    appmod, client = _admin_client(monkeypatch)
+    with client:
+        sid = sessions.create_session("Ada", True)
+        rid = sessions.create_request(sid)
+        client.post(f"/api/admin/requests/{rid}/approve",
+                    json={"robot_id": "turtlebot468"})
+        # The fake registry recorded the assignment undock...
+        assert ("turtlebot468", "motion", "undock") in client.app.state.registry.sent
+        # ...and its refusal is visible where the Robot tab reads it.
+        events = client.get("/api/admin/robot/turtlebot468/assign-events").json()
+        assert events[-1]["action"] == "undock"
+        assert events[-1]["refused"] is True
+        assert "motion_disabled" in events[-1]["acks"][-1]["reason"]
+
+
+def test_sessions_transcript(monkeypatch, ddb):
+    appmod, client = _admin_client(monkeypatch)
+    with client:
+        sid = sessions.create_session("Ada", True)
+        sessions.append_message(sid, "user", "hi")
+        sessions.append_message(sid, "dog", "woof")
+        listed = client.get("/api/admin/sessions").json()
+        assert any(s["session_id"] == sid for s in listed)
+        msgs = client.get(f"/api/admin/sessions/{sid}/messages").json()
+        assert [m["text"] for m in msgs] == ["hi", "woof"]

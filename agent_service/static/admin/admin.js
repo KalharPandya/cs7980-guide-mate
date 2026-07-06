@@ -38,6 +38,11 @@ async function enterPanel() {
   show(panel, true);
   await loadFlags();
   await loadPrompt();
+  // Poll the assignment undock/dock log so the Robot tab stays live. Guarded so
+  // it only fetches once the operator is authenticated (avoids 401 spam).
+  reloadAssignEvents();
+  if (!enterPanel._assignTimer)
+    enterPanel._assignTimer = setInterval(reloadAssignEvents, 3000);
 }
 
 // If a valid cookie already exists, skip the login screen.
@@ -54,7 +59,9 @@ document.querySelectorAll(".tabs button").forEach((btn) => {
     const tab = btn.dataset.tab;
     document.querySelectorAll(".tab").forEach((t) => (t.hidden = true));
     show($("tab-" + tab), true);
-    if (tab === "robot") loadRobots();
+    if (tab === "requests") reloadRequests();
+    if (tab === "sessions") reloadSessions();
+    if (tab === "robot") { loadRobots(); reloadAssignEvents(); }
     if (tab === "knowledge") loadKb();
   });
 });
@@ -222,3 +229,112 @@ $("kb-sync").addEventListener("click", async () => {
   };
   poll();
 });
+
+// --- requests / sessions / robot-session controls (Task 6) ---------------
+// The bind on approve/reassign fires a best-effort assignment undock/dock; on
+// robot 468 (motion-locked) the ack is a refusal — that refusal is the Phase 4
+// evidence and is shown deliberately in the assignment-events panel below.
+const ROBOT_ID = "turtlebot468";
+
+async function reloadRequests() {
+  const rs = await (await api("/requests")).json();
+  const ul = $("requests-list");
+  ul.innerHTML = "";
+  rs.forEach((r) => {
+    const li = document.createElement("li");
+    li.textContent = `${r.name} (comfortable=${r.comfortable}) — ${r.session_id}`;
+    const approve = document.createElement("button");
+    approve.textContent = "Approve";
+    approve.addEventListener("click", async () => {
+      await api(`/requests/${r.request_id}/approve`, {
+        method: "POST", headers: jsonHeaders,
+        body: JSON.stringify({ robot_id: ROBOT_ID }),
+      });
+      reloadRequests();
+      reloadAssignEvents();
+    });
+    const deny = document.createElement("button");
+    deny.textContent = "Deny";
+    deny.className = "secondary";
+    deny.addEventListener("click", async () => {
+      await api(`/requests/${r.request_id}/deny`, { method: "POST" });
+      reloadRequests();
+    });
+    li.append(" ", approve, " ", deny);
+    ul.appendChild(li);
+  });
+  if (!rs.length) ul.innerHTML = "<li class=\"hint\">No pending requests.</li>";
+}
+
+async function reloadSessions() {
+  const ss = await (await api("/sessions")).json();
+  const ul = $("sessions-list");
+  ul.innerHTML = "";
+  ss.forEach((s) => {
+    const li = document.createElement("li");
+    li.textContent = `${s.name} — ${s.request_status} — robot=${s.robot_id || "-"}`;
+    const view = document.createElement("button");
+    view.textContent = "Transcript";
+    view.className = "secondary";
+    view.addEventListener("click", async () => {
+      const msgs = await (await api(`/sessions/${s.session_id}/messages`)).json();
+      $("transcript").textContent =
+        msgs.map((m) => `${m.role}: ${m.text}`).join("\n") || "(no messages)";
+    });
+    const reassign = document.createElement("button");
+    reassign.textContent = "Give robot";
+    reassign.addEventListener("click", async () => {
+      await api(`/robot/${ROBOT_ID}/reassign`, {
+        method: "POST", headers: jsonHeaders,
+        body: JSON.stringify({ session_id: s.session_id }),
+      });
+      reloadSessions();
+      reloadAssignEvents();
+    });
+    li.append(" ", view, " ", reassign);
+    ul.appendChild(li);
+  });
+  if (!ss.length) ul.innerHTML = "<li class=\"hint\">No sessions.</li>";
+}
+
+$("reload-requests").addEventListener("click", reloadRequests);
+$("reload-sessions").addEventListener("click", reloadSessions);
+
+$("robot-abort").addEventListener("click", async () => {
+  if (!confirm(`Abort ${ROBOT_ID}'s session? (releases the lock + docks)`)) return;
+  const out = await (await api(`/robot/${ROBOT_ID}/abort`, { method: "POST" })).json();
+  $("robot-command-result").textContent =
+    "Freed session: " + (out.freed_session_id || "(none)");
+  reloadAssignEvents();
+});
+
+async function sendRobotCommand(type, name) {
+  const out = await (await api(`/robot/${ROBOT_ID}/command`, {
+    method: "POST", headers: jsonHeaders,
+    body: JSON.stringify({ type, name }),
+  })).json();
+  const last = out.acks[out.acks.length - 1];
+  // Show the refusal ack verbatim — refusals ARE the expected Phase 4 outcome.
+  $("robot-command-result").textContent =
+    (out.refused ? "REFUSED: " : "OK: ") + (last ? last.reason || last.state : "");
+}
+$("robot-dock").addEventListener("click", () => sendRobotCommand("motion", "dock"));
+$("robot-stop").addEventListener("click", () => sendRobotCommand("stop", "stop"));
+
+async function reloadAssignEvents() {
+  // Never throws: the login screen / a transient 401 just leaves the last text.
+  try {
+    const resp = await api(`/robot/${ROBOT_ID}/assign-events`);
+    if (!resp.ok) return;
+    const evs = await resp.json();
+    $("assign-event").textContent = evs.length
+      ? evs.map((e) => {
+          const last = e.acks[e.acks.length - 1];
+          const outcome = e.refused
+            ? "REFUSED — " + (last.reason || last.state)
+            : (last ? last.state : "no ack (robot unreachable)");
+          return `${e.ts}  ${e.action}: ${outcome}`;
+        }).join("\n")
+      : "No assignment commands yet.";
+  } catch (err) { /* keep polling */ }
+}

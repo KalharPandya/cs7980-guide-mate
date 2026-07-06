@@ -22,6 +22,8 @@
     <nav class="tabs">
       <button data-tab="flags" class="active">Flags</button>
       <button data-tab="prompt">Prompt</button>
+      <button data-tab="requests">Requests</button>
+      <button data-tab="sessions">Sessions</button>
       <button data-tab="robot">Robot</button>
       <button data-tab="knowledge">Knowledge</button>
     </nav>
@@ -43,10 +45,38 @@
       <p id="prompt-status" class="hint"></p>
     </div>
 
+    <div id="tab-requests" class="tab" hidden>
+      <h2>Companion requests</h2>
+      <button id="reload-requests" class="secondary">Reload</button>
+      <ul id="requests-list"></ul>
+    </div>
+
+    <div id="tab-sessions" class="tab" hidden>
+      <h2>Sessions</h2>
+      <button id="reload-sessions" class="secondary">Reload</button>
+      <ul id="sessions-list"></ul>
+      <h3>Transcript</h3>
+      <div id="transcript" class="transcript"></div>
+    </div>
+
     <div id="tab-robot" class="tab" hidden>
       <h2>Robot status</h2>
       <button id="robot-refresh" class="secondary">Refresh</button>
       <div id="robot-list"></div>
+
+      <h3>Robot session controls</h3>
+      <div id="robot-holder">Robot holder: <span id="robot-holder-value">(none)</span></div>
+      <div class="row">
+        <button id="robot-abort" class="danger">Abort robot session</button>
+        <button id="robot-dock">Send dock (expect refusal)</button>
+        <button id="robot-stop">Send stop</button>
+      </div>
+      <div id="robot-command-result" class="hint"></div>
+
+      <h3>Assignment undock/dock attempts</h3>
+      <!-- Auto-refreshes every 3 s; refusals shown deliberately (they ARE the
+           Phase 4 evidence — bridge-side execution is Phase 8). -->
+      <pre id="assign-event">No assignment commands yet.</pre>
     </div>
 
     <div id="tab-knowledge" class="tab" hidden>
