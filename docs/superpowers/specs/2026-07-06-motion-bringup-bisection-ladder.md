@@ -84,6 +84,10 @@ action, or the base/hardware — and nothing upstream. That is the fault-isolati
 - **Do:** echo.kalhar.ca against the live robot — motion tools appear only when
   `motion_tools_enabled`; Stop is persistent; status label reflects the real robot.
 - **PASS:** review-agent visual pass of the site against real telemetry.
+- **RESULT 2026-07-06 — telemetry surfacing GREEN.** `/api/admin/status` now returns
+  `battery:0.99, docked:true, gates{motion_enabled:false, dry_run:true}` from a fresh heartbeat —
+  the P2 fix propagates Create 3 → bridge → IoT → cloud → admin Robot tab. (Motion-tool gating +
+  persistent Stop were verified in the prior UI review waves.)
 
 ---
 
