@@ -80,6 +80,16 @@ See `docs/mapping/` for the full write-up.
 7. **OAK camera_info ≠ depth size, and lidar frame is yawed:** depthai publishes `oakd/stereo/camera_info` as **1280×720** but the actual depth image is **640×480** — using that K unscaled skews the projection (e.g. the whole depth wedge swings to −90°). `depth_lidar_fusion` therefore uses camera_info **only if its w/h match the image**, else a FOV pinhole model (`hfov_deg`/`vfov_deg`). Separately, **`rplidar_link` is yawed ~90°** (lidar bearing 0 ≠ robot-forward), so the depth wedge sits near −90°; this is fine because the lidar's own returns share that frame, so depth+lidar overlay correctly.
 8. **OAK depth runtime drop (X_LINK disconnect → wedge):** the device abruptly drops to bootloader (`2485`) and the **stock driver wedges forever** (process alive, 0 Hz, spamming `No data on logger queue! … sys_logger_queue (X_LINK_ERROR)`; the TB4 `oakd_container` has no respawn). Cause is a **camera-rail current brownout, specific to the heavy-RGBD+USB3 mode** — **NOT CPU and NOT temperature** (2026-06-20 mode-matrix + load-sweep: depth-only survived full Pi saturation + active thermal-throttling with 0 drops; only heavy+USB3 drops, ~30 s MTTD; under-voltage never set). So **run depth-only** (mapping needs neither RGB nor the OAK IMU) and drops are rare. Fusion degrades gracefully (raw lidar passthrough). Recover: `pkill -x camera_node` (**never `-f`** — self-matches the shell → exit 144) + relaunch with usbfs≥256. Prevent: `i_restart_on_diagnostics_error:=true` (self-heal, thrashes without backoff) + `scripts/oak_watchdog.sh` (validated backstop); true fix is hardware power delivery (cable/powered-hub/Y-adapter). See `docs/camera.md`.
 
+9. **FastDDS discovery-server registry rots after weeks of uptime** *(found 2026-07-06)*: dock/undock
+   (any action/service to the Create 3 or boot nodes) hangs at `Waiting for an action server…` while
+   topics still flow; `journalctl -u discovery.service` spams `DISCOVERY_DATABASE Error: Matching
+   unexisting participant`. Boot-time participants (`turtlebot4.service` incl. `create3_repub`, the
+   clean-ns dock/undock proxy) become graph ghosts; recently-restarted ones still work. **Fix (no Pi
+   reboot):** `sudo systemctl restart discovery.service turtlebot4.service guidemate-bridge.service`
+   then `ros2 daemon stop && ros2 daemon start`. This was also the real cause of the 2026-06-20
+   "Claude-shell DDS isolation / can't wake the auto_standby lidar" limitation — after the restart the
+   lidar wakes fine from any shell. Full record: `docs/superpowers/specs/2026-07-06-motion-bringup-bisection-ladder.md`.
+
 ## Bring-up commands
 ```bash
 # Always source first

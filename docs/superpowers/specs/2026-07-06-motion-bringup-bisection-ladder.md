@@ -110,7 +110,41 @@ action, or the base/hardware — and nothing upstream. That is the fault-isolati
 > its own dry rung passed** — so a wet failure is pinned to that one capability's final publish,
 > nothing upstream (the dry rung one line above just proved the whole route).
 
+### INFRA FAILURE FOUND + FIXED 2026-07-06 — FastDDS discovery-server registry corruption *(recurring failure mode; know it)*
+- **Symptom:** any dock/undock action goal from the Pi hangs at `Waiting for an action server…`
+  forever (CLI then dies with a misleading `rcl node's context is invalid` on teardown — red
+  herring). Meanwhile topics look healthy: battery/dock_status echo fine, `ros2 action info`
+  even *shows* the `_do_not_use` server (it infers it from the action's **status topic**, not
+  its services).
+- **Root cause (evidence-driven):** after ~1 month uptime (up since 2026-06-05) the FastDDS
+  Discovery Server's database **corrupted** — journal spams
+  `[DISCOVERY_DATABASE Error] Matching unexisting participant from writer …`. Its registry lost
+  the boot-time participants: the whole `turtlebot4.service` set (`turtlebot4_node`,
+  **`create3_repub`** — the node that serves clean-ns `/undock` `/dock` — `rplidar`, joy) was
+  running but a **ghost** in every graph view; the Create 3's **service** endpoints (actions ride
+  on services) were invisible while its topics still relayed. Recently-restarted participants
+  (guidemate bridge, oakd) re-registered and worked → that asymmetry was the tell.
+  Probe matrix that pinned it: fresh-node `list_parameters` to Pi-local nodes ✅ / to Create 3
+  `motion_control` ❌; `ros2 node list --no-daemon` → **empty graph**; `ROS_SUPER_CLIENT` value
+  made no difference.
+- **Fix (validated, NO Pi reboot needed):** re-register everything —
+  `sudo systemctl restart discovery.service`, then `turtlebot4.service`,
+  `guidemate-bridge.service`, then `ros2 daemon stop && ros2 daemon start`. ~25 s later the full
+  node list was back, `/turtlebot468/undock` showed server `create3_repub`, and undock/dock goals
+  SUCCEEDED (see U result below). Bonus: the auto_standby **RPLIDAR spun up** the moment
+  subscribers could match again — the 2026-06-20 "Claude-shell DDS isolation / can't wake the
+  lidar" limitation was **this same corruption**, misattributed.
+- **Lesson:** if actions hang while topics flow on this robot, check
+  `journalctl -u discovery.service` for `DISCOVERY_DATABASE Error` **first**; restart the
+  discovery stack before debugging application code.
+
 ### U — Undock  *(Create 3 ROS action, not a twist; lowest-risk first actuation, reversible)*
+- **RESULT 2026-07-06 — base action layer GREEN (wet, direct ROS — not yet the bridge rung).**
+  After the discovery fix above, with operator present: `ros2 action send_goal
+  /turtlebot468/undock` → SUCCEEDED (`is_docked:false`, robot left the dock), then `…/dock` →
+  SUCCEEDED (`is_docked:true`, robot back on the charger, battery 99%). This validates the
+  Create 3 action servers + `create3_repub` proxy end-to-end at the ROS layer; the U-dry/U-wet
+  rungs below (through the **bridge/IoT** path) remain to be run.
 - **U-dry:** with the shadow still locked, send `undock`. **PASS:** ack `simulated=true`, journal
   `DRY-RUN action undock`, robot does not move. *(proves routing for the undock command)*
 - **U-wet:** set shadow `motion_enabled:true, dry_run:false` (undock is dock-guard-exempt → the one
