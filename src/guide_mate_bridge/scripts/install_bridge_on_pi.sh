@@ -54,6 +54,15 @@ sed -e "s#@ROBOT_ID@#${ROBOT_ID}#g" \
     "${UNIT_SRC}" \
   | ssh "${SSH_HOST}" "sudo tee /etc/systemd/system/guidemate-bridge.service >/dev/null"
 
+echo ">> Install the per-robot telemetry topic override drop-in"
+# turtlebot468's Create 3 publishes dock/battery only under _do_not_use/ (see the drop-in
+# header). Deploying it as a .d/ override keeps the robot-specific remap out of the main
+# rendered unit while still surviving reinstalls. Harmless on robots that use clean names
+# only if their Create 3 also exposes _do_not_use/ (it does on H.2.x).
+DROPIN_SRC="$(cd "$(dirname "$0")/.." && pwd)/systemd/guidemate-bridge.service.d/telemetry-topics.conf"
+ssh "${SSH_HOST}" "sudo install -d -m 755 /etc/systemd/system/guidemate-bridge.service.d"
+ssh "${SSH_HOST}" "sudo tee /etc/systemd/system/guidemate-bridge.service.d/telemetry-topics.conf >/dev/null" < "${DROPIN_SRC}"
+
 echo ">> daemon-reload + enable + restart (additive; picks up the new unit + code)"
 ssh "${SSH_HOST}" "sudo systemctl daemon-reload && sudo systemctl enable guidemate-bridge.service && sudo systemctl restart guidemate-bridge.service"
 
