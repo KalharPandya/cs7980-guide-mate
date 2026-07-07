@@ -261,29 +261,6 @@ def test_identity_guard_noop_when_motion_off():
     assert_motion_identity_safe({"GUIDEMATE_ROBOT_ID": "turtlebot468"})  # no motion env -> fine
 
 
-def test_identity_guard_allows_468_with_supervised_token():
-    # TEMPORARY supervised opt-in: ENABLE_MOTION + the deliberate token must NOT raise on 468.
-    assert_motion_identity_safe(
-        {
-            "GUIDEMATE_ENABLE_MOTION": "1",
-            "GUIDEMATE_ROBOT_ID": "turtlebot468",
-            "GUIDEMATE_SUPERVISED_468_MOTION": "observer-present",
-        }
-    )
-
-
-def test_identity_guard_refuses_468_with_wrong_token():
-    # A malformed/typo token must still refuse (default-deny preserved).
-    with pytest.raises(SystemExit):
-        assert_motion_identity_safe(
-            {
-                "GUIDEMATE_ENABLE_MOTION": "1",
-                "GUIDEMATE_ROBOT_ID": "turtlebot468",
-                "GUIDEMATE_SUPERVISED_468_MOTION": "yes",
-            }
-        )
-
-
 # ---- stop command interrupts an in-flight choreography ----
 def test_stop_command_aborts_runner():
     bridge, _ = _bridge()
