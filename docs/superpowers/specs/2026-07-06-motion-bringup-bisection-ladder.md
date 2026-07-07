@@ -64,6 +64,14 @@ action, or the base/hardware — and nothing upstream. That is the fault-isolati
 - **PASS:** live telemetry visible cloud-side and on echo.kalhar.ca (status/Arsenal); reported
   `docked:true` matches the robot actually being docked.
 - **Breaks here →** base↔bridge topics or the up-path. Down-path untouched.
+- **RESULT 2026-07-06 — was RED, now GREEN (fixed).** Root cause: this Create 3 publishes
+  `dock_status`/`battery_state` **only under `_do_not_use/`**, but the bridge subscribed to the
+  clean names → `docked: None` for 20 h → dock-guard blind. Confirmed with a live rclpy probe
+  (`_do_not_use/dock_status` ~1 Hz, clean name 0 publishers). Fixed by `GUIDEMATE_DOCK_TOPIC` /
+  `GUIDEMATE_BATTERY_TOPIC` overrides via a systemd drop-in (`telemetry-topics.conf`, committed +
+  wired into the installer — no code change). Verified: a forced shadow delta logged
+  `gates {'docked': True, …}`. cmd_vel + undock/dock actions are on the **clean** namespace, so
+  the motion path was never affected.
 
 ### P3 — Gates provably BLOCK  *(adversarial — confirm the locks deny)*
 - **Do:** with locks closed, force motion and confirm refusal: expect `failed reason=motion_disabled`;
