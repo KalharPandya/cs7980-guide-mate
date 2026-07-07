@@ -29,3 +29,6 @@ ssh_keys/
 .venv/
 **/__pycache__/
 **/artifacts/
+
+# Claude Code agent worktrees (transient, each is its own git repo)
+.claude/worktrees/
