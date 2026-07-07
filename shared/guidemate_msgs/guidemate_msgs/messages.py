@@ -13,7 +13,7 @@ _EMOTE_NAMES = ("happy", "yes", "no")
 # executor's build() raises ValueError for them, acking `failed` ("unknown
 # choreography"), and the Phase 2 safety layer refuses them as motion while locked.
 # Bridge-side EXECUTION (Create 3 dock actions + dock-guard exemption) is Phase 8.
-_MOTION_NAMES = ("circle", "spin", "dock", "undock")
+_MOTION_NAMES = ("circle", "spin", "dock", "undock", "forward")
 
 
 def _utc_now_iso() -> str:

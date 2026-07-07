@@ -91,6 +91,14 @@ def _spin() -> list[TwistStep]:
     return [_step(0.0, wz, 2 * math.pi / wz)]
 
 
+def _forward(params: dict) -> list[TwistStep]:
+    # Straight-ahead nudge: a short, bounded translation with no rotation.
+    # Defaults to ~0.2 m (0.1 m/s for 2 s); both are hard-capped by _step/_cap_total.
+    vx = _clamp(float(params.get("speed", 0.1)), 0.0, MAX_LINEAR)
+    duration = _clamp(float(params.get("duration", 2.0)), 0.0, MAX_TOTAL_S)
+    return [_step(vx, 0.0, duration)]
+
+
 def build(command: Command, max_speed: float = MAX_LINEAR) -> list[TwistStep]:
     key = (command.type, command.name)
     if key == ("emote", "yes"):
@@ -103,6 +111,8 @@ def build(command: Command, max_speed: float = MAX_LINEAR) -> list[TwistStep]:
         steps = _circle(command.params)
     elif key == ("motion", "spin"):
         steps = _spin()
+    elif key == ("motion", "forward"):
+        steps = _forward(command.params)
     elif key == ("stop", "stop"):
         return [TwistStep(0.0, 0.0, 0.0)]
     else:
