@@ -62,15 +62,28 @@ class Telemetry:
         except ImportError:
             log.warning("rclpy not importable — heartbeats will carry battery/docked=null")
             return False
-        threading.Thread(target=self._ros_main, daemon=True).start()
+        threading.Thread(target=self._ros_main_guarded, daemon=True).start()
         return True
+
+    def _ros_main_guarded(self) -> None:
+        """A daemon-thread death is otherwise SILENT: docked/battery stay None
+        forever and the dock-guard default-denies everything. Scream instead."""
+        try:
+            self._ros_main()
+        except Exception:  # noqa: BLE001 — must be visible, never silent
+            log.exception(
+                "telemetry ROS thread DIED — docked/battery stay null, "
+                "dock-guard will default-deny motion; restart the bridge"
+            )
 
     def _ros_main(self) -> None:
         import rclpy
         from rclpy.qos import qos_profile_sensor_data
         from sensor_msgs.msg import BatteryState
 
-        rclpy.init(args=None)
+        from guide_mate_bridge.ros_init import ensure_rclpy_init
+
+        ensure_rclpy_init()
         node = rclpy.create_node("guidemate_bridge_telemetry", namespace=self._namespace)
         # Sensor-data QoS (BEST_EFFORT) matches both best-effort and reliable publishers.
         battery_topic = _battery_topic()
