@@ -79,7 +79,9 @@ def _happy() -> list[TwistStep]:
 
 
 def _circle(params: dict) -> list[TwistStep]:
-    radius = _clamp(float(params.get("radius", 0.5)), 0.2, CIRCLE_MAX_RADIUS)
+    # Floor 0.1 m: wz = vx/radius = 0.12/0.1 = 1.2 rad/s stays under MAX_ANGULAR
+    # (1.5) so the loop still closes; a tighter radius shrinks the test footprint.
+    radius = _clamp(float(params.get("radius", 0.5)), 0.1, CIRCLE_MAX_RADIUS)
     vx = 0.12
     wz = vx / radius
     duration = 2 * math.pi / wz

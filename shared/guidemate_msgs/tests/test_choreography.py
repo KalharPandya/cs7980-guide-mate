@@ -80,6 +80,18 @@ def test_circle_closes_at_radius_clamp_boundaries(radius_param):
     assert abs(abs(theta) - 2 * math.pi) < 0.1
 
 
+def test_circle_honors_tight_radius_0_1():
+    # A 0.1 m radius must be honored (not floored): wz = vx/radius = 0.12/0.1 = 1.2,
+    # which is within MAX_ANGULAR (1.5), and the loop still closes.
+    steps = build(Command(type="motion", name="circle", params={"radius": 0.1}))
+    assert len(steps) == 1
+    assert abs(steps[0].wz - 1.2) < 1e-6           # radius respected, not clamped to 0.2
+    assert abs(steps[0].wz) <= MAX_ANGULAR + 1e-9
+    x, y, theta, _ = simulate(steps)
+    assert math.hypot(x, y) < 0.05                 # returns to start
+    assert abs(abs(theta) - 2 * math.pi) < 0.1     # full turn
+
+
 def test_spin_no_displacement_full_turn():
     x, y, theta, _ = simulate(build(PRIMITIVES["spin"]))
     assert math.hypot(x, y) < 0.02
