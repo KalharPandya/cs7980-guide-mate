@@ -33,13 +33,24 @@ from guidemate_msgs.messages import Command
 from guidemate_msgs.metrics import emit_metric
 
 from guidemate_agent.emote_sync import emote_sync
-from guidemate_agent.speech import TranscribeSession, downsample_pcm16, synthesize_mp3
+from guidemate_agent.speech import (
+    TranscribeSession, downsample_pcm16, make_transcribe_session, synthesize_mp3,
+)
 
 log = logging.getLogger(__name__)
 
 # Time-bounded release: if no running/done ack lands within this window the turn
 # releases anyway (the dropped-ack fallback). Kept short so voice never hangs.
 GATE_TIMEOUT_S = 2.0
+
+
+def _tts_kwargs(config) -> dict:
+    """synthesize_mp3 backend kwargs derived from Config (defaults keep Polly)."""
+    return {
+        "backend": getattr(config, "tts_backend", "polly"),
+        "el_voice_id": getattr(config, "elevenlabs_voice_id", ""),
+        "el_model": getattr(config, "elevenlabs_tts_model", "eleven_flash_v2_5"),
+    }
 
 
 class CaptureRegistry:
@@ -161,7 +172,12 @@ async def _run_pipeline(ws: WebSocket, app: FastAPI, session_id: str, text: str)
         })
         try:
             mp3 = await loop.run_in_executor(
-                None, lambda: synthesize_mp3(result["reply_text"], region=region)
+                None,
+                lambda: synthesize_mp3(
+                    result["reply_text"], region=region,
+                    el_client=getattr(app.state, "el_client", None),
+                    **_tts_kwargs(app.state.config),
+                ),
             )
             await ws.send_json({
                 "type": "audio",
@@ -209,7 +225,15 @@ def register(app: FastAPI) -> None:
                                 await _safe_finish(transcribe)
                                 transcribe = None
                             declared_rate = int(data.get("sample_rate", 16000))
-                            transcribe = TranscribeSession(region=region, sample_rate=16000)
+                            cfg = app.state.config
+                            transcribe = make_transcribe_session(
+                                backend=getattr(cfg, "stt_backend", "transcribe"),
+                                region=region, sample_rate=16000,
+                                api_key=getattr(cfg, "elevenlabs_api_key", ""),
+                                model_id=getattr(
+                                    cfg, "elevenlabs_stt_model", "scribe_v2_realtime"
+                                ),
+                            )
                             await transcribe.start()
                         elif mtype == "stop_audio":
                             text = await transcribe.finish() if transcribe else ""
