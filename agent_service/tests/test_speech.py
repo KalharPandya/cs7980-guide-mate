@@ -124,6 +124,14 @@ def test_synthesize_mp3_falls_back_to_polly_on_eleven_error():
     assert el.calls and polly.calls      # tried EL, then fell back
 
 
+def test_synthesize_pcm16_falls_back_to_polly_on_eleven_error():
+    el = _FakeElevenTTS(raise_exc=RuntimeError("boom"))
+    polly = _FakePolly()
+    out = synthesize_pcm16("woof", backend="elevenlabs", el_client=el, polly_client=polly)
+    assert out == b"AUDIOBYTES"
+    assert el.calls and polly.calls
+
+
 def test_synthesize_mp3_elevenlabs_without_client_falls_back_to_polly():
     polly = _FakePolly()
     out = synthesize_mp3("hi", backend="elevenlabs", el_client=None, polly_client=polly)

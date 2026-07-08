@@ -95,11 +95,16 @@ def synthesize_pcm16(
 ) -> bytes:
     """16-bit PCM at sample_rate. backend='elevenlabs' uses ElevenLabs pcm_16000
     (Polly fallback on error / missing client); otherwise Polly neural PCM."""
-    if backend == "elevenlabs" and el_client is not None and sample_rate == 16000:
-        try:
-            return _eleven_convert(text, "pcm_16000", el_client, el_voice_id, el_model)
-        except Exception:  # noqa: BLE001 — fall back to Polly
-            log.exception("elevenlabs pcm synthesis failed; falling back to polly")
+    if backend == "elevenlabs" and el_client is not None:
+        if sample_rate != 16000:
+            log.debug(
+                "elevenlabs pcm supports only 16000 Hz; using polly for %d Hz", sample_rate
+            )
+        else:
+            try:
+                return _eleven_convert(text, "pcm_16000", el_client, el_voice_id, el_model)
+            except Exception:  # noqa: BLE001 — fall back to Polly
+                log.exception("elevenlabs pcm synthesis failed; falling back to polly")
     client = polly_client or boto3.client("polly", region_name=region)
     resp = client.synthesize_speech(
         Text=text,
