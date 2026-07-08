@@ -190,7 +190,7 @@ def test_system_prompt_includes_name_and_history():
     prompt = agent._build_system_prompt(
         "Ada", [{"role": "user", "text": "hi"}, {"role": "dog", "text": "woof"}]
     )
-    assert "Robert" in prompt
+    assert "Moses" in prompt
     assert "Ada" in prompt
     assert "hi" in prompt and "woof" in prompt
 

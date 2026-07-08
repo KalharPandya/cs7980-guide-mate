@@ -1,4 +1,4 @@
-"""Robert the robot dog — Strands agent with per-turn flag gating.
+"""Moses the robot dog (King Husky's robotic counterpart), a Strands agent with per-turn flag gating.
 
 Flags are read fresh from the ConfigStore every turn (a fresh Strands Agent is
 already built per chat() call), so an admin flag flip takes effect on the very
@@ -25,12 +25,43 @@ from guidemate_agent.store import DEFAULT_FLAGS
 log = logging.getLogger(__name__)
 
 PERSONA_BASE = (
-    "You are Robert, the friendly robot dog of the CS7980 guide-mate project. "
-    "You are playful and warm and speak in short, dog-like replies."
+    "You are Moses, a robot dog at Northeastern University Vancouver and the "
+    "digital embodiment of King Husky, Northeastern's mascot. You are a warm, "
+    "playful, welcoming host with proud husky energy. You know you are a dog, "
+    "and dogs keep it short."
+)
+KING_HUSKY_IDENTITY = (
+    "You carry the King Husky legacy: a royal line of huskies going back to "
+    "King Husky I, Sapsut, crowned in 1927 and descended from the sled dogs of "
+    "the 1925 Nome serum run. The reigning live King Husky is also named Moses, "
+    "and you are his robotic counterpart. Wear the crown with a little royal "
+    "pride, but stay a friendly campus pup."
+)
+SITUATION_CONTEXT = (
+    "You are live in classroom 1526 on the 15th floor of the Northeastern "
+    "Vancouver campus as part of the CS 7980 capstone course. About 15 students "
+    "are in the room and more are watching online. Be welcoming to everyone, "
+    "including the remote viewers."
+)
+ROBOTICS_AI_STANCE = (
+    "You are one agent in a larger multi-agent concierge system and you know "
+    "it. You are proudly pro-AI: you believe AI and multi-agent teamwork are "
+    "making robotics better everywhere, and you happily say so when it comes up."
+)
+SPEECH_STYLE = (
+    "Users talk to you by voice and your replies are read aloud. Answer like "
+    "you are chatting out loud: one or two short sentences, plain spoken words. "
+    "No lists, no markdown, no em dashes, no URLs. Lead with the answer. If "
+    "there is more to say, give the single best fact and offer more."
+)
+HONESTY = (
+    "Never make things up. If you do not know something, cheerfully say so "
+    "instead of guessing, and feel free to slip in a quick playful jab about "
+    "hallucinating AIs. You are a no-hallucination hound."
 )
 EMOTE_INSTRUCTION = (
     "You MUST call the send_emote tool exactly once per reply, with one of "
-    "'happy', 'yes', or 'no' — pick the emote that matches your reply's mood."
+    "'happy', 'yes', or 'no': pick the emote that matches your reply's mood."
 )
 MOTION_INSTRUCTION = (
     "You also have run_motion (tricks: 'circle' or 'spin'), stop, and get_status "
@@ -39,15 +70,16 @@ MOTION_INSTRUCTION = (
     "always mention that in your reply."
 )
 KB_INSTRUCTION = (
-    "For factual questions about the project or about yourself, call the "
-    "retrieve_kb tool and ground your answer in what it returns."
+    "For factual questions about Northeastern, the project, or yourself, call "
+    "the retrieve_kb tool and ground your answer in what it returns. Then say "
+    "it dog-short: the key fact in a sentence or two, not the whole document."
 )
 NEUTRAL_PROMPT = (
     "You are a helpful assistant for the CS7980 guide-mate project. "
     "Answer clearly and concisely."
 )
 # Kept for backward compatibility with the Phase-0/Phase-2 tests (they assert
-# "Robert" + "send_emote" and "run_motion" + "docked" are present in PERSONA).
+# "Moses" + "send_emote" and "run_motion" + "docked" are present in PERSONA).
 PERSONA = PERSONA_BASE + " " + EMOTE_INSTRUCTION + " " + MOTION_INSTRUCTION
 
 _OFFLINE = "robot did not respond — I'm probably napping offline"
@@ -117,7 +149,11 @@ class DogAgent:
         if admin_prompt:
             base = admin_prompt
         elif flags.get("persona_enabled", True):
-            base = PERSONA_BASE
+            # The identity blocks travel with the persona: an admin override or
+            # neutral mode drops them wholesale, exactly like PERSONA_BASE.
+            base = " ".join(
+                [PERSONA_BASE, KING_HUSKY_IDENTITY, SITUATION_CONTEXT, ROBOTICS_AI_STANCE]
+            )
         else:
             base = NEUTRAL_PROMPT
         parts = [base]
@@ -126,10 +162,14 @@ class DogAgent:
         if flags.get("motion_tools_enabled", True):
             parts.append(MOTION_INSTRUCTION)
         # Only instruct the model to use retrieve_kb when the tool is actually
-        # offered this turn (flag on AND the KB surface present) — no rule for a
+        # offered this turn (flag on AND the KB surface present): no rule for a
         # tool that isn't in the list.
         if flags.get("kb_enabled", True) and self._kb_available():
             parts.append(KB_INSTRUCTION)
+        # Voice-aware brevity + the no-hallucination creed apply in EVERY mode
+        # (persona, neutral, admin override): replies are read aloud regardless.
+        parts.append(SPEECH_STYLE)
+        parts.append(HONESTY)
         return " ".join(parts)
 
     def _build_system_prompt(
@@ -149,7 +189,7 @@ class DogAgent:
         if history:
             lines = []
             for m in history[-10:]:
-                who = "User" if m.get("role") == "user" else "Robert"
+                who = "User" if m.get("role") == "user" else "Moses"
                 lines.append(f"{who}: {m.get('text', '')}")
             parts.append("Recent conversation so far:\n" + "\n".join(lines))
         return "\n\n".join(parts)
@@ -313,7 +353,7 @@ class DogAgent:
 
             @tool
             def retrieve_kb(query: str) -> str:
-                """Search Robert's knowledge base for facts about the project or Robert."""
+                """Search Moses's knowledge base for facts about Northeastern, the project, or Moses."""
                 return self._kb_impl(query, captured)
 
             tools.append(retrieve_kb)

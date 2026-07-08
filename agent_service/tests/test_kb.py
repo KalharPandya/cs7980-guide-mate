@@ -274,14 +274,14 @@ def _kb_result(text, uri):
 def test_retrieve_concatenates_passages_with_sources():
     client = FakeKBRuntime(
         results=[
-            _kb_result("Robert is a TurtleBot 4.", "s3://guidemate-kb-docs/robert.md"),
-            _kb_result("Robert maps indoor spaces.", "s3://guidemate-kb-docs/robert.md"),
+            _kb_result("Moses is a TurtleBot 4.", "s3://guidemate-kb-docs/moses.md"),
+            _kb_result("Moses maps indoor spaces.", "s3://guidemate-kb-docs/moses.md"),
         ]
     )
-    out = retrieve_passages("who is robert", "A1NIQYZ0KQ", client=client)
-    assert "Robert is a TurtleBot 4." in out
-    assert "Robert maps indoor spaces." in out
-    assert "s3://guidemate-kb-docs/robert.md" in out
+    out = retrieve_passages("who is moses", "A1NIQYZ0KQ", client=client)
+    assert "Moses is a TurtleBot 4." in out
+    assert "Moses maps indoor spaces." in out
+    assert "s3://guidemate-kb-docs/moses.md" in out
     # kb_id + top_k propagated into the request
     assert client.calls[0]["knowledgeBaseId"] == "A1NIQYZ0KQ"
     cfg = client.calls[0]["retrievalConfiguration"]["vectorSearchConfiguration"]
@@ -324,16 +324,16 @@ def test_retrieve_error_is_swallowed():
 def test_with_sources_returns_dedup_titles():
     client = FakeKBRuntime(
         results=[
-            _kb_result("Robert is a TurtleBot 4.", "s3://guidemate-kb-docs/robert-facts.md"),
-            _kb_result("Robert maps indoor spaces.", "s3://guidemate-kb-docs/robert-facts.md"),
+            _kb_result("Moses is a TurtleBot 4.", "s3://guidemate-kb-docs/moses-facts.md"),
+            _kb_result("Moses maps indoor spaces.", "s3://guidemate-kb-docs/moses-facts.md"),
             _kb_result("Glass handling is layered.", "s3://guidemate-kb-docs/glass.md"),
         ]
     )
     text, sources = retrieve_passages_with_sources("q", "A1NIQYZ0KQ", client=client)
-    assert "Robert is a TurtleBot 4." in text            # text half unchanged
+    assert "Moses is a TurtleBot 4." in text             # text half unchanged
     # doc keys (basename of the S3 uri), de-duplicated in first-seen order, url null
     assert sources == [
-        {"title": "robert-facts.md", "url": None},
+        {"title": "moses-facts.md", "url": None},
         {"title": "glass.md", "url": None},
     ]
 
@@ -363,11 +363,11 @@ def test_with_sources_skips_unknown_source_placeholder():
     os.environ.get("GUIDEMATE_LIVE_KB") != "1",
     reason="set GUIDEMATE_LIVE_KB=1 to exercise the real Bedrock KB retrieval",
 )
-def test_live_kb_retrieve_finds_robert():
-    """Env-gated live retrieval against the real KB (seeded with the Robert doc)."""
-    out = retrieve_passages("who is Robert", "A1NIQYZ0KQ")
+def test_live_kb_retrieve_finds_moses():
+    """Env-gated live retrieval against the real KB (seeded with the Moses docs)."""
+    out = retrieve_passages("who is Moses", "A1NIQYZ0KQ")
     assert isinstance(out, str) and out
-    assert "Robert" in out
+    assert "Moses" in out
     print("live retrieve_passages ->", out)
 
 

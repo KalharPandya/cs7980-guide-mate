@@ -20,8 +20,8 @@ def test_config_parses_multiple_robots(monkeypatch):
     assert Config.from_env().robot_ids == ["turtlebot468", "turtlebotsim"]
 
 
-def test_persona_mentions_robert_and_emote_rule():
-    assert "Robert" in PERSONA
+def test_persona_mentions_moses_and_emote_rule():
+    assert "Moses" in PERSONA
     assert "send_emote" in PERSONA
 
 
@@ -50,10 +50,9 @@ def test_index_served(monkeypatch):
     with TestClient(app) as client:
         resp = client.get("/")
         assert resp.status_code == 200
-        # Landing was rebranded to the "Moses" concierge in the frontend redesign,
-        # so the dog's persona name ("Robert") is no longer on the landing page —
-        # assert the current brand instead. The DOM-hook contract below is the
-        # real guarantee that the right chat shell was served.
+        # Landing is the "Moses" concierge brand (frontend redesign); the dog
+        # persona is also Moses now. The DOM-hook contract below is the real
+        # guarantee that the right chat shell was served.
         assert "Moses" in resp.text
         # Task 5 polished chat UI: intake gate + chat shell DOM hooks that
         # both chat.js and the gated Playwright e2e (test_companion_flow.py)

@@ -85,7 +85,7 @@ def test_text_message_virtual_session_returns_reply_and_audio(monkeypatch):
     app = _app(monkeypatch, resolver=lambda sid: None)  # virtual
     with TestClient(app) as client:
         with client.websocket_connect("/ws/chat/sess-1") as ws:
-            ws.send_json({"type": "text", "message": "hi robert"})
+            ws.send_json({"type": "text", "message": "hi moses"})
             reply = ws.receive_json()
             audio = ws.receive_json()
     assert reply["type"] == "reply"
@@ -317,11 +317,11 @@ class _FakeStrandsKB:
         self.message = message
         for t in self.tools:
             if t.tool_name == "retrieve_kb":
-                t("who is robert")
+                t("who is moses")
         for t in self.tools:
             if t.tool_name == "send_emote":
                 t("happy")
-        return "woof! robert is a turtlebot 4"
+        return "woof! moses is a turtlebot 4"
 
 
 def test_ws_kb_grounded_reply_frame_includes_sources(monkeypatch, ddb):
@@ -333,8 +333,8 @@ def test_ws_kb_grounded_reply_frame_includes_sources(monkeypatch, ddb):
         kb,
         "retrieve_passages_with_sources",
         lambda *a, **k: (
-            "[s3://guidemate-kb-docs/robert-facts.md] robert is a turtlebot 4",
-            [{"title": "robert-facts.md", "url": None}],
+            "[s3://guidemate-kb-docs/moses-facts.md] moses is a turtlebot 4",
+            [{"title": "moses-facts.md", "url": None}],
         ),
     )
     with _fake_client(monkeypatch) as client:
@@ -342,11 +342,11 @@ def test_ws_kb_grounded_reply_frame_includes_sources(monkeypatch, ddb):
             "/api/session", json={"name": "Ada", "comfortable": True}
         ).json()["session_id"]
         with client.websocket_connect(f"/ws/chat/{sid}") as ws:
-            ws.send_json({"type": "text", "message": "who is robert?"})
+            ws.send_json({"type": "text", "message": "who is moses?"})
             reply = ws.receive_json()
             ws.receive_json()  # audio
     assert reply["type"] == "reply"
-    assert reply["sources"] == [{"title": "robert-facts.md", "url": None}]
+    assert reply["sources"] == [{"title": "moses-facts.md", "url": None}]
     # existing reply-frame fields + emote-sync are untouched
     assert reply["emote"] == "happy"
     assert reply["gate_released"] is True

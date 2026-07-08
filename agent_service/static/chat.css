@@ -399,7 +399,7 @@ label { font-weight: 700; font-size: 14.5px; }
 .btn-ico { flex-shrink: 0; }
 
 /* ============================================================================
-   Avatar stage — Robert, the Husky companion (one tool in Moses's kit).
+   Avatar stage: Moses, the Husky companion (the concierge's dog avatar).
    Emote classes fire in JS the instant reply audio starts (voice + motion land
    together). Do NOT rename emote-happy / emote-yes / emote-no.
    ========================================================================== */

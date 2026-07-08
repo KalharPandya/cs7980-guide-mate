@@ -148,7 +148,7 @@ async def _run_pipeline(ws: WebSocket, app: FastAPI, session_id: str, text: str)
 
         # Release reply text + audio TOGETHER, once the gate is satisfied (or timed out).
         # `sources` carries the KB citations for a grounded turn (title = the KB doc
-        # key, e.g. "robert-facts.md"; url is null unless a real link exists). It is
+        # key, e.g. "moses-facts.md"; url is null unless a real link exists). It is
         # an empty list for a turn that used no KB, so the frontend can rely on the
         # field always being present. Does not disturb the existing reply fields.
         await ws.send_json({
