@@ -189,23 +189,26 @@ async def _run_pipeline(ws: WebSocket, app: FastAPI, session_id: str, text: str)
             if obs is not None:
                 obs.record_error("tts", str(exc), turn_id)
 
-        # Physical motion trick (circle/spin): the WS-path agent ran it on the
-        # non-publishing CaptureRegistry, so forward it to the real robot HERE —
-        # same ownership split as the emote. Only for a bound (physical) session,
-        # and AFTER reply+audio so the user sees the response first.
-        motion = result.get("motion")
-        if motion and target is not None:
-            motion_cmd = Command(type="motion", name=motion)
-            try:
-                acks = await loop.run_in_executor(
-                    None, lambda: registry.send_command(target, motion_cmd)
-                )
-                if obs is not None:
-                    obs.record_command(turn_id, target, motion_cmd.cmd_id, time.monotonic(), acks)
-            except Exception as exc:  # noqa: BLE001 — a failed trick must not kill the socket
-                log.exception("motion publish failed")
-                if obs is not None:
-                    obs.record_error("motion", str(exc), turn_id)
+        # SINGLE physical-command dispatch: every command the agent ran this turn
+        # (tricks, stop, future tools) is captured on result["commands"] and
+        # forwarded to the real robot HERE, in order — the WS-path agent runs on
+        # a non-publishing CaptureRegistry, so this loop is the one place chat
+        # motion reaches hardware. (Emote is separate: its release gate above.)
+        # Only for a bound (physical) session, and AFTER reply+audio so the user
+        # sees the response first.
+        if target is not None:
+            for spec in result.get("commands") or []:
+                try:
+                    phys_cmd = Command(type=spec["type"], name=spec["name"])
+                    acks = await loop.run_in_executor(
+                        None, lambda c=phys_cmd: registry.send_command(target, c)
+                    )
+                    if obs is not None:
+                        obs.record_command(turn_id, target, phys_cmd.cmd_id, time.monotonic(), acks)
+                except Exception as exc:  # noqa: BLE001 — one failed command must not kill the socket
+                    log.exception("physical command publish failed: %s", spec)
+                    if obs is not None:
+                        obs.record_error("motion", str(exc), turn_id)
     except Exception as exc:  # noqa: BLE001 — never kill the socket on one bad turn
         log.exception("chat pipeline failed")
         if obs is not None:

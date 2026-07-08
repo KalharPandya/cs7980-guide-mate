@@ -120,19 +120,28 @@ def test_motion_impl_lifecycle_motions_never_sent_by_llm():
 
 def test_motion_impl_records_trick_for_republish():
     # The WS path runs the agent on a non-publishing CaptureRegistry, then
-    # re-publishes physical actions itself — so a trick must be recorded on
-    # `captured` for the WS layer to forward to the real robot.
+    # re-publishes physical actions itself — every physical command must land on
+    # the SINGLE captured["commands"] list the WS layer dispatches from.
     reg = ScriptedRegistry(acks=[Ack(cmd_id="c", state="done", simulated=True)])
     captured = _captured()
     _agent(reg)._motion_impl("spin", target="turtlebot468", captured=captured)
-    assert captured.get("motion") == "spin"
+    assert captured.get("commands") == [{"type": "motion", "name": "spin"}]
 
 
 def test_motion_impl_records_no_trick_for_unknown_name():
     reg = ScriptedRegistry()
     captured = _captured()
     _agent(reg)._motion_impl("moonwalk", target="turtlebot468", captured=captured)
-    assert captured.get("motion") is None  # rejected -> nothing to re-publish
+    assert not captured.get("commands")  # rejected -> nothing to re-publish
+
+
+def test_stop_impl_records_command_for_republish():
+    # Same single-dispatch contract for stop: the WS-path agent's stop tool was
+    # silently dead (captured, never forwarded). It must be recorded too.
+    reg = ScriptedRegistry(acks=[Ack(cmd_id="c", state="done", simulated=True)])
+    captured = _captured()
+    _agent(reg)._stop_impl(target="turtlebot468", captured=captured)
+    assert captured.get("commands") == [{"type": "stop", "name": "stop"}]
 
 
 def test_motion_impl_offline():

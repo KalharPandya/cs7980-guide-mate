@@ -115,30 +115,35 @@ def test_text_message_physical_session_publishes_and_records(monkeypatch):
 
 
 class _MotionAgent:
-    """WS-path agent stand-in that runs a trick (spin) plus the mandatory emote."""
+    """WS-path agent stand-in that ran a trick + a stop, plus the mandatory emote."""
 
     def __init__(self):
         self.seen = []
 
     def chat(self, message, session_id=None, robot_id=None):
         self.seen.append({"message": message, "session_id": session_id})
-        return {"reply_text": "spinning!", "emote": "happy", "motion": "spin",
+        return {"reply_text": "spinning!", "emote": "happy",
+                "commands": [{"type": "motion", "name": "spin"},
+                             {"type": "stop", "name": "stop"}],
                 "robot": [], "turn_id": "turn-m", "session_id": session_id}
 
 
-def test_physical_session_publishes_motion_trick(monkeypatch):
-    # A trick from chat must reach the real robot (the CaptureRegistry-backed
-    # agent never publishes; the WS layer forwards it, like it does the emote).
+def test_physical_session_publishes_all_captured_commands(monkeypatch):
+    # Every physical command the agent ran (trick, stop, ...) must reach the real
+    # robot through the SINGLE dispatch loop — the CaptureRegistry-backed agent
+    # never publishes; the WS layer forwards, like it does the emote.
     app = _app(monkeypatch, resolver=lambda sid: "turtlebot468")  # physical
     app.state.ws_agent = _MotionAgent()
     with TestClient(app) as client:
         with client.websocket_connect("/ws/chat/sess-motion") as ws:
-            ws.send_json({"type": "text", "message": "do a spin"})
+            ws.send_json({"type": "text", "message": "do a spin then stop"})
             ws.receive_json()  # reply
             ws.receive_json()  # audio
     names = [n for (_r, n) in app.state.registry.published]
-    assert ("turtlebot468", "spin") in app.state.registry.published
-    assert "happy" in names and "spin" in names  # emote AND trick both published
+    assert "happy" in names          # emote (via its release gate)
+    assert "spin" in names           # trick forwarded
+    assert "stop" in names           # stop tool forwarded (was silently dead)
+    assert names.index("spin") < names.index("stop")  # captured order preserved
 
 
 def test_virtual_session_never_publishes_motion(monkeypatch):

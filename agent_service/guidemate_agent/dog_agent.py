@@ -255,9 +255,9 @@ class DogAgent:
             cmd = Command(type="motion", name=name)
         except ValidationError:
             return "unknown trick — I only know 'circle' and 'spin'"
-        # Record the trick so the WS path (whose agent runs on a non-publishing
-        # CaptureRegistry) can forward it to the real robot after the turn.
-        captured["motion"] = name
+        # Record on the SINGLE physical-command list so the WS path (whose agent
+        # runs on a non-publishing CaptureRegistry) forwards it to the real robot.
+        captured.setdefault("commands", []).append({"type": "motion", "name": name})
         t0 = time.perf_counter()
         acks = self._registry.send_command(target, cmd)
         emit_metric(
@@ -272,6 +272,9 @@ class DogAgent:
     def _stop_impl(self, target: Optional[str], captured: dict) -> str:
         if target is None:
             return _OFFLINE
+        # Same single-dispatch contract as run_motion: without this the WS-path
+        # stop tool was silently dead (captured registry, never forwarded).
+        captured.setdefault("commands", []).append({"type": "stop", "name": "stop"})
         acks = self._registry.send_command(target, Command(type="stop", name="stop"))
         captured["acks"].extend(a.model_dump() for a in acks)
         return self._describe_acks(acks)
@@ -448,7 +451,7 @@ class DogAgent:
                 "sources": [],
             })
 
-        captured = {"emote": None, "acks": [], "kb_sources": [], "motion": None}
+        captured = {"emote": None, "acks": [], "kb_sources": [], "commands": []}
         names = self._enabled_tool_names(flags, physical)
         if not allow_motion:
             names = [n for n in names if n not in ("run_motion", "stop")]
@@ -487,9 +490,11 @@ class DogAgent:
         return _wrap({
             "reply_text": reply_text,
             "emote": captured["emote"],
-            # The trick the model ran this turn (circle/spin), or None. The WS path
-            # re-publishes it to the real robot (its agent runs non-publishing).
-            "motion": captured["motion"],
+            # Every physical command the model ran this turn (tricks, stop), in
+            # order. The WS path dispatches these to the real robot in ONE loop
+            # (its agent runs on a non-publishing CaptureRegistry). Emote is
+            # separate: it has its own release-gate path.
+            "commands": captured["commands"],
             "robot": captured["acks"],
             # KB citation sources for this turn ([] when the turn didn't ground on
             # the KB). The WS/reply layer surfaces these to the frontend.
