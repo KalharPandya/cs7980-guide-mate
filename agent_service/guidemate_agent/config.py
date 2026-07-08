@@ -63,8 +63,11 @@ class Config:
             stt_backend=os.environ.get("GUIDEMATE_STT_BACKEND", "transcribe"),
             # Intentionally unprefixed — matches the ElevenLabs SDK's own env-var name.
             elevenlabs_api_key=os.environ.get("ELEVENLABS_API_KEY", ""),
-            # Intentionally unprefixed — common convention for a vendor voice ID.
-            elevenlabs_voice_id=os.environ.get("ELEVENLABS_VOICE_ID", MOSES_VOICE_ID),
+            # Intentionally unprefixed (matches vendor convention). `or` (not a
+            # get-default) so an env var present-but-EMPTY — which docker compose's
+            # `${ELEVENLABS_VOICE_ID:-}` produces — still falls back to the Moses
+            # voice instead of sending an empty voice_id to ElevenLabs.
+            elevenlabs_voice_id=os.environ.get("ELEVENLABS_VOICE_ID") or MOSES_VOICE_ID,
             elevenlabs_tts_model=os.environ.get(
                 "GUIDEMATE_ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5"
             ),
