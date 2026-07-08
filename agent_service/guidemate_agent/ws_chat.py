@@ -149,13 +149,21 @@ async def _run_pipeline(ws: WebSocket, app: FastAPI, session_id: str, text: str)
         if emote:
             cmd = Command(type="emote", name=emote)
             sent = time.monotonic()
+            # When the turn ALSO ran a motion trick, the emote animates the avatar
+            # only — publishing it would make the robot wiggle before/over the
+            # requested trick (observed live: "spin" -> wiggle then spin). Passing
+            # target=None keeps the release gate semantics but publishes nothing.
+            ran_motion = any(
+                s.get("type") == "motion" for s in result.get("commands") or []
+            )
+            emote_target = None if ran_motion else target
             # Order-independent, time-bounded release gate. target is None for a
             # virtual session -> emote_sync returns (True, []) and publishes nothing.
             released, acks = await loop.run_in_executor(
-                None, lambda: emote_sync(registry, target, cmd, GATE_TIMEOUT_S)
+                None, lambda: emote_sync(registry, emote_target, cmd, GATE_TIMEOUT_S)
             )
-            if obs is not None and target is not None:
-                obs.record_command(turn_id, target, cmd.cmd_id, sent, acks)
+            if obs is not None and emote_target is not None:
+                obs.record_command(turn_id, emote_target, cmd.cmd_id, sent, acks)
 
         # Release reply text + audio TOGETHER, once the gate is satisfied (or timed out).
         # `sources` carries the KB citations for a grounded turn (title = the KB doc

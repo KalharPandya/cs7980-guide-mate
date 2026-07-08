@@ -140,10 +140,12 @@ def test_physical_session_publishes_all_captured_commands(monkeypatch):
             ws.receive_json()  # reply
             ws.receive_json()  # audio
     names = [n for (_r, n) in app.state.registry.published]
-    assert "happy" in names          # emote (via its release gate)
     assert "spin" in names           # trick forwarded
     assert "stop" in names           # stop tool forwarded (was silently dead)
     assert names.index("spin") < names.index("stop")  # captured order preserved
+    # The turn ran a motion trick -> the emote animates the AVATAR only; the
+    # robot must not wiggle before/over the requested trick.
+    assert "happy" not in names
 
 
 def test_virtual_session_never_publishes_motion(monkeypatch):
