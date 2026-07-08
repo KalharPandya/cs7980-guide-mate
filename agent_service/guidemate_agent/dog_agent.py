@@ -244,20 +244,25 @@ class DogAgent:
     # The LLM run_motion tool may only trigger tricks. dock/undock/forward are
     # valid Command names but belong to the assignment lifecycle (sessions.py) —
     # never LLM-reachable, so the model can't move the robot off/onto its dock.
-    _LLM_TRICKS = ("circle", "spin")
+    # Per-trick params: chat circles run TIGHT (r=0.1 m, ~0.4 m sweep) — the
+    # choreography default of 0.5 m sweeps ~1.2 m, too big for indoor demo space.
+    _LLM_TRICKS = {"circle": {"radius": 0.1}, "spin": {}}
 
     def _motion_impl(self, name: str, target: Optional[str], captured: dict) -> str:
         if target is None:
             return _OFFLINE
         if name not in self._LLM_TRICKS:
             return "unknown trick — I only know 'circle' and 'spin'"
+        params = self._LLM_TRICKS[name]
         try:
-            cmd = Command(type="motion", name=name)
+            cmd = Command(type="motion", name=name, params=params)
         except ValidationError:
             return "unknown trick — I only know 'circle' and 'spin'"
         # Record on the SINGLE physical-command list so the WS path (whose agent
         # runs on a non-publishing CaptureRegistry) forwards it to the real robot.
-        captured.setdefault("commands", []).append({"type": "motion", "name": name})
+        captured.setdefault("commands", []).append(
+            {"type": "motion", "name": name, "params": params}
+        )
         t0 = time.perf_counter()
         acks = self._registry.send_command(target, cmd)
         emit_metric(

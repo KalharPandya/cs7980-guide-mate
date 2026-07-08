@@ -199,7 +199,8 @@ async def _run_pipeline(ws: WebSocket, app: FastAPI, session_id: str, text: str)
         if target is not None:
             for spec in result.get("commands") or []:
                 try:
-                    phys_cmd = Command(type=spec["type"], name=spec["name"])
+                    phys_cmd = Command(type=spec["type"], name=spec["name"],
+                                       params=spec.get("params") or {})
                     acks = await loop.run_in_executor(
                         None, lambda c=phys_cmd: registry.send_command(target, c)
                     )

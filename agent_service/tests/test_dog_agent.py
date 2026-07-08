@@ -125,7 +125,16 @@ def test_motion_impl_records_trick_for_republish():
     reg = ScriptedRegistry(acks=[Ack(cmd_id="c", state="done", simulated=True)])
     captured = _captured()
     _agent(reg)._motion_impl("spin", target="turtlebot468", captured=captured)
-    assert captured.get("commands") == [{"type": "motion", "name": "spin"}]
+    assert captured.get("commands") == [{"type": "motion", "name": "spin", "params": {}}]
+
+
+def test_motion_impl_circle_runs_tight_radius():
+    # Chat circles must run tight (r=0.1) — the 0.5 default sweeps ~1.2 m.
+    reg = ScriptedRegistry(acks=[Ack(cmd_id="c", state="done", simulated=True)])
+    captured = _captured()
+    _agent(reg)._motion_impl("circle", target="turtlebot468", captured=captured)
+    assert captured["commands"][0]["params"] == {"radius": 0.1}
+    assert reg.sent[0][1].params == {"radius": 0.1}  # REST path Command carries it too
 
 
 def test_motion_impl_records_no_trick_for_unknown_name():
