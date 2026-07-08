@@ -70,6 +70,22 @@ def test_assign_uses_long_ack_window():
     assert all(call[3] == 75.0 for call in send.sent)
 
 
+def test_assign_skips_everything_when_already_undocked():
+    # Assigning an undocked robot is a pure handover: no undock (the Create 3
+    # Undock goal HANGS on an undocked robot: result timeout), no nudge.
+    send = _Recorder({})
+    results = assign_actions(send, "turtlebot468", timeout_s=75.0, docked=False)
+    assert results == []
+    assert send.sent == []
+
+
+def test_assign_attempts_undock_when_docked_or_unknown():
+    for dock_state in (True, None):  # unknown -> attempt; the bridge gates it
+        send = _Recorder({"undock": _acks("received", "running", "done")})
+        results = assign_actions(send, "turtlebot468", timeout_s=75.0, docked=dock_state)
+        assert [r[0] for r in results] == ["undock", "forward"]
+
+
 # ---- end sequence ------------------------------------------------------------
 def test_end_sends_dock():
     send = _Recorder({})

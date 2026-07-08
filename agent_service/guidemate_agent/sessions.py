@@ -297,10 +297,20 @@ def _make_send(registry):
     return send
 
 
-def _run_lifecycle(registry, robot_id: str, actions) -> None:
+def _live_docked(registry, robot_id: str):
+    """Robot's live dock state (True/False), or None when unknown/unavailable."""
+    if registry is None:
+        return None
+    try:
+        return registry.get_status(robot_id).get("docked")
+    except Exception:  # noqa: BLE001 — unknown dock state, let the bridge gate it
+        return None
+
+
+def _run_lifecycle(registry, robot_id: str, actions, **kwargs) -> None:
     """Run a lifecycle action list (see robot_lifecycle) and record each outcome."""
     send = _make_send(registry)
-    for action, acks in actions(send, robot_id, ACTION_TIMEOUT_S):
+    for action, acks in actions(send, robot_id, ACTION_TIMEOUT_S, **kwargs):
         _record_assign_event(robot_id, action, acks)
 
 
@@ -326,7 +336,9 @@ def _bind_robot(robot_id: str, session_id: str, registry=None) -> Optional[str]:
         last_active_ts=_now_iso(),
     )
     # assign -> undock, then a bounded forward nudge iff the undock succeeds.
-    _run_lifecycle(registry, robot_id, assign_actions)
+    # Already-undocked robot = pure handover (no undock attempt, no nudge).
+    _run_lifecycle(registry, robot_id, assign_actions,
+                   docked=_live_docked(registry, robot_id))
     return aborted
 
 
