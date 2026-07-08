@@ -4,6 +4,10 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+# The ElevenLabs voice for Moses (a library voice id — NOT a secret; the API key
+# gates access). Used only when tts_backend='elevenlabs'; env-overridable.
+MOSES_VOICE_ID = "vBKc2FfBKJfcZNyEt1n6"
+
 
 def _parse_things(raw: str) -> dict:
     """Parse GUIDEMATE_THING_NAMES='robot_id=ThingName,robot2=Thing2' -> dict."""
@@ -30,7 +34,7 @@ class Config:
     tts_backend: str = "polly"
     stt_backend: str = "transcribe"
     elevenlabs_api_key: str = ""
-    elevenlabs_voice_id: str = ""
+    elevenlabs_voice_id: str = MOSES_VOICE_ID
     elevenlabs_tts_model: str = "eleven_flash_v2_5"
     elevenlabs_stt_model: str = "scribe_v2_realtime"
 
@@ -60,7 +64,7 @@ class Config:
             # Intentionally unprefixed — matches the ElevenLabs SDK's own env-var name.
             elevenlabs_api_key=os.environ.get("ELEVENLABS_API_KEY", ""),
             # Intentionally unprefixed — common convention for a vendor voice ID.
-            elevenlabs_voice_id=os.environ.get("ELEVENLABS_VOICE_ID", ""),
+            elevenlabs_voice_id=os.environ.get("ELEVENLABS_VOICE_ID", MOSES_VOICE_ID),
             elevenlabs_tts_model=os.environ.get(
                 "GUIDEMATE_ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5"
             ),
