@@ -23,6 +23,7 @@
   const banner = $("companion-banner");
   const bannerText = $("companion-status");
   const requestBtn = $("request-companion");
+  const endBtn = $("end-session");
   const virtualPetBadge = $("virtual-pet-badge");
   const stopBar = $("stop-bar");
   const stopBtn = $("stop-btn");
@@ -588,6 +589,10 @@
     // The "Connected" request button reads as a green success chip when bound.
     requestBtn.classList.toggle("is-connected", physical);
 
+    // "End session" is offered only while a robot is bound; ending it releases
+    // the robot and sends it back to its dock (POST /api/session/{id}/end).
+    if (endBtn) endBtn.hidden = !physical;
+
     banner.classList.remove("pending", "approved", "denied", "aborted");
     if (physical) {
       banner.classList.add("approved");
@@ -660,6 +665,23 @@
     } catch (e) { /* network hiccup -- next poll will reconcile */ }
     requestBtn.disabled = false;
   });
+
+  if (endBtn) {
+    endBtn.addEventListener("click", async () => {
+      if (!sessionId) return;
+      endBtn.disabled = true;
+      try {
+        await fetch(`/api/session/${sessionId}/end`, {
+          method: "POST", credentials: "same-origin",
+        });
+        // Optimistic: hide immediately; the next poll reconciles to virtual.
+        endBtn.hidden = true;
+        banner.classList.remove("approved", "pending");
+        bannerText.textContent = "Session ended — dog returning to its dock.";
+      } catch (e) { /* next poll reconciles */ }
+      endBtn.disabled = false;
+    });
+  }
 
   // --- persistent Stop: send a real stop command to the bound robot ---------
   // The button is only shown while a physical robot is connected (renderState),

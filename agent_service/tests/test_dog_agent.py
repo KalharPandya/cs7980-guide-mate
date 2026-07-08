@@ -107,6 +107,17 @@ def test_motion_impl_unknown_trick_never_sent():
     assert reg.sent == []  # invalid name rejected client-side, nothing published
 
 
+def test_motion_impl_lifecycle_motions_never_sent_by_llm():
+    # dock/undock/forward are valid Command names but belong to the assignment
+    # lifecycle only — the LLM tool must refuse them, never publish.
+    for name in ("dock", "undock", "forward"):
+        reg = ScriptedRegistry()
+        result = _agent(reg)._motion_impl(name, target="turtlebot468",
+                                          captured=_captured())
+        assert result == "unknown trick — I only know 'circle' and 'spin'"
+        assert reg.sent == []
+
+
 def test_motion_impl_offline():
     result = _agent(ScriptedRegistry(acks=[]))._motion_impl(
         "spin", target="turtlebot468", captured=_captured())
