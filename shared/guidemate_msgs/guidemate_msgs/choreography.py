@@ -70,11 +70,13 @@ def _no() -> list[TwistStep]:
 
 
 def _happy() -> list[TwistStep]:
-    # wiggle: alternate wz +/-1.2 @ 0.4 s with small vx 0.05, 3 cycles
+    # wiggle that ENDS WHERE IT STARTED: each (+vx,+wz) step is followed by its
+    # exact time-reversal (-vx,-wz), which retraces the arc — 3 bounce cycles,
+    # net displacement ~0 (the old +vx-only wiggle crept ~0.12 m forward).
     steps: list[TwistStep] = []
     for _ in range(3):
         steps.append(_step(0.05, 1.2, 0.4))
-        steps.append(_step(0.05, -1.2, 0.4))
+        steps.append(_step(-0.05, -1.2, 0.4))
     return steps
 
 
@@ -82,9 +84,13 @@ def _circle(params: dict) -> list[TwistStep]:
     # Floor 0.1 m: wz = vx/radius = 0.12/0.1 = 1.2 rad/s stays under MAX_ANGULAR
     # (1.5) so the loop still closes; a tighter radius shrinks the test footprint.
     radius = _clamp(float(params.get("radius", 0.5)), 0.1, CIRCLE_MAX_RADIUS)
+    # turns: how many full revolutions (default 1; observed on-robot as ~1.5 felt
+    # short — chat asks for 2). _cap_total still truncates at MAX_TOTAL_S, so big
+    # radius + many turns degrades to a partial arc rather than exceeding the cap.
+    turns = _clamp(float(params.get("turns", 1.0)), 0.5, 3.0)
     vx = 0.12
     wz = vx / radius
-    duration = 2 * math.pi / wz
+    duration = turns * 2 * math.pi / wz
     return [_step(vx, wz, duration)]
 
 

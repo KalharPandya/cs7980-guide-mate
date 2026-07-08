@@ -103,6 +103,25 @@ def test_no_returns_to_start_yaw():
     assert abs(theta) < 0.02
 
 
+def test_circle_turns_param_multiplies_revolutions():
+    # turns=2 at r=0.1 -> theta ~= 4*pi, still closes, still under the time cap.
+    steps = build(Command(type="motion", name="circle",
+                          params={"radius": 0.1, "turns": 2.0}))
+    total = sum(s.duration for s in steps)
+    assert total <= MAX_TOTAL_S + 1e-9
+    x, y, theta, _ = simulate(steps)
+    assert math.hypot(x, y) < 0.05
+    assert abs(abs(theta) - 4 * math.pi) < 0.1
+
+
+def test_happy_returns_to_start():
+    # The wiggle used to creep ~0.12 m forward and stay there; it must end where
+    # it began (each +vx/+wz step is time-reversed by a -vx/-wz step).
+    x, y, theta, _ = simulate(build(PRIMITIVES["happy"]))
+    assert math.hypot(x, y) < 0.02
+    assert abs(theta) < 0.05
+
+
 def test_yes_small_net_displacement():
     x, y, _, _ = simulate(build(PRIMITIVES["yes"]))
     assert math.hypot(x, y) < 0.02
