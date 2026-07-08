@@ -33,13 +33,24 @@ from guidemate_msgs.messages import Command
 from guidemate_msgs.metrics import emit_metric
 
 from guidemate_agent.emote_sync import emote_sync
-from guidemate_agent.speech import TranscribeSession, downsample_pcm16, synthesize_mp3
+from guidemate_agent.speech import (
+    TranscribeSession, downsample_pcm16, make_transcribe_session, synthesize_mp3,
+)
 
 log = logging.getLogger(__name__)
 
 # Time-bounded release: if no running/done ack lands within this window the turn
 # releases anyway (the dropped-ack fallback). Kept short so voice never hangs.
 GATE_TIMEOUT_S = 2.0
+
+
+def _tts_kwargs(config) -> dict:
+    """synthesize_mp3 backend kwargs derived from Config (defaults keep Polly)."""
+    return {
+        "backend": getattr(config, "tts_backend", "polly"),
+        "el_voice_id": getattr(config, "elevenlabs_voice_id", ""),
+        "el_model": getattr(config, "elevenlabs_tts_model", "eleven_flash_v2_5"),
+    }
 
 
 class CaptureRegistry:
@@ -53,7 +64,10 @@ class CaptureRegistry:
     def send_command(self, robot_id, cmd, timeout_s: float = 5.0, collect_all: bool = False):
         from guidemate_msgs.messages import Ack
 
-        return [Ack(cmd_id=cmd.cmd_id, state="done", simulated=True)]
+        # simulated=False: the WS layer REALLY dispatches captured commands right
+        # after the turn, so the model must not narrate "simulation mode" to the
+        # user while the robot physically moves (observed live on prod).
+        return [Ack(cmd_id=cmd.cmd_id, state="done", simulated=False)]
 
     def get_status(self, robot_id) -> dict:
         return {"robot_id": robot_id, "presence": "unknown"}
@@ -138,17 +152,25 @@ async def _run_pipeline(ws: WebSocket, app: FastAPI, session_id: str, text: str)
         if emote:
             cmd = Command(type="emote", name=emote)
             sent = time.monotonic()
+            # When the turn ALSO ran a motion trick, the emote animates the avatar
+            # only — publishing it would make the robot wiggle before/over the
+            # requested trick (observed live: "spin" -> wiggle then spin). Passing
+            # target=None keeps the release gate semantics but publishes nothing.
+            ran_motion = any(
+                s.get("type") == "motion" for s in result.get("commands") or []
+            )
+            emote_target = None if ran_motion else target
             # Order-independent, time-bounded release gate. target is None for a
             # virtual session -> emote_sync returns (True, []) and publishes nothing.
             released, acks = await loop.run_in_executor(
-                None, lambda: emote_sync(registry, target, cmd, GATE_TIMEOUT_S)
+                None, lambda: emote_sync(registry, emote_target, cmd, GATE_TIMEOUT_S)
             )
-            if obs is not None and target is not None:
-                obs.record_command(turn_id, target, cmd.cmd_id, sent, acks)
+            if obs is not None and emote_target is not None:
+                obs.record_command(turn_id, emote_target, cmd.cmd_id, sent, acks)
 
         # Release reply text + audio TOGETHER, once the gate is satisfied (or timed out).
         # `sources` carries the KB citations for a grounded turn (title = the KB doc
-        # key, e.g. "robert-facts.md"; url is null unless a real link exists). It is
+        # key, e.g. "moses-facts.md"; url is null unless a real link exists). It is
         # an empty list for a turn that used no KB, so the frontend can rely on the
         # field always being present. Does not disturb the existing reply fields.
         await ws.send_json({
@@ -159,9 +181,38 @@ async def _run_pipeline(ws: WebSocket, app: FastAPI, session_id: str, text: str)
             "turn_id": turn_id,
             "sources": result.get("sources", []),
         })
+        # SINGLE physical-command dispatch: every command the agent ran this turn
+        # (tricks, stop, future tools) is captured on result["commands"] and
+        # forwarded to the real robot HERE, in order — the WS-path agent runs on
+        # a non-publishing CaptureRegistry, so this loop is the one place chat
+        # motion reaches hardware. (Emote is separate: its release gate above.)
+        # Runs AFTER the reply frame (user sees the response first) but BEFORE
+        # TTS: the robot reacts promptly, and an early socket close can no longer
+        # cancel the dispatch mid-sequence. Short ack wait keeps voice latency low.
+        if target is not None:
+            for spec in result.get("commands") or []:
+                try:
+                    phys_cmd = Command(type=spec["type"], name=spec["name"],
+                                       params=spec.get("params") or {})
+                    acks = await loop.run_in_executor(
+                        None,
+                        lambda c=phys_cmd: registry.send_command(target, c, timeout_s=1.0),
+                    )
+                    if obs is not None:
+                        obs.record_command(turn_id, target, phys_cmd.cmd_id, time.monotonic(), acks)
+                except Exception as exc:  # noqa: BLE001 — one failed command must not kill the socket
+                    log.exception("physical command publish failed: %s", spec)
+                    if obs is not None:
+                        obs.record_error("motion", str(exc), turn_id)
+
         try:
             mp3 = await loop.run_in_executor(
-                None, lambda: synthesize_mp3(result["reply_text"], region=region)
+                None,
+                lambda: synthesize_mp3(
+                    result["reply_text"], region=region,
+                    el_client=getattr(app.state, "el_client", None),
+                    **_tts_kwargs(app.state.config),
+                ),
             )
             await ws.send_json({
                 "type": "audio",
@@ -172,6 +223,7 @@ async def _run_pipeline(ws: WebSocket, app: FastAPI, session_id: str, text: str)
             log.exception("tts failed")
             if obs is not None:
                 obs.record_error("tts", str(exc), turn_id)
+
     except Exception as exc:  # noqa: BLE001 — never kill the socket on one bad turn
         log.exception("chat pipeline failed")
         if obs is not None:
@@ -209,7 +261,15 @@ def register(app: FastAPI) -> None:
                                 await _safe_finish(transcribe)
                                 transcribe = None
                             declared_rate = int(data.get("sample_rate", 16000))
-                            transcribe = TranscribeSession(region=region, sample_rate=16000)
+                            cfg = app.state.config
+                            transcribe = make_transcribe_session(
+                                backend=getattr(cfg, "stt_backend", "transcribe"),
+                                region=region, sample_rate=16000,
+                                api_key=getattr(cfg, "elevenlabs_api_key", ""),
+                                model_id=getattr(
+                                    cfg, "elevenlabs_stt_model", "scribe_v2_realtime"
+                                ),
+                            )
                             await transcribe.start()
                         elif mtype == "stop_audio":
                             text = await transcribe.finish() if transcribe else ""

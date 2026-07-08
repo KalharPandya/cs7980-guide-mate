@@ -60,7 +60,10 @@ body:has(#chat:not([hidden])) { background: var(--bg); }
   display: flex;
   flex-direction: column;
 }
-.app:has(#chat:not([hidden])) { max-width: 560px; }
+/* Chat view: pin .app to a DEFINITE viewport height (not just min-height) so the
+   flex chain constrains and #messages scrolls internally, instead of the whole
+   page growing as bubbles accumulate. Landing keeps min-height (can scroll). */
+.app:has(#chat:not([hidden])) { max-width: 560px; height: 100vh; height: 100dvh; }
 /* Landing is a full-bleed page (full-width top nav); it must not sit inside the
    narrow app column. When the intake screen is showing, let .app span full width
    and center the hero content itself. */
@@ -399,7 +402,7 @@ label { font-weight: 700; font-size: 14.5px; }
 .btn-ico { flex-shrink: 0; }
 
 /* ============================================================================
-   Avatar stage — Robert, the Husky companion (one tool in Moses's kit).
+   Avatar stage: Moses, the Husky companion (the concierge's dog avatar).
    Emote classes fire in JS the instant reply audio starts (voice + motion land
    together). Do NOT rename emote-happy / emote-yes / emote-no.
    ========================================================================== */
@@ -1205,4 +1208,41 @@ a.source-chip:hover { color: var(--text); border-color: var(--muted); }
   /* Keep the new states legible without motion (state via a static cue). */
   .avatar.speaking::after { animation: none; opacity: 0.6; }
   .speaking-bars i, .thinking-dots i, .voice-hint-dot { animation: none !important; }
+}
+
+/* ============================================================================
+   MINIMAL CHAT SHELL (demo) — overrides for the stripped-down voice-chat UI.
+   The section nav / sidebar / wayfinding / arsenal / map were removed from the
+   DOM; .chat-col now hangs directly under #chat. These rules re-anchor the slim
+   header controls and tighten the single centered column. Everything above is
+   reused as-is (avatar/emote, speaking bars, bubbles, banner, intake hero).
+   ========================================================================== */
+
+/* Header: brand hugs the left, controls hug the right (the old .view-nav used
+   to do the pushing with flex:1). */
+.topbar .status { margin-left: auto; }
+
+/* Compact "New chat" header button (repurposed #new-session, out of the old
+   sidebar). Understated ghost pill so the brand + composer stay the focus. */
+.topbar-btn {
+  min-height: 36px; padding: 0 13px; gap: 7px;
+  font-size: 14px; font-weight: 800;
+  border-radius: var(--r-pill);
+}
+.topbar-btn svg { flex-shrink: 0; }
+.topbar-btn span { white-space: nowrap; }
+
+/* .chat-col is now a direct flex child of #chat — give it the full height and a
+   tighter, more focused reading width than the old 860px view column. */
+#chat:not([hidden]) .chat-col {
+  flex: 1; min-height: 0;
+  max-width: 720px;
+}
+
+/* On phones the app column is capped at 560px; drop the chat-col side padding a
+   touch so the composer pill isn't cramped. */
+@media (max-width: 480px) {
+  #chat:not([hidden]) .chat-col { padding: 0 16px; }
+  .topbar-btn span { display: none; }        /* icon-only on the narrowest screens */
+  .topbar-btn { padding: 0 10px; }
 }

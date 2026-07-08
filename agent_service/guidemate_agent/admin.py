@@ -409,6 +409,13 @@ def admin_robot_command(
                            "command; nothing published"),
             }],
         }
-    acks = request.app.state.registry.send_command(robot_id, cmd)
+    # dock/undock are Create 3 ROS actions that take 10-60 s; the default 5 s
+    # ack window returns mid-action with no terminal ack, so the panel reads a
+    # still-docking robot as "nothing happened". Give the slow actions a long
+    # window (matches the assignment lifecycle); quick commands keep the short one.
+    slow = cmd.type == "motion" and cmd.name in ("undock", "dock")
+    acks = request.app.state.registry.send_command(
+        robot_id, cmd, timeout_s=75.0 if slow else 5.0
+    )
     refused = bool(acks) and acks[-1].state == "failed"
     return {"refused": refused, "acks": [a.model_dump() for a in acks]}

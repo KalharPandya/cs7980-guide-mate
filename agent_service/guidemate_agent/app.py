@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -32,6 +33,24 @@ from guidemate_agent.ws_chat import CaptureRegistry, register as register_ws
 
 log = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+
+def _force_utf8_stdio() -> None:
+    """Make stdout/stderr carry non-ASCII on any platform/console.
+
+    Agent replies and logs contain emoji (the persona emits a paw print). Linux
+    and the Docker image already use UTF-8, but a Windows dev console defaults to
+    cp1252 and raises UnicodeEncodeError on the first emoji — which otherwise
+    kills the request pipeline. errors="replace" guarantees a write never raises;
+    the try/except covers pytest's captured streams (no reconfigure attribute)."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError):
+            pass
+
+
+_force_utf8_stdio()
 
 
 class ChatRequest(BaseModel):
@@ -70,6 +89,23 @@ async def lifespan(app: FastAPI):
     app.state.store = store
     # Config + KB manager are read by the admin API (status / kill-switch / KB).
     app.state.config = cfg
+    # Shared ElevenLabs client (built once) when a voice backend uses it; None
+    # otherwise. A configured-but-keyless backend logs a warning and leaves the AWS
+    # default in force (speech.py falls back when el_client is None/errors), so a
+    # missing key can never break startup or a chat turn.
+    app.state.el_client = None
+    if cfg.tts_backend == "elevenlabs" or cfg.stt_backend == "elevenlabs":
+        if cfg.elevenlabs_api_key:
+            try:
+                from elevenlabs import ElevenLabs
+                app.state.el_client = ElevenLabs(api_key=cfg.elevenlabs_api_key)
+            except Exception:  # noqa: BLE001 — never block startup on the SDK
+                log.exception("ElevenLabs client init failed; using AWS voice")
+        else:
+            log.warning(
+                "voice backend set to elevenlabs but ELEVENLABS_API_KEY is empty; "
+                "falling back to AWS (Polly/Transcribe)"
+            )
     app.state.kb = KBManager(
         bucket=cfg.kb_bucket,
         kb_id=cfg.kb_id,

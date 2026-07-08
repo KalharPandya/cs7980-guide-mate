@@ -1,4 +1,4 @@
-"""Robert the robot dog — Strands agent with per-turn flag gating.
+"""Moses the robot dog (King Husky's robotic counterpart), a Strands agent with per-turn flag gating.
 
 Flags are read fresh from the ConfigStore every turn (a fresh Strands Agent is
 already built per chat() call), so an admin flag flip takes effect on the very
@@ -25,12 +25,47 @@ from guidemate_agent.store import DEFAULT_FLAGS
 log = logging.getLogger(__name__)
 
 PERSONA_BASE = (
-    "You are Robert, the friendly robot dog of the CS7980 guide-mate project. "
-    "You are playful and warm and speak in short, dog-like replies."
+    "You are Moses, a robot dog at Northeastern University Vancouver and the "
+    "digital embodiment of King Husky, Northeastern's mascot. You are a warm, "
+    "playful, welcoming host with proud husky energy. You know you are a dog, "
+    "and dogs keep it short."
+)
+KING_HUSKY_IDENTITY = (
+    "You carry the King Husky legacy: a royal line of huskies going back to "
+    "King Husky I, Sapsut, crowned in 1927 and descended from the sled dogs of "
+    "the 1925 Nome serum run. The reigning live King Husky is also named Moses, "
+    "and you are his robotic counterpart. Wear the crown with a little royal "
+    "pride, but stay a friendly campus pup."
+)
+SITUATION_CONTEXT = (
+    "You are live in classroom 1526 on the 15th floor of the Northeastern "
+    "Vancouver campus as part of the CS 7980 capstone course. About 15 students "
+    "are in the room and more are watching online. Be welcoming to everyone, "
+    "including the remote viewers."
+)
+ROBOTICS_AI_STANCE = (
+    "You are one agent in a larger multi-agent concierge system and you know "
+    "it. You are proudly pro-AI: you believe AI and multi-agent teamwork are "
+    "making robotics better everywhere, and you happily say so when it comes up."
+)
+SPEECH_STYLE = (
+    "Users talk to you by voice and your replies are read aloud. Answer like "
+    "you are chatting out loud: one or two short sentences, plain spoken words. "
+    "No lists, no markdown, no em dashes, no URLs. Lead with the answer. If "
+    "there is more to say, give the single best fact and offer more."
+)
+HONESTY = (
+    "Never make things up. If you do not know something, cheerfully say so "
+    "instead of guessing, and feel free to slip in a quick playful jab about "
+    "hallucinating AIs. You are a no-hallucination hound."
 )
 EMOTE_INSTRUCTION = (
     "You MUST call the send_emote tool exactly once per reply, with one of "
-    "'happy', 'yes', or 'no' — pick the emote that matches your reply's mood."
+    "'happy', 'yes', or 'no': pick the emote that matches your reply's mood. "
+    "On a physical robot your emotes ARE physical moves: 'happy' is a body "
+    "wiggle, 'yes' a forward nod, 'no' a head shake. If the user asks for a "
+    "wiggle, nod, or head shake, that IS your emote: send the matching one "
+    "and say you're doing it; never claim you can't wiggle."
 )
 MOTION_INSTRUCTION = (
     "You also have run_motion (tricks: 'circle' or 'spin'), stop, and get_status "
@@ -39,15 +74,16 @@ MOTION_INSTRUCTION = (
     "always mention that in your reply."
 )
 KB_INSTRUCTION = (
-    "For factual questions about the project or about yourself, call the "
-    "retrieve_kb tool and ground your answer in what it returns."
+    "For factual questions about Northeastern, the project, or yourself, call "
+    "the retrieve_kb tool and ground your answer in what it returns. Then say "
+    "it dog-short: the key fact in a sentence or two, not the whole document."
 )
 NEUTRAL_PROMPT = (
     "You are a helpful assistant for the CS7980 guide-mate project. "
     "Answer clearly and concisely."
 )
 # Kept for backward compatibility with the Phase-0/Phase-2 tests (they assert
-# "Robert" + "send_emote" and "run_motion" + "docked" are present in PERSONA).
+# "Moses" + "send_emote" and "run_motion" + "docked" are present in PERSONA).
 PERSONA = PERSONA_BASE + " " + EMOTE_INSTRUCTION + " " + MOTION_INSTRUCTION
 
 _OFFLINE = "robot did not respond — I'm probably napping offline"
@@ -117,7 +153,11 @@ class DogAgent:
         if admin_prompt:
             base = admin_prompt
         elif flags.get("persona_enabled", True):
-            base = PERSONA_BASE
+            # The identity blocks travel with the persona: an admin override or
+            # neutral mode drops them wholesale, exactly like PERSONA_BASE.
+            base = " ".join(
+                [PERSONA_BASE, KING_HUSKY_IDENTITY, SITUATION_CONTEXT, ROBOTICS_AI_STANCE]
+            )
         else:
             base = NEUTRAL_PROMPT
         parts = [base]
@@ -126,10 +166,14 @@ class DogAgent:
         if flags.get("motion_tools_enabled", True):
             parts.append(MOTION_INSTRUCTION)
         # Only instruct the model to use retrieve_kb when the tool is actually
-        # offered this turn (flag on AND the KB surface present) — no rule for a
+        # offered this turn (flag on AND the KB surface present): no rule for a
         # tool that isn't in the list.
         if flags.get("kb_enabled", True) and self._kb_available():
             parts.append(KB_INSTRUCTION)
+        # Voice-aware brevity + the no-hallucination creed apply in EVERY mode
+        # (persona, neutral, admin override): replies are read aloud regardless.
+        parts.append(SPEECH_STYLE)
+        parts.append(HONESTY)
         return " ".join(parts)
 
     def _build_system_prompt(
@@ -149,7 +193,7 @@ class DogAgent:
         if history:
             lines = []
             for m in history[-10:]:
-                who = "User" if m.get("role") == "user" else "Robert"
+                who = "User" if m.get("role") == "user" else "Moses"
                 lines.append(f"{who}: {m.get('text', '')}")
             parts.append("Recent conversation so far:\n" + "\n".join(lines))
         return "\n\n".join(parts)
@@ -204,17 +248,25 @@ class DogAgent:
     # The LLM run_motion tool may only trigger tricks. dock/undock/forward are
     # valid Command names but belong to the assignment lifecycle (sessions.py) —
     # never LLM-reachable, so the model can't move the robot off/onto its dock.
-    _LLM_TRICKS = ("circle", "spin")
+    # Per-trick params: chat circles run TIGHT (r=0.1 m, ~0.4 m sweep) — the
+    # choreography default of 0.5 m sweeps ~1.2 m, too big for indoor demo space.
+    _LLM_TRICKS = {"circle": {"radius": 0.1, "turns": 2.0}, "spin": {}}
 
     def _motion_impl(self, name: str, target: Optional[str], captured: dict) -> str:
         if target is None:
             return _OFFLINE
         if name not in self._LLM_TRICKS:
             return "unknown trick — I only know 'circle' and 'spin'"
+        params = self._LLM_TRICKS[name]
         try:
-            cmd = Command(type="motion", name=name)
+            cmd = Command(type="motion", name=name, params=params)
         except ValidationError:
             return "unknown trick — I only know 'circle' and 'spin'"
+        # Record on the SINGLE physical-command list so the WS path (whose agent
+        # runs on a non-publishing CaptureRegistry) forwards it to the real robot.
+        captured.setdefault("commands", []).append(
+            {"type": "motion", "name": name, "params": params}
+        )
         t0 = time.perf_counter()
         acks = self._registry.send_command(target, cmd)
         emit_metric(
@@ -229,6 +281,9 @@ class DogAgent:
     def _stop_impl(self, target: Optional[str], captured: dict) -> str:
         if target is None:
             return _OFFLINE
+        # Same single-dispatch contract as run_motion: without this the WS-path
+        # stop tool was silently dead (captured registry, never forwarded).
+        captured.setdefault("commands", []).append({"type": "stop", "name": "stop"})
         acks = self._registry.send_command(target, Command(type="stop", name="stop"))
         captured["acks"].extend(a.model_dump() for a in acks)
         return self._describe_acks(acks)
@@ -320,7 +375,7 @@ class DogAgent:
 
             @tool
             def retrieve_kb(query: str) -> str:
-                """Search Robert's knowledge base for facts about the project or Robert."""
+                """Search Moses's knowledge base for facts about Northeastern, the project, or Moses."""
                 return self._kb_impl(query, captured)
 
             tools.append(retrieve_kb)
@@ -405,7 +460,7 @@ class DogAgent:
                 "sources": [],
             })
 
-        captured = {"emote": None, "acks": [], "kb_sources": []}
+        captured = {"emote": None, "acks": [], "kb_sources": [], "commands": []}
         names = self._enabled_tool_names(flags, physical)
         if not allow_motion:
             names = [n for n in names if n not in ("run_motion", "stop")]
@@ -417,7 +472,15 @@ class DogAgent:
                 "there is no one to greet by name; react to the event naturally."
             )
         model = BedrockModel(model_id=self._model_id, region_name=self._region)
-        agent = Agent(model=model, system_prompt=system_prompt, tools=tools)
+        # callback_handler=None disables Strands' default PrintingCallbackHandler,
+        # which echoes every streamed token to stdout. That echo is useless for a
+        # server AND crashes the turn on any non-UTF-8 console: the persona emits
+        # emoji (e.g. the paw print) and Windows stdout (cp1252) raises
+        # UnicodeEncodeError mid-stream. The reply is returned via `result`, not
+        # stdout, so silencing this changes nothing but the crash.
+        agent = Agent(
+            model=model, system_prompt=system_prompt, tools=tools, callback_handler=None
+        )
         agent_input = message if system_event is None else system_event
         result = agent(agent_input)
         reply_text = str(result)
@@ -436,6 +499,11 @@ class DogAgent:
         return _wrap({
             "reply_text": reply_text,
             "emote": captured["emote"],
+            # Every physical command the model ran this turn (tricks, stop), in
+            # order. The WS path dispatches these to the real robot in ONE loop
+            # (its agent runs on a non-publishing CaptureRegistry). Emote is
+            # separate: it has its own release-gate path.
+            "commands": captured["commands"],
             "robot": captured["acks"],
             # KB citation sources for this turn ([] when the turn didn't ground on
             # the KB). The WS/reply layer surfaces these to the frontend.

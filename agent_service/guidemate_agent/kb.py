@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 _AWS_ERRORS = (ClientError, BotoCoreError)
 
-# Default KB id (the POC's Bedrock knowledge base, seeded with the Robert doc).
+# Default KB id (the POC's Bedrock knowledge base, seeded with the Moses docs).
 # Overridable via the GUIDEMATE_KB_ID env var or an explicit `kb_id` arg.
 _DEFAULT_KB_ID = "A1NIQYZ0KQ"
 _DEFAULT_REGION = "us-west-2"
@@ -40,7 +40,7 @@ _KB_EMPTY = "no relevant knowledge found"
 
 def _source_title(uri: str) -> str:
     """Human-facing doc title from an S3 source URI: its basename (e.g.
-    ``s3://bucket/robert-facts.md`` -> ``robert-facts.md``). Falls back to the
+    ``s3://bucket/moses-facts.md`` -> ``moses-facts.md``). Falls back to the
     raw URI when it has no path segment."""
     if not uri:
         return "unknown-source"

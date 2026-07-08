@@ -85,7 +85,7 @@ def test_text_message_virtual_session_returns_reply_and_audio(monkeypatch):
     app = _app(monkeypatch, resolver=lambda sid: None)  # virtual
     with TestClient(app) as client:
         with client.websocket_connect("/ws/chat/sess-1") as ws:
-            ws.send_json({"type": "text", "message": "hi robert"})
+            ws.send_json({"type": "text", "message": "hi moses"})
             reply = ws.receive_json()
             audio = ws.receive_json()
     assert reply["type"] == "reply"
@@ -112,6 +112,50 @@ def test_text_message_physical_session_publishes_and_records(monkeypatch):
     assert cmds and cmds[0]["robot_id"] == "turtlebot468"
     lat = app.state.observability.snapshot()["latencies"]
     assert lat and lat[0]["turn_id"]
+
+
+class _MotionAgent:
+    """WS-path agent stand-in that ran a trick + a stop, plus the mandatory emote."""
+
+    def __init__(self):
+        self.seen = []
+
+    def chat(self, message, session_id=None, robot_id=None):
+        self.seen.append({"message": message, "session_id": session_id})
+        return {"reply_text": "spinning!", "emote": "happy",
+                "commands": [{"type": "motion", "name": "spin"},
+                             {"type": "stop", "name": "stop"}],
+                "robot": [], "turn_id": "turn-m", "session_id": session_id}
+
+
+def test_physical_session_publishes_all_captured_commands(monkeypatch):
+    # Every physical command the agent ran (trick, stop, ...) must reach the real
+    # robot through the SINGLE dispatch loop — the CaptureRegistry-backed agent
+    # never publishes; the WS layer forwards, like it does the emote.
+    app = _app(monkeypatch, resolver=lambda sid: "turtlebot468")  # physical
+    app.state.ws_agent = _MotionAgent()
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/chat/sess-motion") as ws:
+            ws.send_json({"type": "text", "message": "do a spin then stop"})
+            ws.receive_json()  # reply
+            ws.receive_json()  # audio
+    names = [n for (_r, n) in app.state.registry.published]
+    assert "spin" in names           # trick forwarded
+    assert "stop" in names           # stop tool forwarded (was silently dead)
+    assert names.index("spin") < names.index("stop")  # captured order preserved
+    # The turn ran a motion trick -> the emote animates the AVATAR only; the
+    # robot must not wiggle before/over the requested trick.
+    assert "happy" not in names
+
+
+def test_virtual_session_never_publishes_motion(monkeypatch):
+    app = _app(monkeypatch, resolver=lambda sid: None)  # virtual/unbound
+    app.state.ws_agent = _MotionAgent()
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/chat/sess-motion-v") as ws:
+            ws.send_json({"type": "text", "message": "do a spin"})
+            ws.receive_json(); ws.receive_json()
+    assert app.state.registry.published == []  # no robot bound -> nothing published
 
 
 def test_blank_text_message_is_ignored(monkeypatch):
@@ -225,10 +269,11 @@ class _FakeStrands:
 
     last = None
 
-    def __init__(self, model=None, system_prompt=None, tools=None):
+    def __init__(self, model=None, system_prompt=None, tools=None, callback_handler=None):
         self.system_prompt = system_prompt
         self.tools = list(tools or [])
         self.tool_names = [t.tool_name for t in self.tools]
+        self.callback_handler = callback_handler
         type(self).last = self
 
     def __call__(self, message):
@@ -305,21 +350,22 @@ class _FakeStrandsKB:
 
     last = None
 
-    def __init__(self, model=None, system_prompt=None, tools=None):
+    def __init__(self, model=None, system_prompt=None, tools=None, callback_handler=None):
         self.system_prompt = system_prompt
         self.tools = list(tools or [])
         self.tool_names = [t.tool_name for t in self.tools]
+        self.callback_handler = callback_handler
         type(self).last = self
 
     def __call__(self, message):
         self.message = message
         for t in self.tools:
             if t.tool_name == "retrieve_kb":
-                t("who is robert")
+                t("who is moses")
         for t in self.tools:
             if t.tool_name == "send_emote":
                 t("happy")
-        return "woof! robert is a turtlebot 4"
+        return "woof! moses is a turtlebot 4"
 
 
 def test_ws_kb_grounded_reply_frame_includes_sources(monkeypatch, ddb):
@@ -331,8 +377,8 @@ def test_ws_kb_grounded_reply_frame_includes_sources(monkeypatch, ddb):
         kb,
         "retrieve_passages_with_sources",
         lambda *a, **k: (
-            "[s3://guidemate-kb-docs/robert-facts.md] robert is a turtlebot 4",
-            [{"title": "robert-facts.md", "url": None}],
+            "[s3://guidemate-kb-docs/moses-facts.md] moses is a turtlebot 4",
+            [{"title": "moses-facts.md", "url": None}],
         ),
     )
     with _fake_client(monkeypatch) as client:
@@ -340,11 +386,11 @@ def test_ws_kb_grounded_reply_frame_includes_sources(monkeypatch, ddb):
             "/api/session", json={"name": "Ada", "comfortable": True}
         ).json()["session_id"]
         with client.websocket_connect(f"/ws/chat/{sid}") as ws:
-            ws.send_json({"type": "text", "message": "who is robert?"})
+            ws.send_json({"type": "text", "message": "who is moses?"})
             reply = ws.receive_json()
             ws.receive_json()  # audio
     assert reply["type"] == "reply"
-    assert reply["sources"] == [{"title": "robert-facts.md", "url": None}]
+    assert reply["sources"] == [{"title": "moses-facts.md", "url": None}]
     # existing reply-frame fields + emote-sync are untouched
     assert reply["emote"] == "happy"
     assert reply["gate_released"] is True
