@@ -41,8 +41,19 @@ def forward_nudge() -> Command:
     )
 
 
-def assign_actions(send: SendFn, robot_id: str, timeout_s: float) -> List[ActionResult]:
-    """Undock, then a forward nudge iff the undock reached a `done` terminal ack."""
+def assign_actions(
+    send: SendFn, robot_id: str, timeout_s: float, docked=None
+) -> List[ActionResult]:
+    """Undock, then a forward nudge iff the undock reached a `done` terminal ack.
+
+    ``docked`` is the robot's live dock state when the caller knows it:
+    **False** (already undocked) makes assignment a pure handover — no undock
+    (the Create 3 Undock goal HANGS on an undocked robot: result timeout after
+    the full window), no nudge. True/None (docked or unknown) attempts the
+    normal sequence; the bridge's dock-guard covers the unknown case.
+    """
+    if docked is False:
+        return []
     results: List[ActionResult] = []
     undock_acks = send(robot_id, Command(type="motion", name="undock"), timeout_s)
     results.append(("undock", undock_acks))
