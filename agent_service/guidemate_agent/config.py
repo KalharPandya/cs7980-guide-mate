@@ -27,6 +27,12 @@ class Config:
     kb_bucket: str = "guidemate-kb-docs-852373397000"
     kb_data_source: str = "OT8JLH57TE"
     thing_names: dict = field(default_factory=dict)
+    tts_backend: str = "polly"
+    stt_backend: str = "transcribe"
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = ""
+    elevenlabs_tts_model: str = "eleven_flash_v2_5"
+    elevenlabs_stt_model: str = "scribe_v2_realtime"
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -48,5 +54,15 @@ class Config:
             kb_data_source=os.environ.get("GUIDEMATE_KB_DATA_SOURCE", "OT8JLH57TE"),
             thing_names=_parse_things(
                 os.environ.get("GUIDEMATE_THING_NAMES", "turtlebot468=Turtlebot-468")
+            ),
+            tts_backend=os.environ.get("GUIDEMATE_TTS_BACKEND", "polly"),
+            stt_backend=os.environ.get("GUIDEMATE_STT_BACKEND", "transcribe"),
+            elevenlabs_api_key=os.environ.get("ELEVENLABS_API_KEY", ""),
+            elevenlabs_voice_id=os.environ.get("ELEVENLABS_VOICE_ID", ""),
+            elevenlabs_tts_model=os.environ.get(
+                "GUIDEMATE_ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5"
+            ),
+            elevenlabs_stt_model=os.environ.get(
+                "GUIDEMATE_ELEVENLABS_STT_MODEL", "scribe_v2_realtime"
             ),
         )
