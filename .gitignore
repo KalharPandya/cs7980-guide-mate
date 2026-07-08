@@ -24,3 +24,11 @@ start.sh
 
 # agent SSH keys - never commit
 ssh_keys/
+
+# Python dev venv + test artifacts (dog agent POC)
+.venv/
+**/__pycache__/
+**/artifacts/
+
+# Claude Code agent worktrees (transient, each is its own git repo)
+.claude/worktrees/

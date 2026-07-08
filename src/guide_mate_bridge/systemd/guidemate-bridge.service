@@ -1,0 +1,37 @@
+[Unit]
+Description=GuideMate dog-agent bridge (dry-run, additive)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/cs7980-guide-mate
+Environment=GUIDEMATE_ROBOT_ID=@ROBOT_ID@
+Environment=GUIDEMATE_THING_NAME=@THING_NAME@
+Environment=GUIDEMATE_DRY_RUN=1
+# HARD SAFETY BAN: this unit MUST NEVER set GUIDEMATE_ENABLE_MOTION. Robot 468 is the
+# only thing this installer targets, and the bridge's assert_motion_identity_safe()
+# refuses that env on turtlebot468 (SystemExit) — real cmd_vel/dock sinks are sim/436
+# only. Do not add a GUIDEMATE_ENABLE_MOTION line here. (Grep-guarded by a unit test.)
+Environment=GUIDEMATE_ROS=@ROS_ENABLED@
+# Device Shadow reconcile is opt-in and MUST only run with a cert authorized for
+# this thing's $aws/things/<thing>/shadow/* topics (the robot cert is). An
+# unauthorized shadow subscribe makes AWS IoT drop the whole connection and poisons
+# the command path — so it stays OFF anywhere the cert lacks shadow perms (dev cert).
+Environment=GUIDEMATE_SHADOW=1
+Environment=GUIDEMATE_IOT_ENDPOINT=@IOT_ENDPOINT@
+Environment=GUIDEMATE_CERT=@CERT@
+Environment=GUIDEMATE_KEY=@KEY@
+Environment=GUIDEMATE_CA=@CA@
+# The telemetry rclpy node needs the robot's ROS env (Humble + turtlebot4 Discovery
+# Server config). ROS_SUPER_CLIENT=True so the node discovers the boot-service graph
+# (/etc/turtlebot4/setup.bash sets it False for non-tty shells).
+ExecStart=/bin/bash -c 'source /opt/ros/humble/setup.bash && source /etc/turtlebot4/setup.bash && export ROS_SUPER_CLIENT=True && exec /home/ubuntu/guidemate-venv/bin/python -m guide_mate_bridge.bridge'
+Restart=on-failure
+RestartSec=5
+# Give the graceful SIGTERM path (offline event + final reported + disconnect) time.
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

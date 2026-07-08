@@ -155,6 +155,166 @@ deactivate the cert (`aws iot update-certificate --new-status INACTIVE`).
    Query: `aws bedrock-agent-runtime retrieve --knowledge-base-id A1NIQYZ0KQ --retrieval-query '{"text":"…"}'`.
 4. Pin the agent service to `us.anthropic.claude-sonnet-4-6` (still applies).
 
+## Dog-agent POC dev resources (created 2026-07-05, Phase 0-1)
+| Resource | Id / name | Notes |
+|---|---|---|
+| IoT policy `guidemate-dev-policy` | attached to dev cert `aec82bf4…` | Connect `client/guidemate-*`; Pub/Receive `guidemate/devtest/*`; Receive `guidemate/+/status`; Subscribe `guidemate/devtest/*` + `guidemate/+/status`. Additive; robot policy untouched. Tag `project=guidemate-poc`. ARN `arn:aws:iot:us-west-2:852373397000:policy/guidemate-dev-policy`. |
+| IAM role `guidemate-iot-logging-role` | trusts `iot.amazonaws.com` | `AWSIoTLogging` managed policy (`arn:aws:iam::aws:policy/service-role/AWSIoTLogging` — note: not `AWSIotLoggingRole`, which does not exist); used by IoT v2 logging (default level WARN). Tag `project=guidemate-poc`. Role ARN `arn:aws:iam::852373397000:role/guidemate-iot-logging-role`. No prior logging role existed. |
+| IoT v2 logging | default level `WARN` | Denials land in CloudWatch `AWSIotLogsV2`. |
+| DynamoDB tables | `guidemate-sessions`, `guidemate-messages`, `guidemate-requests`, `guidemate-config` | on-demand (`PAY_PER_REQUEST`), tag `project=guidemate-poc`, region us-west-2. Created by `scripts/create_dynamo_tables.py` (idempotent). Phase 3 uses only `guidemate-config` (`pk="flags"` feature flags + `pk="prompt"` admin-set system prompt); the other three are Phase 4 (sessions / chat history / companion requests). |
+| S3 bucket `guidemate-maps-852373397000` | us-west-2, private (public access fully blocked), tag `project=guidemate-poc` | Admin Maps tab storage: `maps/<robot_id>/latest.png` + `maps/<robot_id>/meta.json` `{captured_ts, source}`. Populated by `scripts/upload_map_from_pi.sh` (operator-run from the Linux box); served through the service via boto3 (never public). Conversion/key helpers live in `scripts/maps.py` (standalone, not agent_service — Task 5 owns wiring the admin endpoint). Verified 2026-07-05: bucket created + tagged + public-access-blocked; real map found on the Pi (`/home/ubuntu/maps/guide_mate_map.pgm`, newer than `~/my_map.pgm`), converted and uploaded end-to-end to `maps/turtlebot468/{latest.png,meta.json}` (confirmed via `list-objects-v2`). |
+
+**Real IoT Core round-trip verified 2026-07-05:** the gated integration test
+(`agent_service/tests/integration/test_roundtrip.py`, `GUIDEMATE_INTEGRATION=1`) runs the
+real bridge subprocess (dev cert, `robot_id=devtest`, dry-run) against live IoT Core and
+observes the full `received→running→done` (`simulated=True`) round-trip in ~0.16–0.27 s.
+**Gotcha:** AWS IoT QoS1 does **not** preserve order across separate publishes — the three
+acks can arrive out of order (observed `received → done → running`), so consumers that stop
+collecting on the terminal `done` (e.g. `RobotRegistry.send_command`) may return a partial
+list. The test asserts on the complete captured set, not on arrival order.
+
+## Pi bridge service — DEPLOYED (2026-07-05, Phase 1)
+The dog-agent bridge now runs on robot 468's Pi as a systemd service, **dry-run, additive**.
+Installed from the Linux box by `src/guide_mate_bridge/scripts/install_bridge_on_pi.sh`
+(SSH-driven, idempotent; `git pull` on the Pi is the transport, renders the unit from
+`src/guide_mate_bridge/systemd/guidemate-bridge.service`).
+| Item | Value |
+|---|---|
+| Unit | `/etc/systemd/system/guidemate-bridge.service` — `enable --now`, `active (running)` |
+| Identity | robot cert `~/cs7980-guide-mate/Turtlebot-468.{cert.pem,private.key}`, client id `guidemate-bridge-turtlebot468`, `GUIDEMATE_ROBOT_ID=turtlebot468` |
+| Safety | `Environment=GUIDEMATE_DRY_RUN=1` in the unit; the bridge **refuses to start** without a truthy dry-run. No motion path exists. |
+| Endpoint / CA | `GUIDEMATE_IOT_ENDPOINT` = data-ATS endpoint (rendered at install); `GUIDEMATE_CA=/home/ubuntu/certs/AmazonRootCA1.pem` (fetched by the installer) |
+| venv | `~/guidemate-venv` (editable `guidemate_msgs` + `guide_mate_bridge`). **Gotcha:** this Pi image has **no `python3-venv`/`ensurepip`** — the installer creates the venv `--without-pip --system-site-packages` then bootstraps pip in-venv (no apt needed; `awscrt`/`awsiotsdk` come from the user's `~/.local`). |
+| Logs | `journalctl -u guidemate-bridge` — startup line `{"msg": "bridge connected", "robot_id": "turtlebot468"}`; online event published to `guidemate/turtlebot468/status` on connect. |
+
+**Phase 1 slice check PASSED (`scripts/slice_check.sh`, checklist items 1 & 3):** local
+uvicorn + `POST /api/chat "do a happy wiggle"` → Bedrock (`us.anthropic.claude-sonnet-4-6`)
+→ MQTT → Pi bridge. Response `emote="happy"`, acks `received (simulated:false)` +
+`done (simulated:true)`; the Pi journal showed the six computed `DRY-RUN twist vx=0.050
+wz=±1.200 dur=0.40s` lines and **published no twists**. Robot 468 untouched beyond the
+additive unit; shadow not modified. Manage only via `sudo systemctl … guidemate-bridge`
+(never `pkill`).
+
+## Phase 2 "robot truth" verification (2026-07-05)
+No new AWS resources (shadow + robot policy already existed). Phase-2 bridge
+(`bridge_version 0.2.0`) redeployed to the Pi via `scripts/install_bridge_on_pi.sh`
+(now renders `GUIDEMATE_THING_NAME`, `GUIDEMATE_ROS`, and a ROS-sourcing `ExecStart`
+wrapper: `source /opt/ros/humble/setup.bash && source /etc/turtlebot4/setup.bash &&
+export ROS_SUPER_CLIENT=True`). Unit still carries `GUIDEMATE_DRY_RUN=1` (verified in the
+rendered unit before and after every restart); robot 468 docked and motionless throughout.
+
+| Check | Result |
+|---|---|
+| Heartbeats on `guidemate/turtlebot468/status` | every 30 s: `uptime_s` + `gates`, **battery/docked = null** (see telemetry row) |
+| Telemetry rclpy layer | node comes **up** (`"telemetry ROS node up", namespace=/turtlebot468, battery_topic=battery_state, dock_topic=dock_status`) but **battery/docked = null (Discovery-Server fallback)**. Topics `/turtlebot468/battery_state` + `/turtlebot468/dock_status` **exist** in the boot graph (visible to an ad-hoc `ROS_SUPER_CLIENT=True` `ros2 topic list`, 29 topics) but `ros2 topic echo` returns **0 frames** for them — the documented ephemeral-super-client "lists but can't receive" limitation. An `/etc/systemd/system/guidemate-bridge.service.d/10-abs-topics.conf` drop-in forcing absolute `GUIDEMATE_BATTERY_TOPIC=/turtlebot468/battery_state` etc. changed **nothing** (relative names already resolve identically under the node namespace); the drop-in was **removed** so the Pi config matches the committed unit. Accepted degradation — heartbeats still prove liveness/uptime/gates. |
+| Shadow drill (`desired.max_speed` 0.15→0.10→0.15) | reported followed **both ways within ~6 s** (delta handler: `"shadow delta applied: ['max_speed']"`); `motion_enabled` untouched (`false` in every `get-thing-shadow`) |
+| Restart persistence | `systemctl restart` → `"shutting down gracefully"` logged (graceful SIGTERM path) → reported re-converged to `desired` on boot (`reported.max_speed=0.10`, fresh `uptime_s=0.6`) |
+| Refusal evidence (item 4, dry-run held) | motion ack `gates={docked: null, motion_enabled: false, dry_run: true}`, `simulated=true`; integration test `test_motion_command_dry_run_ack_carries_gate_state` **PASS** |
+| Robot-cert shadow publishes | robot cert `Turtlebot-468` **can** publish `reported` (delta reconcile + reported both work) — unlike the dev cert |
+| Integration tests (this box, `GUIDEMATE_INTEGRATION=1`) | `test_robot_truth.py` **2 passed** (heartbeat ≤35 s + refusal gates). Full default suite **134 passed, 6 skipped** |
+
+**Checklist status:** item 2 (shadow) ✅, item 4 (refusals, dry-run-held ack gates) ✅,
+item 5 (telemetry liveness/gates ✅; battery/dock null-fallback documented).
+
+**Known issue (not a Phase-2 regression, dev-cert only):** `test_roundtrip.py` (local
+dev-cert bridge subprocess) **FAILS** — `[]` acks. Root cause in shared bridge
+`shadow.py`: the shadow-denial guard assumes `client.subscribe()` **raises** on a
+policy-denied SUBACK, but awscrt reports the denial via SUBACK failure-QoS **without
+raising**, so `_subscribed=True` and the bridge publishes `$aws/things/Turtlebot-468/
+shadow/get` → **unauthorized publish → AWS IoT drops the whole connection** → command
+delivery flaps → the live test command lands in a disconnect window. The dev-cert bridge
+never logs `"bridge connected"` (blocks/flaps in `shadow.start()`), yet still executes a
+queued command once (proving the cmd subscription). The **robot cert is unaffected**
+(it has shadow permissions). Fix belongs to the bridge/shadow owner: detect denied
+SUBACK via the returned QoS (`0x80`) rather than relying on an exception.
+
 ## Work branch
 All POC work happens on branch **`kalhar/dog-agent-poc`** (pushed to origin). Warm-up
 instructions for a new machine/session: [linux-agent-warmup.md](linux-agent-warmup.md).
+
+## Phase 7 — production (EC2 + observability)
+Launched by `agent_service/deploy/launch_ec2.sh` (idempotent-ish, no console clicking):
+| Resource | Name / id | Notes |
+|---|---|---|
+| EC2 instance | tag `Name=guidemate-poc-ec2`, t3.large, AL2023 | instance profile `guidemate-agent-profile` (zero-cred); user-data brings up the prod Compose stack |
+| Security group | `guidemate-poc-sg` | ingress 80/443 from 0.0.0.0/0, 22 from the launcher IP/32 |
+| Elastic IP | tag `Name=guidemate-poc-eip` | reused across relaunches; domain `<eip-dashes>.nip.io` |
+| Admin password | generated **on the instance** by `user_data.sh` (`openssl rand -hex 16`) | stored in **SSM Parameter Store** `/guidemate/admin-password` (SecureString) **and** `/etc/guidemate.env` (mode 600) on the instance. **Never** passed through EC2 user-data (which is API-readable via `DescribeInstanceAttribute` for the instance lifetime). |
+| Manage | `aws ssm start-session --target <iid>` | SSM Session Manager — no SSH key on the instance |
+
+**Retrieve the admin password** (after bootstrap finishes, ~2-3 min):
+```bash
+aws ssm get-parameter --name /guidemate/admin-password \
+  --with-decryption --query Parameter.Value --output text --region us-west-2
+```
+The `guidemate-agent-profile` instance role has `ssm:PutParameter` so the instance
+self-publishes it at first boot. The bootstrap log (`/var/log/guidemate-bootstrap.log`)
+is `chmod 640` and the bootstrap runs **without** `set -x`, so the secret never lands in a
+world-readable log.
+
+**`launch_ec2.sh --plan`** does a dry run: the read-only discovery/idempotency lookups
+(describe instances/SG/addresses, SSM AMI param, launcher-IP) run for real, but the
+mutating calls (create-SG, allocate/associate EIP, run-instances) are only printed. No
+password is generated or handled by `launch_ec2.sh` at all.
+Redeploy without SSH via `agent_service/deploy/redeploy.sh` (one SSM `send-command`);
+tear down via `agent_service/deploy/teardown.sh` — **requires `--yes`** (a bare invocation
+prints what would be deleted and exits 1); pass `--keep-eip` to retain the address.
+
+**⚠️ No default VPC in us-west-2 (verified 2026-07-05):** the account has only one
+non-default VPC (`vpc-0657dd5b506f043a9`); `describe-vpcs Name=isDefault,Values=true`
+returns empty. The launch script (and `run-instances`) will need a `--vpc-id` +
+`--subnet-id` for that VPC before the real Task-7 launch — resolve at launch time.
+
+### Observability (scripts/setup_observability.sh) — created & verified 2026-07-06
+Idempotent (re-runnable), tags what it creates where the API supports tags, no console
+clicking. `scripts/setup_observability.sh --clean` deletes everything it created.
+| Resource | Name | Notes |
+|---|---|---|
+| Log groups | `/guidemate/agent-service`, `/guidemate/caddy`, `/guidemate/bridge`, `/guidemate/bedrock` | 30-day retention; EMF auto-extracts metrics in namespace `GuideMate` |
+| Bedrock logging | model-invocation logging → `/guidemate/bedrock` | role `guidemate-bedrock-logging-role` (trusts bedrock.amazonaws.com; inline policy `guidemate-bedrock-logging`, tag `project=guidemate-poc`) |
+| Metric filters | `guidemate-service-errors` (`$.level=ERROR`→`AgentServiceErrors`), `guidemate-bedrock-throttle` (`ThrottlingException`→`BedrockThrottles`) | on `/guidemate/agent-service`; both `defaultValue=0` |
+| Dashboard | `guidemate-poc` | turn latency, ack RTT, tokens, errors/throttles, PiHeartbeat presence, EC2 CPU |
+| Alarms (no SNS) | `guidemate-poc-service-errors`, `-bedrock-throttle`, `-bridge-offline` (PiHeartbeat SampleCount<1 for 15 min = breaching), `-ec2-cpu` (>85% avg 10 min) | state visible in console/dashboard; `-ec2-cpu` is created **only when a running `guidemate-poc-ec2` instance exists** — re-run the script after `launch_ec2.sh` to add it |
+| Pi log-ship | `guidemate-logship.timer` (5 min) | ships the `guidemate-bridge` journal (via `journalctl --cursor-file`, only new lines) + one `PiHeartbeat` EMF event to `/guidemate/bridge` with the Pi's `credential_process` creds; unit `guidemate-logship.service` (oneshot); installed additively by `src/guide_mate_bridge/scripts/install_bridge_on_pi.sh` (extends the bridge installer, reuses `~/guidemate-venv`) |
+
+**Verified 2026-07-06** (`list-dashboards`→`guidemate-poc`; `describe-alarms guidemate-poc*`→
+service-errors/bedrock-throttle/bridge-offline present, ec2-cpu pending instance;
+`get-model-invocation-logging-configuration`→cloudWatchConfig on `/guidemate/bedrock`;
+4 log groups @ 30-day retention; 2 metric filters on agent-service). Alarms sit
+INSUFFICIENT_DATA until traffic (service-errors is OK because its filter has
+`defaultValue=0`) — expected pre-launch.
+
+## Production deployment (LIVE) — verified 2026-07-06 (Phase 7 Task 7)
+- **URL:** https://echo.kalhar.ca (real Let's Encrypt cert via Caddy; DNS A record → the EIP)
+- **Instance:** `i-0e1301c47f73c771c`, t3.large, us-west-2, account `852373397000`, instance profile `guidemate-agent-profile` (Bedrock/DynamoDB/IoT all reachable with zero static creds)
+- **Elastic IP:** `52.32.24.152` (tag `Name=guidemate-poc-eip`)
+- **Admin password:** SSM Parameter Store `/guidemate/admin-password` (SecureString) — retrieve with:
+  ```bash
+  aws ssm get-parameter --name /guidemate/admin-password \
+    --with-decryption --query Parameter.Value --output text --region us-west-2
+  ```
+  (never print/commit the value)
+- **Redeploy:** `agent_service/deploy/redeploy.sh` — one SSM `send-command` that pulls the branch and rebuilds the prod Compose stack on the instance; no SSH key needed.
+- **Teardown:** `agent_service/deploy/teardown.sh --yes` (terminates the instance + releases the EIP; pass `--keep-eip` to retain the address). A bare invocation (no `--yes`) is a dry run.
+
+**Live verification results (2026-07-06):**
+| Check | Result |
+|---|---|
+| `GET /healthz` | `200 {"ok":true}` |
+| `GET /readyz` | `200 {"ready":true,"checks":{"mqtt":true,"dynamo":true}}` — both MQTT and DynamoDB up |
+| Admin login (`POST /api/admin/login` with SSM password) | `200 {"ok":true}`, `Set-Cookie: guidemate_admin` (HttpOnly, Secure) |
+| `GET /api/admin/flags` (with session cookie) | `200` — all flags returned (`dog_muted:false`, `emotes_enabled:true`, `motion_tools_enabled:true`, `persona_enabled:true`, `kb_enabled:true`) |
+| `POST /api/chat` (real Bedrock turn, "say hi in one word") | `200` in ~3.1s; `reply_text` present, `emote:"happy"`, robot round-trip acks all `simulated:true` (dry-run, motion disabled) |
+| `scripts/prod_slice_check.sh` against `BASE_URL=https://echo.kalhar.ca` | `OK: chat round-trip verified (emote + simulated ack)` |
+| Playwright e2e suite (`agent_service/tests/e2e`, marker `e2e`, gated by `GUIDEMATE_E2E=1`) | Harness boots its own uvicorn subprocess (`localhost`) and has no `BASE_URL` override, so it cannot target prod directly — ran the equivalent checks above via curl against prod instead; re-verified the suite itself green locally: `GUIDEMATE_E2E=1 .venv/bin/python -m pytest agent_service/tests/e2e -q` → 8 passed |
+
+No test session/request rows were left behind: the chat calls above used the legacy
+session-less `/api/chat` path (no `session_id`), so nothing was written to the
+`guidemate-sessions`/`guidemate-messages` DynamoDB tables.
+
+## Sim identity (Turtlebot-Sim) — added 2026-07-05 (Phase 8)
+- **Thing:** `Turtlebot-Sim` (`thingId 28f0f996-6acf-4239-b180-9babae1b947a`, ARN `arn:aws:iot:us-west-2:852373397000:thing/Turtlebot-Sim`), us-west-2. Separate from `Turtlebot-468` (the real robot is never touched by any Phase 8 artifact).
+- **Cert/key (local, NOT committed):** `~/.aws/guidemate-sim.cert.pem` + `~/.aws/guidemate-sim.key.pem` (chmod 600). Cert ARN `arn:aws:iot:us-west-2:852373397000:cert/e50b6fc6e1be8d2a29ec95166abcb53b080729b3a595e79083c7df23a3eaaefc` — active, attached to the thing and to `guidemate-sim-policy`. Exactly one principal on the thing (idempotent re-run mints no second cert).
+- **Policy:** `guidemate-sim-policy` (tag `project=guidemate-poc`) — connect as client `guidemate-*`; publish/subscribe/receive on `guidemate/turtlebotsim/*` and `$aws/things/Turtlebot-Sim/shadow/*` only.
+- **Classic shadow:** default-deny `{motion_enabled:false, max_speed:0.15, dry_run:true}`, same as the real robot. Flipped `true` **only** during a sim motion run, then reset to locked.
+- **Provisioning:** `scripts/create_sim_identity.sh` (idempotent — re-run skips existing thing/policy and reuses the local cert). **Note:** AWS IoT does not support tagging individual `thing` resources (only thing-groups/types/billing-groups), so the thing itself carries no tag — the script's `tag-resource || true` absorbs the `InvalidRequestException`; the **policy** carries `project=guidemate-poc`. The `sts get-caller-identity` account lookup in the ARN resolves to `852373397000`.

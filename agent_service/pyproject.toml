@@ -1,0 +1,39 @@
+[project]
+name = "guidemate-agent"
+version = "0.1.0"
+description = "Cloud-side dog agent (FastAPI + Strands + multi-robot MQTT registry)."
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "strands-agents",
+    "awsiotsdk",
+    "boto3",
+    # amazon-transcribe is deliberately NOT listed here: its metadata hard-pins
+    # awscrt~=0.26.1, which conflicts with awsiotsdk's awscrt 0.34.x. A clean
+    # resolve either fails or drags the whole stack down to an ancient awsiotsdk
+    # 1.16 / awscrt 0.16. Its ONLY dependency is awscrt, and it runs fine on
+    # 0.34.1 (verified by the live Polly->Transcribe loopback). So it is installed
+    # with --no-deps after this package — see agent_service/Dockerfile and README.
+    "itsdangerous",
+    "python-multipart",
+    "apscheduler",
+    "guidemate-msgs",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "moto[dynamodb]>=5",
+    "httpx",
+    "playwright",
+    "pytest-playwright",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["guidemate_agent*"]

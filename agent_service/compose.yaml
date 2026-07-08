@@ -1,0 +1,31 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: agent_service/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8000"
+    environment:
+      - GUIDEMATE_ROBOTS=${GUIDEMATE_ROBOTS:-turtlebot468}
+      - GUIDEMATE_IOT_ENDPOINT=${GUIDEMATE_IOT_ENDPOINT:-}
+      - GUIDEMATE_MODEL_ID=${GUIDEMATE_MODEL_ID:-us.anthropic.claude-sonnet-4-6}
+      - AWS_REGION=${AWS_REGION:-us-west-2}
+      - GUIDEMATE_ADMIN_PASSWORD=${GUIDEMATE_ADMIN_PASSWORD:-}
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - GUIDEMATE_DOMAIN=${GUIDEMATE_DOMAIN:-http://localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+
+volumes:
+  caddy_data:

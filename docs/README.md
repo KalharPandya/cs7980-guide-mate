@@ -28,6 +28,12 @@ Working documentation for the cs7980 TurtleBot 4 project.
 - [IoT Core ↔ other AWS services + EC2 access](aws-iot/service-integration.md) — the Rules Engine, service-to-device, EventBridge, and the three ways EC2 can reach IoT Core
 - [Secure Tunneling — remote SSH to a robot](aws-iot/secure-tunneling.md) — source/destination tokens, `localproxy`, the MQTT auto-delivery path, and why it isn't connected yet
 
+### Dog agent POC
+- [Dog agent design scope](agent-poc/dog-agent-design-scope.md) - product/UX scope: use cases, mobile screens, admin screens, artifacts, and acceptance criteria
+- [Echo UI mockups](agent-poc/echo-ui-mockups.html) - static mobile and admin screen mockups for the dog-agent POC
+- [Echo TurtleBot Pal UI mockups](agent-poc/echo-turtlebot-pal-ui-mockups.html) - cleaner full-screen mockups using the selected TurtleBot Pal direction
+- [GuideMate Echo design package](agent-poc/design-package/README.md) - logos, mascot assets, light/dark themes, tokens, and design-doc-ready brief
+
 ---
 
 ## ⚠️ Security note
