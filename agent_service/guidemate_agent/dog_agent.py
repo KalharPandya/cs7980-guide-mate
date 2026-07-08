@@ -201,9 +201,16 @@ class DogAgent:
             return "emote delivered (simulated)"
         return "emote delivered"
 
+    # The LLM run_motion tool may only trigger tricks. dock/undock/forward are
+    # valid Command names but belong to the assignment lifecycle (sessions.py) —
+    # never LLM-reachable, so the model can't move the robot off/onto its dock.
+    _LLM_TRICKS = ("circle", "spin")
+
     def _motion_impl(self, name: str, target: Optional[str], captured: dict) -> str:
         if target is None:
             return _OFFLINE
+        if name not in self._LLM_TRICKS:
+            return "unknown trick — I only know 'circle' and 'spin'"
         try:
             cmd = Command(type="motion", name=name)
         except ValidationError:

@@ -278,6 +278,29 @@ def test_request_companion_unknown_session_is_404(monkeypatch, ddb):
         assert client.post("/api/session/nope/request-companion").status_code == 404
 
 
+def test_end_session_releases_robot_and_docks(monkeypatch, ddb):
+    with _fake_client(monkeypatch) as client:
+        client.app.state.agent = _RecordingAgent()
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        sessions.approve_request(sessions.create_request(sid), "turtlebot468")
+        client.app.state.registry.sent.clear()
+
+        r = client.post(f"/api/session/{sid}/end")
+        assert r.status_code == 200
+        assert r.json()["freed_robot_id"] == "turtlebot468"
+        assert sessions.robot_for_session(sid) is None
+        # End of assignment docks the robot.
+        assert ("turtlebot468", "motion", "dock") in client.app.state.registry.sent
+
+
+def test_end_unknown_session_is_404(monkeypatch, ddb):
+    with _fake_client(monkeypatch) as client:
+        client.app.state.agent = _RecordingAgent()
+        assert client.post("/api/session/nope/end").status_code == 404
+
+
 def test_state_unknown_session_is_404(monkeypatch, ddb):
     with _fake_client(monkeypatch) as client:
         client.app.state.agent = _RecordingAgent()
