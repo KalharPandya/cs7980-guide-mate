@@ -50,13 +50,31 @@ def pcm16_to_wav(pcm: bytes, sample_rate: int = 16000) -> bytes:
     return buf.getvalue()
 
 
+def _eleven_convert(text, output_format, el_client, voice_id, model_id):
+    """Collect an ElevenLabs text_to_speech.convert() byte-iterator into bytes."""
+    kwargs = dict(voice_id=voice_id, text=text, output_format=output_format)
+    if model_id:
+        kwargs["model_id"] = model_id
+    return b"".join(el_client.text_to_speech.convert(**kwargs))
+
+
 def synthesize_mp3(
     text: str,
     voice_id: str = "Justin",
     region: str = "us-west-2",
     polly_client=None,
+    backend: str = "polly",
+    el_client=None,
+    el_voice_id: str = "",
+    el_model: str = "eleven_flash_v2_5",
 ) -> bytes:
-    """Polly neural mp3 — 'Justin' is young/upbeat, our dog voice."""
+    """Neural mp3 for the dog voice. backend='elevenlabs' uses ElevenLabs (with a
+    Polly fallback on any error / missing client); otherwise Polly 'Justin'."""
+    if backend == "elevenlabs" and el_client is not None:
+        try:
+            return _eleven_convert(text, "mp3_44100_128", el_client, el_voice_id, el_model)
+        except Exception:  # noqa: BLE001 — never fail the turn; fall back to Polly
+            log.exception("elevenlabs mp3 synthesis failed; falling back to polly")
     client = polly_client or boto3.client("polly", region_name=region)
     resp = client.synthesize_speech(
         Text=text, OutputFormat="mp3", VoiceId=voice_id, Engine="neural"
@@ -70,8 +88,18 @@ def synthesize_pcm16(
     region: str = "us-west-2",
     sample_rate: int = 16000,
     polly_client=None,
+    backend: str = "polly",
+    el_client=None,
+    el_voice_id: str = "",
+    el_model: str = "eleven_flash_v2_5",
 ) -> bytes:
-    """Polly neural 16-bit PCM at sample_rate (for fake-mic wav + the loopback test)."""
+    """16-bit PCM at sample_rate. backend='elevenlabs' uses ElevenLabs pcm_16000
+    (Polly fallback on error / missing client); otherwise Polly neural PCM."""
+    if backend == "elevenlabs" and el_client is not None and sample_rate == 16000:
+        try:
+            return _eleven_convert(text, "pcm_16000", el_client, el_voice_id, el_model)
+        except Exception:  # noqa: BLE001 — fall back to Polly
+            log.exception("elevenlabs pcm synthesis failed; falling back to polly")
     client = polly_client or boto3.client("polly", region_name=region)
     resp = client.synthesize_speech(
         Text=text,
