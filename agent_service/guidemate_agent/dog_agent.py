@@ -61,7 +61,11 @@ HONESTY = (
 )
 EMOTE_INSTRUCTION = (
     "You MUST call the send_emote tool exactly once per reply, with one of "
-    "'happy', 'yes', or 'no': pick the emote that matches your reply's mood."
+    "'happy', 'yes', or 'no': pick the emote that matches your reply's mood. "
+    "On a physical robot your emotes ARE physical moves: 'happy' is a body "
+    "wiggle, 'yes' a forward nod, 'no' a head shake. If the user asks for a "
+    "wiggle, nod, or head shake, that IS your emote: send the matching one "
+    "and say you're doing it; never claim you can't wiggle."
 )
 MOTION_INSTRUCTION = (
     "You also have run_motion (tricks: 'circle' or 'spin'), stop, and get_status "
@@ -246,7 +250,7 @@ class DogAgent:
     # never LLM-reachable, so the model can't move the robot off/onto its dock.
     # Per-trick params: chat circles run TIGHT (r=0.1 m, ~0.4 m sweep) — the
     # choreography default of 0.5 m sweeps ~1.2 m, too big for indoor demo space.
-    _LLM_TRICKS = {"circle": {"radius": 0.1}, "spin": {}}
+    _LLM_TRICKS = {"circle": {"radius": 0.1, "turns": 2.0}, "spin": {}}
 
     def _motion_impl(self, name: str, target: Optional[str], captured: dict) -> str:
         if target is None:

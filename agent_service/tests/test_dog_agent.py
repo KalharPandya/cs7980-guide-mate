@@ -133,8 +133,8 @@ def test_motion_impl_circle_runs_tight_radius():
     reg = ScriptedRegistry(acks=[Ack(cmd_id="c", state="done", simulated=True)])
     captured = _captured()
     _agent(reg)._motion_impl("circle", target="turtlebot468", captured=captured)
-    assert captured["commands"][0]["params"] == {"radius": 0.1}
-    assert reg.sent[0][1].params == {"radius": 0.1}  # REST path Command carries it too
+    assert captured["commands"][0]["params"] == {"radius": 0.1, "turns": 2.0}
+    assert reg.sent[0][1].params == {"radius": 0.1, "turns": 2.0}  # REST path too
 
 
 def test_motion_impl_records_no_trick_for_unknown_name():
