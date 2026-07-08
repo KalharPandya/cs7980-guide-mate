@@ -255,6 +255,9 @@ class DogAgent:
             cmd = Command(type="motion", name=name)
         except ValidationError:
             return "unknown trick — I only know 'circle' and 'spin'"
+        # Record the trick so the WS path (whose agent runs on a non-publishing
+        # CaptureRegistry) can forward it to the real robot after the turn.
+        captured["motion"] = name
         t0 = time.perf_counter()
         acks = self._registry.send_command(target, cmd)
         emit_metric(
@@ -445,7 +448,7 @@ class DogAgent:
                 "sources": [],
             })
 
-        captured = {"emote": None, "acks": [], "kb_sources": []}
+        captured = {"emote": None, "acks": [], "kb_sources": [], "motion": None}
         names = self._enabled_tool_names(flags, physical)
         if not allow_motion:
             names = [n for n in names if n not in ("run_motion", "stop")]
@@ -484,6 +487,9 @@ class DogAgent:
         return _wrap({
             "reply_text": reply_text,
             "emote": captured["emote"],
+            # The trick the model ran this turn (circle/spin), or None. The WS path
+            # re-publishes it to the real robot (its agent runs non-publishing).
+            "motion": captured["motion"],
             "robot": captured["acks"],
             # KB citation sources for this turn ([] when the turn didn't ground on
             # the KB). The WS/reply layer surfaces these to the frontend.

@@ -188,6 +188,24 @@ async def _run_pipeline(ws: WebSocket, app: FastAPI, session_id: str, text: str)
             log.exception("tts failed")
             if obs is not None:
                 obs.record_error("tts", str(exc), turn_id)
+
+        # Physical motion trick (circle/spin): the WS-path agent ran it on the
+        # non-publishing CaptureRegistry, so forward it to the real robot HERE —
+        # same ownership split as the emote. Only for a bound (physical) session,
+        # and AFTER reply+audio so the user sees the response first.
+        motion = result.get("motion")
+        if motion and target is not None:
+            motion_cmd = Command(type="motion", name=motion)
+            try:
+                acks = await loop.run_in_executor(
+                    None, lambda: registry.send_command(target, motion_cmd)
+                )
+                if obs is not None:
+                    obs.record_command(turn_id, target, motion_cmd.cmd_id, time.monotonic(), acks)
+            except Exception as exc:  # noqa: BLE001 — a failed trick must not kill the socket
+                log.exception("motion publish failed")
+                if obs is not None:
+                    obs.record_error("motion", str(exc), turn_id)
     except Exception as exc:  # noqa: BLE001 — never kill the socket on one bad turn
         log.exception("chat pipeline failed")
         if obs is not None:

@@ -118,6 +118,23 @@ def test_motion_impl_lifecycle_motions_never_sent_by_llm():
         assert reg.sent == []
 
 
+def test_motion_impl_records_trick_for_republish():
+    # The WS path runs the agent on a non-publishing CaptureRegistry, then
+    # re-publishes physical actions itself — so a trick must be recorded on
+    # `captured` for the WS layer to forward to the real robot.
+    reg = ScriptedRegistry(acks=[Ack(cmd_id="c", state="done", simulated=True)])
+    captured = _captured()
+    _agent(reg)._motion_impl("spin", target="turtlebot468", captured=captured)
+    assert captured.get("motion") == "spin"
+
+
+def test_motion_impl_records_no_trick_for_unknown_name():
+    reg = ScriptedRegistry()
+    captured = _captured()
+    _agent(reg)._motion_impl("moonwalk", target="turtlebot468", captured=captured)
+    assert captured.get("motion") is None  # rejected -> nothing to re-publish
+
+
 def test_motion_impl_offline():
     result = _agent(ScriptedRegistry(acks=[]))._motion_impl(
         "spin", target="turtlebot468", captured=_captured())
