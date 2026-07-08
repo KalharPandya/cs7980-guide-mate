@@ -60,7 +60,10 @@ body:has(#chat:not([hidden])) { background: var(--bg); }
   display: flex;
   flex-direction: column;
 }
-.app:has(#chat:not([hidden])) { max-width: 560px; }
+/* Chat view: pin .app to a DEFINITE viewport height (not just min-height) so the
+   flex chain constrains and #messages scrolls internally, instead of the whole
+   page growing as bubbles accumulate. Landing keeps min-height (can scroll). */
+.app:has(#chat:not([hidden])) { max-width: 560px; height: 100vh; height: 100dvh; }
 /* Landing is a full-bleed page (full-width top nav); it must not sit inside the
    narrow app column. When the intake screen is showing, let .app span full width
    and center the hero content itself. */
