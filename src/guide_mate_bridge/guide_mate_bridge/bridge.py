@@ -57,28 +57,15 @@ def command_permitted(
     return True, ""
 
 
-# TEMPORARY supervised opt-in (2026-07-06 on-robot motion test). The 468 motion ban was a
-# proxy for the one thing that makes unattended motion unsafe: no human observer present. With a
-# human physically at the robot + a kill-switch in hand, that condition no longer holds, so the
-# ban may be lifted — but ONLY via this deliberate second token. GUIDEMATE_ENABLE_MOTION alone
-# still refuses (default-deny: nothing can move 468 by accident). The token is set as a transient
-# runtime override on the Pi, never in the committed unit. REVERT this opt-in after the test.
-_SUPERVISED_468_TOKEN = "observer-present"
-
-
 def assert_motion_identity_safe(env: "Mapping[str, str]") -> None:
     """Hard robot-id guard (belt + braces): GUIDEMATE_ENABLE_MOTION must NEVER be honored for
-    robot 468 UNLESS the deliberate supervised-motion token is ALSO set (temporary; see above).
-    The Pi installer never sets ENABLE_MOTION; this refuses even if someone does by hand.
+    robot 468. The Pi installer never sets it; this refuses even if someone does by hand.
     The robot id defaults to turtlebot468 when unset, so an unset id is also refused."""
     if _truthy(env.get("GUIDEMATE_ENABLE_MOTION", "0")):
         robot_id = env.get("GUIDEMATE_ROBOT_ID", "turtlebot468")
         if robot_id == "turtlebot468":
-            if env.get("GUIDEMATE_SUPERVISED_468_MOTION") == _SUPERVISED_468_TOKEN:
-                return  # deliberate, supervised opt-in — human observer + kill-switch present
             raise SystemExit(
-                "refusing GUIDEMATE_ENABLE_MOTION on turtlebot468 — motion is sim/436 only "
-                "(supervised test: set GUIDEMATE_SUPERVISED_468_MOTION)"
+                "refusing GUIDEMATE_ENABLE_MOTION on turtlebot468 — motion is sim/436 only"
             )
 
 
