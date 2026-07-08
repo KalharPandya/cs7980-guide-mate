@@ -267,9 +267,10 @@ def _eleven_scribe_connect(api_key: str):
         all async methods. Events arrive via _start_message_handler background task.
     - To bridge callback-style to the async-generator protocol expected by _consume(),
       we queue events into an asyncio.Queue and drain it via an async generator.
-    - Event data key for transcript text is "transcript" (not "text"); message_type
-        values are "committed_transcript" and "partial_transcript".
-    - Must be validated against a live API key (Task 6).
+    - Event data key for transcript text is "text" (the SDK docstring says
+        "transcript", but the live server sends "text" — verified against the API
+        2026-07-08); message_type values are "committed_transcript" / "partial_transcript".
+    - Live-validated 2026-07-08: "do a happy wiggle" -> committed "Do a happy wiggle."
     """
     async def _connect(model_id: str, sample_rate: int):
         from elevenlabs import ElevenLabs
@@ -292,13 +293,13 @@ def _eleven_scribe_connect(api_key: str):
         def _on_partial(data):
             _queue.put_nowait({
                 "type": "partial_transcript",
-                "text": data.get("transcript", ""),
+                "text": data.get("text") or data.get("transcript", ""),
             })
 
         def _on_committed(data):
             _queue.put_nowait({
                 "type": "committed_transcript",
-                "text": data.get("transcript", ""),
+                "text": data.get("text") or data.get("transcript", ""),
             })
 
         def _on_close():
