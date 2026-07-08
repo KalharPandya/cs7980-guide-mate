@@ -225,10 +225,11 @@ class _FakeStrands:
 
     last = None
 
-    def __init__(self, model=None, system_prompt=None, tools=None):
+    def __init__(self, model=None, system_prompt=None, tools=None, callback_handler=None):
         self.system_prompt = system_prompt
         self.tools = list(tools or [])
         self.tool_names = [t.tool_name for t in self.tools]
+        self.callback_handler = callback_handler
         type(self).last = self
 
     def __call__(self, message):
@@ -305,10 +306,11 @@ class _FakeStrandsKB:
 
     last = None
 
-    def __init__(self, model=None, system_prompt=None, tools=None):
+    def __init__(self, model=None, system_prompt=None, tools=None, callback_handler=None):
         self.system_prompt = system_prompt
         self.tools = list(tools or [])
         self.tool_names = [t.tool_name for t in self.tools]
+        self.callback_handler = callback_handler
         type(self).last = self
 
     def __call__(self, message):

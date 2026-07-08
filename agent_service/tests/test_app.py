@@ -50,7 +50,11 @@ def test_index_served(monkeypatch):
     with TestClient(app) as client:
         resp = client.get("/")
         assert resp.status_code == 200
-        assert "Robert" in resp.text
+        # Landing was rebranded to the "Moses" concierge in the frontend redesign,
+        # so the dog's persona name ("Robert") is no longer on the landing page —
+        # assert the current brand instead. The DOM-hook contract below is the
+        # real guarantee that the right chat shell was served.
+        assert "Moses" in resp.text
         # Task 5 polished chat UI: intake gate + chat shell DOM hooks that
         # both chat.js and the gated Playwright e2e (test_companion_flow.py)
         # depend on by id.
@@ -59,7 +63,9 @@ def test_index_served(monkeypatch):
             'id="chat"', 'id="avatar"', 'id="companion-status"',
             'id="request-companion"', 'id="messages"', 'id="chat-form"',
             'id="message"', 'id="mic"', 'id="status-chip"',
-            '/chat.css', '/chat.js',
+            # Redesign uses relative asset paths (renders both served and opened
+            # directly), so href/src are "chat.css"/"chat.js", not "/chat.css".
+            'chat.css', 'chat.js',
         ):
             assert hook in resp.text, f"missing {hook}"
 
@@ -164,10 +170,11 @@ class _FakeStrands:
 
     last = None
 
-    def __init__(self, model=None, system_prompt=None, tools=None):
+    def __init__(self, model=None, system_prompt=None, tools=None, callback_handler=None):
         self.system_prompt = system_prompt
         self.tools = list(tools or [])
         self.tool_names = [t.tool_name for t in self.tools]
+        self.callback_handler = callback_handler
         type(self).last = self
 
     def __call__(self, message):

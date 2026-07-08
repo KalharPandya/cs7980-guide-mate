@@ -172,3 +172,165 @@ class TranscribeSession:
         await self._stream.input_stream.end_stream()
         await self._consume_task
         return self._handler.transcript()
+
+
+class ElevenLabsTranscribeSession:
+    """Scribe realtime STT with the SAME contract as TranscribeSession:
+    start() -> feed(pcm)* -> finish() -> str. Collects committed_transcript text
+    only (mirrors _CollectingHandler). Any error degrades finish() to ''."""
+
+    def __init__(
+        self,
+        connect_fn,
+        sample_rate: int = 16000,
+        model_id: str = "scribe_v2_realtime",
+    ) -> None:
+        self._connect_fn = connect_fn
+        self._sample_rate = sample_rate
+        self._model_id = model_id
+        self._conn = None
+        self._finals: list[str] = []
+        self._consume_task = None
+
+    async def _consume(self) -> None:
+        try:
+            async for evt in self._conn.events():
+                if evt.get("type") == "committed_transcript":
+                    text = evt.get("text")
+                    if text:
+                        self._finals.append(text)
+        except Exception:  # noqa: BLE001 — a stream error just ends collection
+            log.exception("elevenlabs stt consume failed")
+
+    async def start(self) -> None:
+        try:
+            self._conn = await self._connect_fn(self._model_id, self._sample_rate)
+            self._consume_task = asyncio.create_task(self._consume())
+        except Exception:  # noqa: BLE001 — connect failure -> finish() returns ''
+            log.exception("elevenlabs stt connect failed")
+            self._conn = None
+
+    async def feed(self, pcm: bytes) -> None:
+        if self._conn is None:
+            return
+        import base64
+        await self._conn.send_audio(base64.b64encode(pcm).decode("ascii"))
+
+    async def finish(self) -> str:
+        if self._conn is None:
+            return ""
+        try:
+            await self._conn.commit()
+            if self._consume_task is not None:
+                await self._consume_task
+            return " ".join(self._finals).strip()
+        except Exception:  # noqa: BLE001 — teardown is best-effort
+            log.exception("elevenlabs stt finish failed")
+            return ""
+        finally:
+            try:
+                await self._conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def make_transcribe_session(
+    backend: str = "transcribe",
+    region: str = "us-west-2",
+    sample_rate: int = 16000,
+    language_code: str = "en-US",
+    api_key: str = "",
+    model_id: str = "scribe_v2_realtime",
+):
+    """Return the STT session for the configured backend. ElevenLabs requires an
+    api_key; without one it safely falls back to Amazon Transcribe."""
+    if backend == "elevenlabs" and api_key:
+        connect_fn = _eleven_scribe_connect(api_key)
+        return ElevenLabsTranscribeSession(
+            connect_fn=connect_fn, sample_rate=sample_rate, model_id=model_id,
+        )
+    return TranscribeSession(
+        region=region, sample_rate=sample_rate, language_code=language_code,
+    )
+
+
+def _eleven_scribe_connect(api_key: str):
+    """Build an async connect_fn that opens a Scribe v2 realtime websocket and
+    adapts it to the {send_audio, events, commit, close} protocol used above.
+
+    SDK surface (verified 2026-07-08, elevenlabs package on this venv):
+    - ScribeRealtime.connect(options: RealtimeAudioOptions) -> RealtimeConnection
+    - RealtimeAudioOptions is a TypedDict (bases: dict); required keys:
+        model_id, audio_format (AudioFormat enum), sample_rate (int)
+    - RealtimeConnection is callback-based (.on(event_str, callable)),
+        NOT async-iterable; .send({"audio_base_64": b64}), .commit(), .close() are
+        all async methods. Events arrive via _start_message_handler background task.
+    - To bridge callback-style to the async-generator protocol expected by _consume(),
+      we queue events into an asyncio.Queue and drain it via an async generator.
+    - Event data key for transcript text is "transcript" (not "text"); message_type
+        values are "committed_transcript" and "partial_transcript".
+    - Must be validated against a live API key (Task 6).
+    """
+    async def _connect(model_id: str, sample_rate: int):
+        from elevenlabs import ElevenLabs
+        from elevenlabs.realtime.scribe import AudioFormat, CommitStrategy, RealtimeAudioOptions
+
+        client = ElevenLabs(api_key=api_key)
+
+        options: RealtimeAudioOptions = {
+            "model_id": model_id,
+            "audio_format": AudioFormat.PCM_16000,
+            "sample_rate": sample_rate,
+            "commit_strategy": CommitStrategy.MANUAL,
+        }
+        raw = await client.speech_to_text.realtime.connect(options)
+
+        # Bridge callback-based event system to async-generator protocol.
+        _queue: asyncio.Queue = asyncio.Queue()
+        _SENTINEL = object()
+
+        def _on_partial(data):
+            _queue.put_nowait({
+                "type": "partial_transcript",
+                "text": data.get("transcript", ""),
+            })
+
+        def _on_committed(data):
+            _queue.put_nowait({
+                "type": "committed_transcript",
+                "text": data.get("transcript", ""),
+            })
+
+        def _on_close():
+            _queue.put_nowait(_SENTINEL)
+
+        def _on_error(data):
+            log.warning("elevenlabs scribe error: %s", data)
+            _queue.put_nowait(_SENTINEL)
+
+        raw.on("partial_transcript", _on_partial)
+        raw.on("committed_transcript", _on_committed)
+        raw.on("close", _on_close)
+        raw.on("error", _on_error)
+
+        class _Adapter:
+            async def send_audio(self, b64: str) -> None:
+                # RealtimeConnection.send() wraps the message internally.
+                await raw.send({"audio_base_64": b64})
+
+            async def events(self):
+                while True:
+                    item = await _queue.get()
+                    if item is _SENTINEL:
+                        return
+                    yield item
+
+            async def commit(self) -> None:
+                await raw.commit()
+
+            async def close(self) -> None:
+                await raw.close()
+
+        return _Adapter()
+
+    return _connect

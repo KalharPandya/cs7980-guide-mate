@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -32,6 +33,24 @@ from guidemate_agent.ws_chat import CaptureRegistry, register as register_ws
 
 log = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+
+def _force_utf8_stdio() -> None:
+    """Make stdout/stderr carry non-ASCII on any platform/console.
+
+    Agent replies and logs contain emoji (the persona emits a paw print). Linux
+    and the Docker image already use UTF-8, but a Windows dev console defaults to
+    cp1252 and raises UnicodeEncodeError on the first emoji — which otherwise
+    kills the request pipeline. errors="replace" guarantees a write never raises;
+    the try/except covers pytest's captured streams (no reconfigure attribute)."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError):
+            pass
+
+
+_force_utf8_stdio()
 
 
 class ChatRequest(BaseModel):

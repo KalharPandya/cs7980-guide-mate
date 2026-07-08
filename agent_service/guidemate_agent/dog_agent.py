@@ -410,7 +410,15 @@ class DogAgent:
                 "there is no one to greet by name; react to the event naturally."
             )
         model = BedrockModel(model_id=self._model_id, region_name=self._region)
-        agent = Agent(model=model, system_prompt=system_prompt, tools=tools)
+        # callback_handler=None disables Strands' default PrintingCallbackHandler,
+        # which echoes every streamed token to stdout. That echo is useless for a
+        # server AND crashes the turn on any non-UTF-8 console: the persona emits
+        # emoji (e.g. the paw print) and Windows stdout (cp1252) raises
+        # UnicodeEncodeError mid-stream. The reply is returned via `result`, not
+        # stdout, so silencing this changes nothing but the crash.
+        agent = Agent(
+            model=model, system_prompt=system_prompt, tools=tools, callback_handler=None
+        )
         agent_input = message if system_event is None else system_event
         result = agent(agent_input)
         reply_text = str(result)

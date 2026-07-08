@@ -240,10 +240,13 @@ class _FakeAgent:
 
     last = None
 
-    def __init__(self, model=None, system_prompt=None, tools=None):
+    def __init__(self, model=None, system_prompt=None, tools=None, callback_handler="<unset>"):
         self.system_prompt = system_prompt
         self.tools = list(tools or [])
         self.tool_names = [t.tool_name for t in self.tools]
+        # Recorded so a regression test can assert the server disables Strands'
+        # stdout-printing callback handler (callback_handler=None).
+        self.callback_handler = callback_handler
         type(self).last = self
 
     def __call__(self, message):
@@ -257,6 +260,18 @@ class _FakeAgent:
 def _fake_bedrock(monkeypatch):
     monkeypatch.setattr(dog_agent, "Agent", _FakeAgent)
     monkeypatch.setattr(dog_agent, "BedrockModel", lambda **kw: None)
+
+
+def test_chat_disables_printing_callback_handler(monkeypatch):
+    """Regression: the agent must be built with callback_handler=None. Strands'
+    default PrintingCallbackHandler echoes tokens to stdout and crashes the turn
+    on a non-UTF-8 console (Windows cp1252 raises UnicodeEncodeError on the
+    persona's emoji). Passing None makes the server silent and platform-neutral."""
+    _fake_bedrock(monkeypatch)
+
+    _agent(RecordingRegistry()).chat("hello")
+
+    assert _FakeAgent.last.callback_handler is None
 
 
 def test_chat_virtual_session_injects_history_persists_no_publish(ddb, monkeypatch):
