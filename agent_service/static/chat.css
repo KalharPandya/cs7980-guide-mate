@@ -3,9 +3,9 @@
 
    A/B identity (docs/agent-poc/design-package):
      A. Black-framed Husky + Moses  -> everyday chat app on soft-gray/white.
-     B. Black hero + red #C8102E     -> ceremonial landing / consent / intake.
+     B. Light stage + red #C8102E    -> friendly landing / consent / intake.
 
-   The landing is the signature moment: a full black stage, a red-framed Husky
+   The landing is the signature moment: a white stage, a red-framed Husky
    mark, a heavy compact "Moses" wordmark, the Northeastern Vancouver lockup,
    and a quiet staged reveal. Everything else stays disciplined and legible.
    Tokens are taken verbatim from tokens.json / themes.css.
@@ -44,9 +44,9 @@ body {
   font-size: 18px;
   line-height: 1.5;
   color: var(--text);
-  /* Default surface = the black hero (landing shows first). Once the chat
-     shell is revealed, we flip to the light app surface. */
-  background: #000000;
+  /* Default surface = the light landing (landing shows first). Once the chat
+     shell is revealed, we flip to the soft-gray app surface. */
+  background: #ffffff;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }
@@ -61,6 +61,10 @@ body:has(#chat:not([hidden])) { background: var(--bg); }
   flex-direction: column;
 }
 .app:has(#chat:not([hidden])) { max-width: 560px; }
+/* Landing is a full-bleed page (full-width top nav); it must not sit inside the
+   narrow app column. When the intake screen is showing, let .app span full width
+   and center the hero content itself. */
+.app:has(#intake:not([hidden])) { max-width: none; }
 
 .hidden { display: none !important; }
 
@@ -74,10 +78,38 @@ body:has(#chat:not([hidden])) { background: var(--bg); }
    leak the chat shell onto the landing page — scope the flex chain to when the
    chat is actually shown. */
 #chat[hidden] { display: none !important; }
+/* Chat shell: a full-height column (stop bar on top, then the sidebar+main
+   body). The body is a two-column row on desktop; the main column holds the
+   active view, which fills the height and scrolls internally. */
 #chat:not([hidden]) { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.chat-grid { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.chat-rail { display: flex; flex-direction: column; }
-.chat-main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.app-body { flex: 1; display: flex; min-height: 0; }
+.app-main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+
+/* ---- Persistent left sidebar ------------------------------------------- */
+.app-sidebar {
+  flex: 0 0 232px; width: 232px;
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 22px 18px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+.sidebar-brand { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.sidebar-brand-name { color: var(--primary); font-weight: 900; font-size: 22px; letter-spacing: -0.03em; }
+.sidebar-brand-sub { color: var(--muted); font-size: 13px; font-weight: 600; }
+.sidebar-btn {
+  width: 100%; justify-content: flex-start; gap: 10px;
+  min-height: 46px; padding: 0 16px;
+  border-radius: var(--r-md);
+}
+.sidebar-btn svg { flex-shrink: 0; }
+.sidebar-spacer { flex: 1; }
+.sidebar-settings {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 8px; border: none; background: none;
+  color: var(--muted); font: inherit; font-weight: 700; font-size: 14px;
+  cursor: pointer; border-top: 1px solid var(--border);
+}
+.sidebar-settings:hover { color: var(--text); }
 
 /* ---- Shared Moses lockup pieces ---------------------------------------- */
 .mark {
@@ -88,8 +120,8 @@ body:has(#chat:not([hidden])) { background: var(--bg); }
   overflow: hidden;
 }
 .mark img { width: 78%; height: 78%; object-fit: contain; display: block; }
-.mark-app  { width: 46px; height: 46px; border: 5px solid #000000; border-radius: var(--r-sm); }
-.mark-hero { width: 72px; height: 72px; border: 6px solid var(--primary); border-radius: var(--r-sm); }
+.mark-app     { width: 40px; height: 40px; border: 2px solid var(--primary); border-radius: 50%; }
+.mark-landing { width: 48px; height: 48px; border: 3px solid var(--primary); border-radius: var(--r-md); }
 
 .lockup-text { display: flex; flex-direction: column; line-height: 1; }
 .wordmark {
@@ -98,7 +130,6 @@ body:has(#chat:not([hidden])) { background: var(--bg); }
   letter-spacing: -0.045em;
   line-height: 0.92;
 }
-.wordmark-lg { font-size: 40px; letter-spacing: -0.055em; }
 .subtitle {
   margin-top: 4px;
   font-size: 12.5px;
@@ -115,14 +146,33 @@ body:has(#chat:not([hidden])) { background: var(--bg); }
 .app:has(#chat:not([hidden])) .topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 18px 14px;
+  gap: 16px;
+  padding: 12px 28px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
-.lockup { display: flex; align-items: center; gap: 12px; }
-.status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.lockup { display: flex; align-items: center; gap: 10px; min-width: 0; flex-shrink: 0; }
+/* Mockup header: circular husky mark + red "Moses" wordmark. */
+.topbar .wordmark { color: var(--primary); font-size: 22px; }
+/* The section nav is centered; brand hugs the left, status hugs the right. */
+.topbar .view-nav { flex: 1; justify-content: center; }
+.status { display: flex; align-items: center; gap: 10px; flex-shrink: 0; justify-content: flex-end; }
+
+/* Brand liveness pill (static) — green outline, sits with the wordmark. */
+.chip-active {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 45%, var(--border));
+  background: color-mix(in srgb, var(--success) 10%, var(--surface));
+  font-size: 11.5px; letter-spacing: 0.03em; min-height: 26px; padding: 4px 10px;
+}
+.chip-active .chip-ico { color: var(--success); }
+
+/* Header "Help" link. */
+.help-link {
+  color: var(--muted); font-weight: 700; font-size: 14px;
+  text-decoration: none; white-space: nowrap;
+}
+.help-link:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
 
 .chip {
   display: inline-flex; align-items: center; gap: 7px;
@@ -152,106 +202,133 @@ body:has(#chat:not([hidden])) { background: var(--bg); }
 .chip-ico { flex-shrink: 0; }
 
 /* ============================================================================
-   Direction B — black hero (landing / consent / intake). Signature moment.
-   Self-contained dark surface, independent of the app theme.
+   Direction B — light landing (landing / consent / intake). Signature moment.
+   Full-width top nav + centered hero + intake card, on a white surface.
    ========================================================================== */
 .hero {
-  --muted: #d6d6d6;
   flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px 22px calc(40px + env(safe-area-inset-bottom));
-  color: #ffffff;
-  background:
-    radial-gradient(120% 90% at 82% -8%, rgba(200, 16, 46, 0.30), transparent 55%),
-    radial-gradient(100% 70% at -12% 108%, rgba(200, 16, 46, 0.12), transparent 60%),
-    #000000;
+  flex-direction: column;
+  padding: 0;
+  color: var(--text);
+  background: #ffffff;
+  position: relative;
+  overflow: hidden;
 }
-.hero-inner { width: 100%; min-width: 0; max-width: 460px; }
 
-.hero-lockup { display: flex; align-items: center; gap: 16px; margin-bottom: 30px; }
-.subtitle-hero { color: #d6d6d6; }
+/* ---- landing top nav (visual mirror of the in-app nav) ------------------ */
+.landing-nav {
+  display: flex; align-items: center; gap: 28px;
+  padding: 16px 28px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--border);
+}
+.landing-nav-brand { color: var(--primary); font-weight: 900; font-size: 22px; letter-spacing: -0.03em; }
+.landing-nav-links { display: flex; align-items: center; gap: 24px; }
+.landing-nav-links a {
+  color: var(--text); font-weight: 600; font-size: 14px;
+  text-decoration: none;
+}
+.landing-nav-links a:hover { color: var(--primary); }
+.landing-nav-right { margin-left: auto; display: flex; align-items: center; gap: 18px; }
+.landing-nav-help { color: var(--muted); font-weight: 600; font-size: 14px; text-decoration: none; }
+.landing-nav-help:hover { color: var(--text); }
+.landing-nav-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center; overflow: hidden;
+  background: var(--surface-soft); border: 1px solid var(--border);
+}
+.landing-nav-avatar img { width: 80%; height: 80%; object-fit: contain; }
+
+/* ---- centered hero + card ---------------------------------------------- */
+.hero-inner {
+  flex: 1;
+  width: 100%; min-width: 0; max-width: 620px;
+  margin: 0 auto;
+  padding: 56px 22px calc(48px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center;
+}
 
 .hero-title {
-  margin: 0 0 16px;
-  font-size: clamp(34px, 8.5vw, 52px);
-  line-height: 1.02;
-  letter-spacing: -0.04em;
-  font-weight: 900;
-  text-wrap: balance;
+  margin: 0 0 18px;
+  font-size: clamp(30px, 5vw, 44px);
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+  font-weight: 800;
 }
+.hero-accent { display: block; color: var(--primary); }
 .hero-lede {
-  margin: 0 0 26px;
-  font-size: 18px;
-  line-height: 1.5;
-  color: #d6d6d6;
-  max-width: 42ch;
+  margin: 0 0 34px;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 44ch;
 }
 
 .intake-card {
-  background: #111111;
-  border: 1px solid #343434;
+  width: 100%; max-width: 400px;
+  text-align: left;
+  background: #f9f9f9;
+  border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  padding: 22px;
-  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.42);
+  padding: 26px 24px;
+  box-shadow: var(--shadow-sm);
 }
 .field { display: grid; gap: 8px; }
-label { font-weight: 800; font-size: 14.5px; }
-.hero .field label { color: #ffffff; }
+label { font-weight: 700; font-size: 14.5px; }
+/* Card field label — small uppercase (mockup). */
+.intake-card .field label {
+  text-transform: uppercase;
+  font-size: 11.5px; font-weight: 700; letter-spacing: 0.07em;
+  color: var(--muted);
+}
 
 .check-row {
-  display: flex; align-items: center; gap: 11px;
-  margin: 16px 0 4px;
-  font-size: 16px; font-weight: 600; color: #ffffff;
-  cursor: pointer; min-height: 44px;
+  display: flex; align-items: flex-start; gap: 11px;
+  margin: 16px 0 20px;
+  font-size: 14.5px; font-weight: 500; color: var(--text);
+  cursor: pointer; min-height: 40px;
 }
 .check-row input {
-  width: 22px; height: 22px; flex-shrink: 0;
+  width: 20px; height: 20px; flex-shrink: 0; margin-top: 1px;
   accent-color: var(--primary);
   cursor: pointer;
 }
 
-.privacy {
-  margin: 16px 0 20px;
-  padding: 13px 15px;
-  border-radius: var(--r-md);
-  border: 1px solid #343434;
-  border-left: 4px solid var(--primary);
-  background: #1d1d1d;
-  color: #d6d6d6;
-  font-size: 14.5px;
-  line-height: 1.45;
-}
-
 .human-help {
   display: block;
-  margin-top: 16px;
+  margin-top: 14px;
   text-align: center;
-  color: #d6d6d6;
+  color: var(--primary);
   font-weight: 700;
-  font-size: 15px;
+  font-size: 14px;
   text-decoration: none;
-  text-underline-offset: 3px;
 }
-.human-help:hover { color: #ffffff; text-decoration: underline; }
+.human-help:hover { color: #a80f1c; text-decoration: underline; text-underline-offset: 3px; }
 
-.campus-strip {
-  margin-top: 26px;
-  background: #ffffff;
-  border-radius: var(--r-md);
-  padding: 16px 20px;
-  display: flex;
-  align-items: center;
+/* Disclaimer row at the bottom of the card: info glyph + muted text, no box. */
+.privacy {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin: 22px 0 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
 }
-.campus-strip img { max-width: 100%; max-height: 46px; object-fit: contain; object-position: left center; }
+.privacy .privacy-ico { flex-shrink: 0; margin-top: 1px; color: var(--muted); }
+.privacy p { margin: 0; }
 
-.affiliation-note {
-  margin: 12px 2px 0;
-  font-size: 12.5px;
-  line-height: 1.4;
-  color: #8f8f8f;
+/* Decorative Moses mark, bottom-right, quiet. */
+.hero-deco {
+  position: absolute; right: 26px; bottom: 22px;
+  width: 56px; height: 56px; border-radius: 50%;
+  display: grid; place-items: center; overflow: hidden;
+  background: var(--surface-soft); border: 1px solid var(--border);
+  opacity: 0.55; pointer-events: none;
 }
+.hero-deco img { width: 74%; height: 74%; object-fit: contain; }
 
 /* Staged reveal — quiet, confident. Disabled under reduced-motion. */
 .reveal { opacity: 0; transform: translateY(14px); animation: rise 0.66s cubic-bezier(0.22, 0.61, 0.36, 1) forwards; }
@@ -326,38 +403,36 @@ label { font-weight: 800; font-size: 14.5px; }
    Emote classes fire in JS the instant reply audio starts (voice + motion land
    together). Do NOT rename emote-happy / emote-yes / emote-no.
    ========================================================================== */
-.stage { display: flex; justify-content: center; padding: 16px 18px 4px; }
+/* Compact inline identity row (mockup): a small Moses mark + "Moses — the campus
+   spirit" label sitting above the thread. The big medallion is retired but
+   #avatar stays here so the emote/audio-sync classes still animate it. */
+.stage { display: flex; justify-content: flex-start; padding: 14px 18px 2px; }
 .stage-card {
   width: 100%;
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
-  padding: 20px 16px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-sm);
-  background-image: radial-gradient(90% 120% at 50% 0%, color-mix(in srgb, var(--primary) 6%, var(--surface)), var(--surface) 70%);
+  display: flex; flex-direction: row; align-items: center; gap: 10px;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
 }
 .avatar {
   position: relative;
   transform-origin: 50% 82%;
   animation: breathe 3.4s ease-in-out infinite;
+  flex-shrink: 0;
 }
-.stage-caption { margin: 2px 0 0; font-size: 13px; font-weight: 800; letter-spacing: 0.02em; color: var(--muted); text-transform: uppercase; }
+.stage-caption { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: 0; color: var(--text); text-transform: none; }
 
-/* Companion avatar = the official Moses husky mark on a calm medallion, framed
-   like the app-header mark (single coherent husky depiction, no cartoon clash).
-   Demoted vs the header: soft frame, no hard black box, so it reads as a
-   friendly companion rather than competing with the brand lockup. */
+/* Companion avatar = the official Moses husky mark on a small maroon medallion. */
 .avatar-mark {
   display: grid; place-items: center;
-  width: 132px; height: 132px;
+  width: 34px; height: 34px;
   border-radius: 50%;
-  background: var(--surface);
-  border: 3px solid #000000;
-  box-shadow: var(--shadow-sm);
+  background: var(--primary);
+  border: none;
   overflow: hidden;
 }
-.avatar-mark img { width: 74%; height: 74%; object-fit: contain; display: block; }
+.avatar-mark img { width: 76%; height: 76%; object-fit: contain; display: block; }
 
 /* Visually hidden but present for assistive tech + emote/audio-sync tests. */
 .sr-only {
@@ -432,9 +507,15 @@ label { font-weight: 800; font-size: 14.5px; }
    Quick actions (prefill helpers — Moses is a concierge, not just a pet).
    ========================================================================== */
 .quick-actions {
-  display: flex; flex-wrap: wrap; gap: 8px;
-  padding: 12px 18px 4px;
+  display: flex; flex-wrap: nowrap; gap: 8px;
+  padding: 10px 18px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
 }
+.quick-actions::-webkit-scrollbar { display: none; }
+.chip-action { flex: 0 0 auto; }
 .chip-action {
   cursor: pointer;
   background: var(--surface);
@@ -554,9 +635,8 @@ label { font-weight: 800; font-size: 14.5px; }
    ========================================================================== */
 .composer {
   display: flex; gap: 8px; align-items: center;
-  padding: 12px 18px calc(14px + env(safe-area-inset-bottom));
+  padding: 10px 18px 8px;
   background: var(--surface);
-  border-top: 1px solid var(--border);
 }
 .text-input {
   flex: 1; min-width: 0;
@@ -568,7 +648,7 @@ label { font-weight: 800; font-size: 14.5px; }
   background: var(--bg);
   color: var(--text);
 }
-.hero .text-input { background: #1d1d1d; color: #ffffff; border-color: #343434; }
+.hero .text-input { background: #ffffff; }
 .text-input::placeholder { color: var(--muted); }
 .text-input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-color: var(--primary); }
 
@@ -588,13 +668,21 @@ label { font-weight: 800; font-size: 14.5px; }
 .btn-primary { border-color: var(--primary); background: var(--primary); color: var(--primary-text); }
 .btn-primary:hover { filter: brightness(1.06); }
 .btn-ghost { background: transparent; color: var(--muted); }
-.hero .btn-ghost { color: #d6d6d6; border-color: #343434; }
 .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
-.hero .btn-ghost:hover { color: #ffffff; }
+/* Outline button — red text/border on surface (sidebar "Talk to a person"). */
+.btn-outline {
+  background: var(--surface);
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+}
+.btn-outline:hover { background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
 .btn-block { width: 100%; }
 .btn:disabled { opacity: 0.5; cursor: default; transform: none; }
 .send { flex-shrink: 0; }
-#new-session { flex-shrink: 0; padding: 0 14px; }
+/* "New Chat" sidebar button (repurposed #new-session) — keep it full-width like
+   its sibling, overriding the base .btn text wrapping. */
+#new-session { white-space: nowrap; }
+.sidebar-btn span { white-space: nowrap; }
 
 .mic {
   position: relative;
@@ -635,36 +723,105 @@ label { font-weight: 800; font-size: 14.5px; }
    The chat DOM is untouched; these wrappers swap the four Moses sections.
    ========================================================================== */
 
-/* ---- segmented tab nav (tablist) --------------------------------------- */
+/* ---- top nav: inline text tabs (lives in the topbar) ------------------- */
 .view-nav {
   display: flex;
-  gap: 2px;
-  padding: 6px 12px 0;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  align-items: center;
+  gap: 6px;
 }
 .view-tab {
   appearance: none; cursor: pointer;
-  flex: 1 1 0; min-width: 0; min-height: 44px;
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 38px;
   border: none; background: none;
-  color: var(--muted);
-  font: inherit; font-size: 15px; font-weight: 800;
-  padding: 10px 8px;
-  border-bottom: 3px solid transparent;
-  margin-bottom: -1px;
-  border-radius: 6px 6px 0 0;
+  color: var(--text);
+  font: inherit; font-size: 15px; font-weight: 600;
+  padding: 6px 14px;
+  border-radius: var(--r-md);
   white-space: nowrap;
-  transition: color 0.15s ease, background 0.15s ease;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s ease;
 }
-.view-tab:hover { color: var(--text); background: var(--surface-soft); }
-.view-tab.is-active { color: var(--text); border-bottom-color: var(--primary); }
-.view-tab:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+/* The nav reads as plain text tabs (mockup); the icons are hidden here. */
+.view-tab-ico { display: none; }
+.view-tab-label { line-height: 1; }
+.view-tab:hover { color: var(--primary); }
+/* Active tab = red text + red underline (mockup). */
+.view-tab.is-active {
+  color: var(--primary);
+  font-weight: 700;
+  border-bottom-color: var(--primary);
+  border-radius: 0;
+}
+.view-tab:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 
 /* ---- view container + panels ------------------------------------------- */
 .views { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .view { flex: 1; min-height: 0; }
 .view[hidden] { display: none !important; }
 #view-chat { display: flex; flex-direction: column; min-height: 0; }
+
+/* ========================================================================== */
+/* CHAT view — centered greeting + composer (redesign shell)                  */
+/* ========================================================================== */
+.chat-col {
+  flex: 1; min-height: 0;
+  width: 100%; max-width: 860px; margin: 0 auto;
+  display: flex; flex-direction: column;
+  padding: 0 24px;
+}
+/* Companion strip — kept for the companion flow (#request-companion), slimmed
+   to a quiet top bar so the centered greeting stays the focus. */
+.chat-col .banner { margin: 14px 0 0; }
+
+.chat-col .messages { flex: 1; }
+/* Centered empty-state greeting (mockup): hero avatar, heading, greeting, chips. */
+.chat-col .thread-empty {
+  margin: auto; max-width: 620px; text-align: center;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 24px 16px;
+}
+.avatar-hero { margin-bottom: 20px; }
+.avatar-hero .avatar-mark {
+  width: 92px; height: 92px;
+  background: var(--surface);
+  border: 3px solid var(--border);
+}
+.avatar-hero .avatar-mark img { width: 66%; height: 66%; }
+.chat-col .thread-empty-title { font-size: 26px; font-weight: 800; color: var(--text); margin: 0 0 10px; letter-spacing: -0.02em; }
+.chat-col .thread-empty-lede { font-size: 16px; line-height: 1.6; color: var(--muted); margin: 0 0 26px; max-width: 30rem; }
+
+/* Quick-action chips inside the greeting — centered, wrap, icon + label. */
+.chat-col .thread-empty .quick-actions {
+  flex-wrap: wrap; justify-content: center; overflow: visible;
+  padding: 0; background: none; border: none; gap: 12px;
+}
+.chip-action { display: inline-flex; align-items: center; gap: 8px; }
+.chip-action svg { color: var(--primary); flex-shrink: 0; }
+
+/* Composer — a single rounded pill (mockup): mic icon, input, red send square. */
+.chat-col .composer {
+  margin: 10px 0 22px;
+  gap: 8px; align-items: center;
+  padding: 6px 6px 6px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-sm);
+}
+.chat-col .composer .text-input { border: none; background: none; box-shadow: none; min-height: 42px; }
+.chat-col .composer .text-input:focus-visible { outline: none; }
+.chat-col .mic {
+  border: none; background: none; padding: 0 6px; min-height: 42px;
+  color: var(--muted);
+}
+.chat-col .mic:hover { color: var(--primary); }
+.chat-col .mic.recording { background: none; color: var(--danger); }
+.chat-col .composer .send {
+  width: 42px; min-width: 42px; height: 42px; padding: 0;
+  border-radius: var(--r-md);
+  display: inline-flex; align-items: center; justify-content: center;
+}
 .view-pad { overflow-y: auto; }
 .view-inner {
   width: 100%;
@@ -805,13 +962,22 @@ a.source-chip:hover { color: var(--text); border-color: var(--muted); }
 }
 
 /* ---- Narrow screens ---------------------------------------------------- */
+@media (max-width: 480px) {
+  .topbar .wordmark { font-size: 22px; }
+  /* Header must fit 375px: drop the wordmark subtitle and the redundant
+     connection chip (the companion banner already states "Virtual dog"), and
+     make the sound toggle icon-only. Keeps MOSES: ACTIVE + Help + Sound. */
+  .topbar .subtitle { display: none; }
+  .topbar #status-chip { display: none; }
+  .chip-sound #sound-label { display: none; }
+  .chip-sound { min-width: 30px; justify-content: center; }
+}
 @media (max-width: 430px) {
-  .wordmark { font-size: 24px; }
   /* Keep every control labelled (brief: no icon-only buttons). Tighten the
      composer instead of dropping the mic's "Talk" label. */
   .composer { gap: 6px; padding-left: 14px; padding-right: 14px; }
   .btn { padding: 0 14px; }
-  #new-session { padding: 0 12px; }
+  .composer .send, #new-session { padding: 0; }
   .mic { padding: 0 12px; gap: 6px; }
   .text-input { padding: 0 14px; }
   .quick-actions { padding-bottom: 2px; }
@@ -825,11 +991,8 @@ a.source-chip:hover { color: var(--text); border-color: var(--muted); }
    stays in the DOM, just smaller — the emote/audio-sync contract is untouched.
    ========================================================================== */
 @media (max-width: 1023px) {
-  #chat.has-conversation .stage { padding: 8px 18px 0; }
-  #chat.has-conversation .stage-card { flex-direction: row; align-items: center; gap: 12px; padding: 10px 14px; }
-  #chat.has-conversation .avatar-mark { width: 52px; height: 52px; border-width: 2px; }
-  #chat.has-conversation .stage-caption { margin: 0; }
-  #chat.has-conversation .quick-actions { padding-top: 8px; }
+  /* The stage is now a compact inline row at all times (see .stage/.stage-card),
+     so no has-conversation collapse is needed. */
   /* The non-chat views scroll internally; keep their content within the column. */
   .view-inner { max-width: 640px; }
 }
@@ -856,82 +1019,182 @@ a.source-chip:hover { color: var(--text); border-color: var(--muted); }
   .app,
   .app:has(#chat:not([hidden])) { max-width: none; }
 
-  /* Full-width identity bar + stop bar, content centered within 1180px. The
-     padding-inline math keeps the bar background (and border) edge-to-edge. */
-  .app:has(#chat:not([hidden])) .topbar {
-    padding-inline: max(24px, calc((100% - 1180px) / 2));
-  }
-  .stop-bar { padding-inline: max(24px, calc((100% - 1180px) / 2)); }
-  .wordmark { font-size: 30px; }
-
-  .chat-grid {
-    display: grid;
-    grid-template-columns: 344px minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr);
-    gap: 28px;
-    width: 100%;
-    max-width: 1180px;
-    margin: 0 auto;
-    padding: 26px 24px 26px;
-    min-height: 0;
-  }
-
-  /* Left rail hugs its content at the top of the row. */
-  .chat-rail { align-self: start; gap: 16px; }
-  .banner { margin: 0; }
-  .stage { padding: 0; }
-  .stage-card { padding: 26px 18px 18px; }
-  .avatar-mark { width: 150px; height: 150px; }
-  .quick-actions { padding: 0; }
-  .quick-actions .chip-action { flex: 1 1 auto; justify-content: center; }
-
-  /* Right column: the message thread lives in a bordered card that fills the
-     row height; the thread scrolls inside it and the composer is pinned. */
-  .chat-main {
-    align-self: stretch;
-    min-height: 0;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    box-shadow: var(--shadow-sm);
-    overflow: hidden;
-  }
-  .messages { padding: 20px 22px; }
-  .bubble { max-width: min(80%, 620px); font-size: 16px; }
-  .composer { border-radius: 0; }
-
-  /* Nav aligns to the same 1180px content band as the top identity bar; tabs
-     read as real tabs (auto width) rather than stretched segments. */
-  .view-nav { padding-inline: max(24px, calc((100% - 1180px) / 2)); padding-top: 4px; }
-  .view-tab { flex: 0 0 auto; padding: 12px 18px; }
-  /* Non-chat views get a comfortable centered reading column. */
-  .view-pad .view-inner { max-width: 900px; padding: 30px 24px 40px; }
+  .topbar .wordmark { font-size: 22px; }
+  /* Non-chat views get a comfortable reading column. */
+  .view-pad .view-inner { max-width: 1120px; padding: 30px 34px 44px; }
   .wf-map { min-height: 260px; }
   .map-viewport-lg { min-height: 440px; }
 
   /* Bigger, more obviously-tappable voice control on desktop. */
-  .mic { min-height: 50px; padding: 0 18px; font-size: 15px; }
+  .mic { min-height: 50px; }
   .mic-glyph { width: 20px; height: 20px; }
 
-  /* ---- Desktop landing hero: two-column stage --------------------------- */
-  .hero { padding: 64px 40px calc(64px + env(safe-area-inset-bottom)); }
-  .hero-inner {
-    max-width: 1080px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(400px, 440px);
-    column-gap: 64px;
-    align-items: start;
-  }
-  .hero-lockup { grid-column: 1; margin-bottom: 26px; }
-  .hero-title  { grid-column: 1; font-size: clamp(44px, 4.4vw, 60px); margin-bottom: 20px; }
-  .hero-lede   { grid-column: 1; font-size: 19px; max-width: 46ch; margin-bottom: 0; }
-  .intake-card { grid-column: 2; grid-row: 1 / span 5; align-self: start; }
-  .campus-strip { grid-column: 1; max-width: 420px; margin-top: 30px; }
-  .affiliation-note { grid-column: 1; }
+  /* ---- Desktop landing: full-width nav, centered hero + card ------------- */
+  .landing-nav { padding: 18px 40px; }
+  .hero-inner { padding-top: 72px; }
+  .hero-title { font-size: clamp(40px, 4vw, 52px); }
 }
 
-@media (min-width: 1400px) {
-  .chat-grid { max-width: 1280px; }
+/* ==========================================================================
+   Shared view header extras (eyebrow + large title)
+   ========================================================================== */
+.view-eyebrow {
+  margin: 0 0 6px;
+  font-size: 12px; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--primary);
+}
+.view-title-lg { font-size: 34px; letter-spacing: -0.03em; }
+.view-sub { max-width: 62ch; }
+
+/* ==========================================================================
+   SERVICES view (arsenal)
+   ========================================================================== */
+.svc-search-card {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 20px 0 22px; padding: 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-sm);
+}
+.svc-search {
+  flex: 1 1 320px; min-width: 0;
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 14px; min-height: 44px;
+  background: var(--surface-soft); border-radius: var(--r-md);
+  color: var(--muted);
+}
+.svc-search-input { flex: 1; min-width: 0; border: none; background: none; font: inherit; font-size: 15px; color: var(--text); }
+.svc-search-input:focus-visible { outline: none; }
+.svc-filters { display: flex; gap: 8px; flex-shrink: 0; }
+.svc-filter {
+  min-height: 40px; padding: 0 16px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-soft); color: var(--text);
+  font: inherit; font-weight: 700; font-size: 14px; cursor: pointer;
+}
+.svc-filter.is-active { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+
+/* Arsenal rows -> service cards (icon square, name, desc, status pill). */
+.arsenal-list { gap: 12px; }
+.arsenal-row { border-radius: var(--r-lg); padding: 16px 18px; box-shadow: var(--shadow-sm); }
+.arsenal-ico {
+  width: 44px; height: 44px; font-size: 20px; border-radius: var(--r-md);
+  background: var(--surface-soft);
+}
+.arsenal-name { font-size: 16px; }
+.arsenal-desc { font-size: 14px; }
+/* Pills as soft status badges (matches the mockup). */
+.arsenal-row .pill { font-size: 12.5px; min-height: 28px; padding: 4px 12px; border-radius: var(--r-pill); }
+
+/* ==========================================================================
+   WAYFINDING view
+   ========================================================================== */
+.wf-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; margin-top: 20px; }
+.wf-left { display: flex; flex-direction: column; gap: 20px; }
+.wf-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-sm);
+  padding: 18px;
+}
+.wf-form { margin: 0; }
+.wf-search {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 14px; min-height: 46px; margin-top: 6px;
+  background: var(--surface-soft); border-radius: var(--r-md); color: var(--muted);
+}
+.wf-search .text-input { border: none; background: none; box-shadow: none; padding: 0; }
+.wf-search .text-input:focus-visible { outline: none; }
+.wf-dests { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+.wf-dest {
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  padding: 12px 14px; min-height: 58px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md);
+  cursor: pointer; font: inherit; transition: border-color 0.15s ease, background 0.15s ease;
+}
+.wf-dest:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 5%, var(--surface)); }
+.wf-dest-ico { font-size: 20px; flex-shrink: 0; }
+.wf-dest-text { display: flex; flex-direction: column; min-width: 0; }
+.wf-dest-name { font-weight: 800; font-size: 14.5px; color: var(--text); }
+.wf-dest-sub { font-size: 12.5px; color: var(--muted); }
+.wf-map { min-height: 200px; margin: 0; }
+
+.wf-turns { display: flex; flex-direction: column; height: 100%; }
+.wf-turns-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.wf-turns-head .subhead { margin: 0; }
+.wf-turns-sub { margin: 2px 0 0; font-size: 13px; color: var(--muted); font-weight: 600; }
+.wf-summon { min-height: 42px; gap: 8px; font-size: 14px; padding: 0 16px; flex-shrink: 0; }
+.wf-directions-body { border: none; background: none; padding: 0; min-height: 0; flex: 1; }
+.wf-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.wf-step { display: flex; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.wf-step:last-child { border-bottom: none; }
+.wf-step-n {
+  flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--surface-soft); color: var(--muted);
+  font-size: 13px; font-weight: 800;
+}
+.wf-step.is-current .wf-step-n { background: var(--primary); color: var(--primary-text); }
+.wf-step-t { margin: 0 0 3px; font-size: 12px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.wf-step-d { margin: 0; font-size: 14.5px; line-height: 1.45; color: var(--text); }
+.wf-step-upcoming .wf-step-d { color: var(--muted); font-style: italic; }
+.wf-step-upcoming .wf-step-n { background: transparent; border: 1px dashed var(--border); }
+.wf-eta { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.wf-eta-row { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; }
+.wf-eta-val { color: var(--primary); }
+.wf-eta-bar { margin-top: 8px; height: 6px; border-radius: 3px; background: var(--surface-soft); overflow: hidden; }
+.wf-eta-bar span { display: block; height: 100%; background: var(--primary); border-radius: 3px; }
+
+/* ==========================================================================
+   MAP view
+   ========================================================================== */
+.map-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.map-controls { display: flex; gap: 8px; flex-shrink: 0; }
+.map-ctl {
+  width: 40px; height: 40px; display: grid; place-items: center;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); color: var(--text); cursor: pointer;
+}
+.map-ctl:hover { border-color: var(--primary); color: var(--primary); }
+
+.map-stage { position: relative; margin-top: 8px; }
+.map-viewport-lg { min-height: 300px; background: var(--surface-soft); border-radius: var(--r-lg); }
+.map-skeleton { position: absolute; top: 18px; left: 18px; display: flex; flex-direction: column; gap: 8px; }
+.map-skeleton i { display: block; height: 10px; border-radius: 5px; background: color-mix(in srgb, var(--muted) 18%, var(--surface)); }
+.map-skeleton i:nth-child(1) { width: 120px; }
+.map-skeleton i:nth-child(2) { width: 84px; }
+.map-empty-actions { display: flex; gap: 12px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
+.map-empty .map-empty-ico { color: var(--primary); }
+
+.map-robot-status {
+  position: absolute; right: 16px; bottom: 16px;
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; max-width: 260px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-md); box-shadow: var(--shadow);
+}
+.map-robot-ico {
+  width: 38px; height: 38px; flex-shrink: 0; display: grid; place-items: center;
+  border-radius: var(--r-md); background: var(--surface-soft); color: var(--primary);
+}
+.map-robot-text { display: flex; flex-direction: column; min-width: 0; }
+.map-robot-label { font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.map-robot-text .map-meta { font-size: 14px; font-weight: 700; color: var(--text); }
+
+.map-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 20px; }
+.map-card {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 16px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm);
+}
+.map-card-ico {
+  width: 32px; height: 32px; flex-shrink: 0; display: grid; place-items: center;
+  border-radius: var(--r-md); background: var(--surface-soft); color: var(--primary); font-size: 15px;
+}
+.map-card-title { margin: 0 0 4px; font-weight: 800; font-size: 14.5px; color: var(--text); }
+.map-card-desc { margin: 0; font-size: 13px; line-height: 1.45; color: var(--muted); }
+
+/* Two-column wayfinding + centered content on desktop. */
+@media (min-width: 900px) {
+  .wf-grid { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); align-items: start; }
 }
 
 @media (prefers-reduced-motion: reduce) {
