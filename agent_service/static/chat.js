@@ -362,7 +362,9 @@
   let wsClosedByUs = false;
 
   function setConnDetail(connected) {
-    chip.title = connected ? "connected" : "reconnecting…";
+    // #status-chip was removed in the minimal chat shell; the companion banner
+    // now owns the connection readout. Guard so its absence never throws.
+    if (chip) chip.title = connected ? "connected" : "reconnecting…";
   }
 
   function connect() {
@@ -573,10 +575,10 @@
       virtualPetBadge.classList.toggle("hidden", !isPet);
     }
     if (isPet) {
-      chip.classList.add("hidden");
-    } else {
+      if (chip) chip.classList.add("hidden");
+    } else if (chip) {
       chip.className = "chip " + (physical ? "chip-physical" : "chip-virtual");
-      chipMode.textContent = physical ? "physical" : "virtual";
+      if (chipMode) chipMode.textContent = physical ? "physical" : "virtual";
     }
 
     // Persistent Stop: visible only while REAL robot motion can be active
@@ -628,8 +630,8 @@
     } catch (e) {
       // Session row missing or endpoint unreachable -- quietly show the
       // virtual default rather than wedging the UI.
-      chip.className = "chip chip-virtual";
-      chipMode.textContent = "virtual";
+      if (chip) chip.className = "chip chip-virtual";
+      if (chipMode) chipMode.textContent = "virtual";
       if (stopBar) stopBar.classList.add("hidden");
       if (virtualPetBadge) virtualPetBadge.classList.add("hidden");
       requestBtn.classList.remove("is-connected");

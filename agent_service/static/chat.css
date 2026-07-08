@@ -1206,3 +1206,40 @@ a.source-chip:hover { color: var(--text); border-color: var(--muted); }
   .avatar.speaking::after { animation: none; opacity: 0.6; }
   .speaking-bars i, .thinking-dots i, .voice-hint-dot { animation: none !important; }
 }
+
+/* ============================================================================
+   MINIMAL CHAT SHELL (demo) — overrides for the stripped-down voice-chat UI.
+   The section nav / sidebar / wayfinding / arsenal / map were removed from the
+   DOM; .chat-col now hangs directly under #chat. These rules re-anchor the slim
+   header controls and tighten the single centered column. Everything above is
+   reused as-is (avatar/emote, speaking bars, bubbles, banner, intake hero).
+   ========================================================================== */
+
+/* Header: brand hugs the left, controls hug the right (the old .view-nav used
+   to do the pushing with flex:1). */
+.topbar .status { margin-left: auto; }
+
+/* Compact "New chat" header button (repurposed #new-session, out of the old
+   sidebar). Understated ghost pill so the brand + composer stay the focus. */
+.topbar-btn {
+  min-height: 36px; padding: 0 13px; gap: 7px;
+  font-size: 14px; font-weight: 800;
+  border-radius: var(--r-pill);
+}
+.topbar-btn svg { flex-shrink: 0; }
+.topbar-btn span { white-space: nowrap; }
+
+/* .chat-col is now a direct flex child of #chat — give it the full height and a
+   tighter, more focused reading width than the old 860px view column. */
+#chat:not([hidden]) .chat-col {
+  flex: 1; min-height: 0;
+  max-width: 720px;
+}
+
+/* On phones the app column is capped at 560px; drop the chat-col side padding a
+   touch so the composer pill isn't cramped. */
+@media (max-width: 480px) {
+  #chat:not([hidden]) .chat-col { padding: 0 16px; }
+  .topbar-btn span { display: none; }        /* icon-only on the narrowest screens */
+  .topbar-btn { padding: 0 10px; }
+}

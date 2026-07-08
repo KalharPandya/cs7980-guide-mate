@@ -8,9 +8,9 @@
 </head>
 <body>
   <main class="app">
-    <!-- App top bar (chat mode): brand (left) + section nav (center) + status /
-         Help (right). The section nav lives here now (moved out of #chat) so it
-         reads as one bar across every view, matching the design. -->
+    <!-- Slim chat-mode header: brand (left) + New chat / Sound toggle (right).
+         The old section nav (Chat/Wayfinding/Services/Map) + status chips are
+         intentionally gone — this is a minimal voice-chat demo shell. -->
     <header class="topbar" aria-label="Moses">
       <div class="lockup">
         <span class="mark mark-app">
@@ -19,64 +19,18 @@
         <span class="wordmark">Moses</span>
       </div>
 
-      <nav class="view-nav" role="tablist" aria-label="Moses sections">
-        <button class="view-tab is-active" type="button" role="tab" id="tab-chat"
-                aria-selected="true" aria-controls="view-chat" data-view="chat">
-          <svg class="view-tab-ico" viewBox="0 0 24 24" width="20" height="20" fill="none"
-               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-          </svg>
-          <span class="view-tab-label">Chat</span>
-        </button>
-        <button class="view-tab" type="button" role="tab" id="tab-wayfinding"
-                aria-selected="false" tabindex="-1" aria-controls="view-wayfinding" data-view="wayfinding">
-          <svg class="view-tab-ico" viewBox="0 0 24 24" width="20" height="20" fill="none"
-               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <polygon points="3 11 22 2 13 21 11 13 3 11" />
-          </svg>
-          <span class="view-tab-label">Wayfinding</span>
-        </button>
-        <button class="view-tab" type="button" role="tab" id="tab-arsenal"
-                aria-selected="false" tabindex="-1" aria-controls="view-arsenal" data-view="arsenal">
-          <svg class="view-tab-ico" viewBox="0 0 24 24" width="20" height="20" fill="none"
-               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="3" y="3" width="7" height="7" rx="1" />
-            <rect x="14" y="3" width="7" height="7" rx="1" />
-            <rect x="3" y="14" width="7" height="7" rx="1" />
-            <rect x="14" y="14" width="7" height="7" rx="1" />
-          </svg>
-          <span class="view-tab-label">Services</span>
-        </button>
-        <button class="view-tab" type="button" role="tab" id="tab-map"
-                aria-selected="false" tabindex="-1" aria-controls="view-map" data-view="map">
-          <svg class="view-tab-ico" viewBox="0 0 24 24" width="20" height="20" fill="none"
-               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <polygon points="1 6 8 3 16 6 23 3 23 18 16 21 8 18 1 21 1 6" />
-            <line x1="8" y1="3" x2="8" y2="18" />
-            <line x1="16" y1="6" x2="16" y2="21" />
-          </svg>
-          <span class="view-tab-label">Map</span>
-        </button>
-      </nav>
-
       <div class="status">
-        <!-- Brand liveness pill (static): Moses is up and answering. -->
-        <span class="chip chip-active" aria-hidden="true">
-          <span class="chip-dot" aria-hidden="true"></span>
-          <span>MOSES: ACTIVE</span>
-        </span>
-        <div id="status-chip" class="chip chip-virtual" title="connection status">
-          <span class="chip-dot" aria-hidden="true"></span>
-          <span id="status-mode">virtual</span>
-        </div>
-        <!-- Task 7 (virtual-pet grant): shown only while connected robot_id ==
-             "turtlebotsim" (vs a physical robot). Hidden by default; chat.js
-             toggles it from the same /api/session/{id}/state poll that drives
-             the companion banner. -->
-        <span id="virtual-pet-badge" data-testid="virtual-pet-badge" class="chip chip-virtual-pet hidden">
-          <span class="chip-dot" aria-hidden="true"></span>Virtual pet
-        </span>
-        <!-- Session sound toggle: gates AUTOPLAY of spoken replies. -->
+        <!-- "New chat" == start a new session (also the way back to the intro
+             screen during a demo). Wired to #new-session in chat.js. -->
+        <button id="new-session" class="btn btn-ghost topbar-btn" type="button" title="Start a new session">
+          <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          <span>New chat</span>
+        </button>
+
+        <!-- Session sound toggle: gates AUTOPLAY of spoken replies (TTS). -->
         <button id="sound-toggle" class="chip chip-sound" type="button" aria-pressed="true" title="Spoken replies">
           <svg class="chip-ico" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"
                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -85,39 +39,17 @@
           </svg>
           <span id="sound-label">Sound on</span>
         </button>
-        <a class="help-link" href="mailto:help@northeastern.example">Help</a>
       </div>
     </header>
 
-    <!-- Direction B light landing (landing / consent / intake). Full-width top
-         nav, centered hero + intake card. Intake is collected once, minting the
-         real session row so the companion-request + status-poll endpoints work
-         from message one. -->
+    <!-- Intro screen (landing / consent / intake): centered hero + intake card.
+         Collected once, minting the real session row so the companion-request +
+         status-poll endpoints work from message one. -->
     <section id="intake" class="hero">
-      <!-- Landing top nav (visual): mirrors the in-app nav. The section links are
-           inert here (no session yet); "Start with Moses" below mints the session
-           and reveals the real app shell + nav. -->
-      <header class="landing-nav">
-        <span class="landing-nav-brand">Moses</span>
-        <nav class="landing-nav-links" aria-label="Sections">
-          <a href="#">Chat</a>
-          <a href="#">Wayfinding</a>
-          <a href="#">Services</a>
-          <a href="#">Map</a>
-        </nav>
-        <div class="landing-nav-right">
-          <a class="landing-nav-help" href="mailto:help@northeastern.example">Help</a>
-          <span class="landing-nav-avatar">
-            <img src="brand/moses-husky-head.svg" alt="Moses" />
-          </span>
-        </div>
-      </header>
-
       <div class="hero-inner">
         <h1 class="hero-title reveal reveal-2">A guide who knows the <span class="hero-accent">way around campus.</span></h1>
         <p class="hero-lede reveal reveal-2">
-          Ask Moses questions, get directions, or talk to a person. Moses can guide
-          you in person too!
+          Ask Moses by voice or text — Moses listens and talks back.
         </p>
 
         <div class="intake-card reveal reveal-3">
@@ -132,7 +64,6 @@
           </label>
 
           <button id="start" class="btn btn-primary btn-block" type="button">Start with Moses</button>
-          <a class="human-help" href="mailto:help@northeastern.example">Prefer a person? Talk to campus staff <span aria-hidden="true">→</span></a>
 
           <div class="privacy">
             <svg class="privacy-ico" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"
@@ -155,9 +86,8 @@
     <div id="chat" hidden>
       <!-- Persistent Stop: mandated whenever a PHYSICAL robot's motion can be
            active. Sticky, always visible, danger-red. chat.js reveals it from the
-           same state poll that drives the banner, and wires it to send a real
-           {type:"stop"} over the chat WS (backend forwards a stop Command to the
-           bound robot). Hidden for virtual + virtual-pet sessions (no motion). -->
+           same state poll that drives the banner. Hidden for virtual sessions
+           (no motion) — so it stays invisible in the clean virtual demo. -->
       <div id="stop-bar" class="stop-bar hidden" role="region" aria-label="Robot safety">
         <button id="stop-btn" class="btn btn-stop" type="button" data-testid="stop-button">
           <svg class="btn-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -167,54 +97,9 @@
         </button>
       </div>
 
-      <div class="app-body">
-        <!-- Persistent left sidebar (all views): brand, primary actions, settings. -->
-        <aside class="app-sidebar">
-          <div class="sidebar-brand">
-            <span class="sidebar-brand-name">Moses</span>
-            <span class="sidebar-brand-sub">Campus Concierge</span>
-          </div>
-
-          <!-- "New Chat" == start a new session (repurposed #new-session). -->
-          <button id="new-session" class="btn btn-primary sidebar-btn" type="button" title="Start a new session">
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"
-                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            <span>New Chat</span>
-          </button>
-
-          <!-- Human handoff — wired as a .chip-action (chat.js prefills + sends). -->
-          <button class="btn btn-outline sidebar-btn chip-action" type="button"
-                  data-prompt="Can you connect me with a person?">
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"
-                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3 12a9 9 0 0 1 18 0" />
-              <rect x="2" y="12" width="4" height="7" rx="1.5" />
-              <rect x="18" y="12" width="4" height="7" rx="1.5" />
-            </svg>
-            <span>Talk to a person</span>
-          </button>
-
-          <div class="sidebar-spacer"></div>
-
-          <button class="sidebar-settings" type="button">
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"
-                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-            <span>Settings</span>
-          </button>
-        </aside>
-
-        <div class="app-main">
-      <div class="views">
-       <!-- ===================== CHAT (existing) ===================== -->
-       <section id="view-chat" class="view" role="tabpanel" aria-labelledby="tab-chat" tabindex="0">
       <div class="chat-col">
-        <!-- Slim companion strip (kept: e2e clicks #request-companion; chat.js
-             drives its status text + physical/pending/approved states). -->
+        <!-- Companion strip: status text + "Request physical companion". chat.js
+             drives its states off GET /api/session/{id}/state. -->
         <section id="companion-banner" class="banner" aria-live="polite">
           <span class="banner-status">
             <span class="banner-dot" aria-hidden="true"></span>
@@ -228,8 +113,7 @@
         <section id="messages" class="messages" aria-live="polite">
           <!-- Empty-state greeting: centered avatar + heading + greeting + quick
                chips (chat.js hides this the moment the first bubble is added).
-               #avatar lives here so emote/audio-sync classes still apply (the
-               voice e2e asserts avatar.classList, not visibility). -->
+               #avatar lives here so emote/audio-sync classes still apply. -->
           <div id="thread-empty" class="thread-empty">
             <div id="avatar" class="avatar avatar-hero">
               <span class="avatar-mark">
@@ -239,9 +123,8 @@
             </div>
             <p class="thread-empty-title">Moses - the campus spirit</p>
             <p class="thread-empty-lede">
-              Hello! I am Moses, your campus spirit and assistant. I help you
-              navigate buildings, find offices, and locate facilities at
-              Northeastern Vancouver.
+              Hello! I am Moses, your campus spirit and assistant. Ask me anything —
+              tap the mic to talk, or just type.
             </p>
             <div class="quick-actions" aria-label="Quick actions">
               <button class="chip chip-action" type="button" data-prompt="Help me find a room on campus.">
@@ -267,10 +150,10 @@
           </p>
         </section>
 
-        <!-- Recording state: shown while push-to-talk is capturing. -->
+        <!-- Recording state: shown while push-to-talk is capturing (STT). -->
         <p id="voice-hint" class="voice-hint hidden" aria-live="polite">
           <span class="voice-hint-dot" aria-hidden="true"></span>
-          Listening… tap Talk again to send
+          Listening… tap the mic again to send
         </p>
 
         <form id="chat-form" class="composer">
@@ -294,215 +177,7 @@
             </svg>
           </button>
         </form>
-      </div>
-       </section>
-
-       <!-- ===================== WAYFINDING ===================== -->
-       <!-- Motion-free: the campus/robot map (falls back to a placeholder when
-            no robot has produced one), a destination input, and turn-by-turn
-            TEXT directions produced by asking Moses over the SAME chat/WS turn
-            (no new protocol). The persistent Stop bar above the nav covers the
-            "Stop when a robot can move" requirement across every view. -->
-       <section id="view-wayfinding" class="view view-pad" role="tabpanel" aria-labelledby="tab-wayfinding" tabindex="0" hidden>
-         <div class="view-inner">
-           <header class="view-head">
-             <h2 class="view-title view-title-lg">Wayfinding</h2>
-             <p class="view-sub">Directions with or without the robot. Moses writes the turn-by-turn steps.</p>
-           </header>
-
-           <div class="wf-grid">
-             <!-- Left: destination search + shortcuts + live map -->
-             <div class="wf-left">
-               <div class="wf-card">
-                 <form id="wf-form" class="wf-form">
-                   <label class="field-label" for="wf-input">Where do you want to go?</label>
-                   <div class="wf-search">
-                     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                     <input id="wf-input" class="text-input" autocomplete="off"
-                            placeholder="Search buildings, rooms, or labs" />
-                   </div>
-                 </form>
-                 <div class="wf-dests">
-                   <button class="wf-dest chip-action" type="button" data-prompt="Give me directions to the Library.">
-                     <span class="wf-dest-ico">📕</span>
-                     <span class="wf-dest-text"><span class="wf-dest-name">Library</span><span class="wf-dest-sub">Main Campus East</span></span>
-                   </button>
-                   <button class="wf-dest chip-action" type="button" data-prompt="Give me directions to the Dining Hall.">
-                     <span class="wf-dest-ico">🍽️</span>
-                     <span class="wf-dest-text"><span class="wf-dest-name">Dining Hall</span><span class="wf-dest-sub">Student Union</span></span>
-                   </button>
-                   <button class="wf-dest chip-action" type="button" data-prompt="Give me directions to the Gymnasium.">
-                     <span class="wf-dest-ico">🏋️</span>
-                     <span class="wf-dest-text"><span class="wf-dest-name">Gymnasium</span><span class="wf-dest-sub">North Athletic Wing</span></span>
-                   </button>
-                   <button class="wf-dest chip-action" type="button" data-prompt="Give me directions to the Bio Lab.">
-                     <span class="wf-dest-ico">🧪</span>
-                     <span class="wf-dest-text"><span class="wf-dest-name">Bio Lab</span><span class="wf-dest-sub">Science Quad</span></span>
-                   </button>
-                 </div>
-               </div>
-
-               <div class="wf-map map-viewport" id="wf-map-viewport" data-state="loading">
-                 <img id="wf-map-img" class="map-img" alt="Campus map for your route" hidden />
-                 <div class="map-empty" id="wf-map-empty">
-                   <span class="map-empty-ico" aria-hidden="true">🗺️</span>
-                   <p class="map-empty-title">Live View</p>
-                   <p class="map-empty-lede">Map appears once a robot is guiding you or a route is active.</p>
-                 </div>
-               </div>
-             </div>
-
-             <!-- Right: turn-by-turn instruction log -->
-             <div class="wf-right">
-               <section class="wf-card wf-turns" aria-live="polite">
-                 <div class="wf-turns-head">
-                   <div>
-                     <p class="subhead">Turn-by-Turn</p>
-                     <p class="wf-turns-sub">Instruction Log</p>
-                   </div>
-                   <button class="btn btn-primary wf-summon chip-action" type="button"
-                           data-prompt="Can you summon the robot to guide me there in person?">
-                     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M9 14h.01M15 14h.01"/></svg>
-                     Summon Robot Guide
-                   </button>
-                 </div>
-
-                 <div id="wf-directions-body" class="wf-directions-body">
-                   <ol class="wf-steps">
-                     <li class="wf-step is-current"><span class="wf-step-n">1</span><div><p class="wf-step-t">Current location</p><p class="wf-step-d">Start at the Student Union South Entrance.</p></div></li>
-                     <li class="wf-step"><span class="wf-step-n">2</span><div><p class="wf-step-t">Proceed 200m</p><p class="wf-step-d">Exit the building and turn right onto University Way. Walk past the fountain.</p></div></li>
-                     <li class="wf-step"><span class="wf-step-n">3</span><div><p class="wf-step-t">Turn left</p><p class="wf-step-d">Take the left path at the Engineering Quad junction, following signs for the Library.</p></div></li>
-                     <li class="wf-step wf-step-upcoming"><span class="wf-step-n">4</span><div><p class="wf-step-d">Additional steps will appear as you progress or when a robot is dispatched.</p></div></li>
-                   </ol>
-                 </div>
-
-                 <div class="wf-eta">
-                   <div class="wf-eta-row"><span>Estimated Arrival</span><span class="wf-eta-val">6 mins</span></div>
-                   <div class="wf-eta-bar"><span style="width:38%"></span></div>
-                 </div>
-               </section>
-             </div>
-           </div>
-         </div>
-       </section>
-
-       <!-- ===================== AGENT ARSENAL ===================== -->
-       <!-- "Moses is more than the robot": labelled status rows (label + colour
-            pill, never colour-only) driven by GET /api/session/{sid}/arsenal.
-            Degrades to "Checking…" pills if the route 404s. -->
-       <section id="view-arsenal" class="view view-pad" role="tabpanel" aria-labelledby="tab-arsenal" tabindex="0" hidden>
-         <div class="view-inner">
-           <header class="view-head">
-             <p class="view-eyebrow">Institutional Utilities</p>
-             <h2 class="view-title view-title-lg">Services</h2>
-             <p class="view-sub">
-               Access all campus amenities and resources through the Moses central
-               command. Your AI concierge is ready to assist with real-time room
-               availability, service requests, and safety protocols.
-             </p>
-           </header>
-
-           <!-- Search + filter chips (visual): scoping the service list. -->
-           <div class="svc-search-card">
-             <div class="svc-search">
-               <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-               <input class="svc-search-input" type="text" placeholder="Search services (e.g. 'printer', 'parking', 'locksmith')" aria-label="Search services" />
-             </div>
-             <div class="svc-filters" role="group" aria-label="Filter services">
-               <button class="svc-filter is-active" type="button">All Services</button>
-               <button class="svc-filter" type="button">Popular</button>
-               <button class="svc-filter" type="button">Emergency</button>
-             </div>
-           </div>
-
-           <div id="arsenal-list" class="arsenal-list" aria-live="polite">
-             <!-- rows injected by chat.js -->
-           </div>
-           <p class="view-foot">
-             <button id="arsenal-refresh" class="btn btn-ghost btn-sm" type="button">Refresh</button>
-           </p>
-         </div>
-       </section>
-
-       <!-- ===================== USER MAP ===================== -->
-       <section id="view-map" class="view view-pad" role="tabpanel" aria-labelledby="tab-map" tabindex="0" hidden>
-         <div class="view-inner">
-           <header class="view-head map-head">
-             <div>
-               <h2 class="view-title view-title-lg">Map</h2>
-               <p class="view-sub">The latest map from the robot guiding you.</p>
-             </div>
-             <div class="map-controls" aria-label="Map controls">
-               <button class="map-ctl" type="button" aria-label="Recenter">
-                 <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/></svg>
-               </button>
-               <button class="map-ctl" type="button" aria-label="Zoom in">
-                 <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-               </button>
-               <button id="map-zoom" class="map-ctl" type="button" aria-label="Zoom out / actual size" aria-pressed="false">
-                 <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-               </button>
-               <button class="map-ctl" type="button" aria-label="Layers">
-                 <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-               </button>
-             </div>
-           </header>
-
-           <div class="map-stage">
-             <div class="map-viewport map-viewport-lg" id="map-viewport" data-state="loading">
-               <span class="map-skeleton" aria-hidden="true"><i></i><i></i></span>
-               <img id="map-img" class="map-img" alt="Latest robot map" hidden />
-               <div class="map-empty" id="map-empty">
-                 <span class="map-empty-ico" aria-hidden="true">
-                   <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M8 2h8M9 14h.01M15 14h.01"/></svg>
-                 </span>
-                 <p class="map-empty-title">No map yet.</p>
-                 <p class="map-empty-lede">A map shows up here once a robot is guiding you.<br>Connect with a Moses unit to start your journey.</p>
-                 <div class="map-empty-actions">
-                   <button class="btn btn-primary chip-action" type="button" data-prompt="Find the nearest robot and connect me.">Find Nearest Robot</button>
-                   <button class="btn btn-outline" type="button">View Saved Routes</button>
-                 </div>
-               </div>
-             </div>
-             <div class="map-robot-status">
-               <span class="map-robot-ico" aria-hidden="true">
-                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M9 14h.01M15 14h.01"/></svg>
-               </span>
-               <span class="map-robot-text">
-                 <span class="map-robot-label">Robot status</span>
-                 <span id="map-meta" class="map-meta">Waiting for connection…</span>
-               </span>
-             </div>
-           </div>
-
-           <div class="map-cards">
-             <div class="map-card">
-               <span class="map-card-ico" aria-hidden="true">ⓘ</span>
-               <div>
-                 <p class="map-card-title">Active Guidance</p>
-                 <p class="map-card-desc">Maps update in real-time based on the robot's LiDAR and environmental sensors.</p>
-               </div>
-             </div>
-             <div class="map-card">
-               <span class="map-card-ico" aria-hidden="true">↺</span>
-               <div>
-                 <p class="map-card-title">Recent Paths</p>
-                 <p class="map-card-desc">You haven't traveled with a Moses concierge in the last 24 hours.</p>
-               </div>
-             </div>
-             <div class="map-card">
-               <span class="map-card-ico" aria-hidden="true">⛃</span>
-               <div>
-                 <p class="map-card-title">Offline Mode</p>
-                 <p class="map-card-desc">Campus maps are cached automatically for use when Wi-Fi is intermittent.</p>
-               </div>
-             </div>
-           </div>
-         </div>
-       </section>
-      </div>
-        </div><!-- /.app-main -->
-      </div><!-- /.app-body -->
+      </div><!-- /.chat-col -->
     </div>
   </main>
   <audio id="player" hidden></audio>
