@@ -1,0 +1,512 @@
+/* ===================================================================
+   Moses — Operator Console
+   Northeastern Vancouver guide-robot fleet. Design system: tokens.json
+   (light app theme primary; black "hero" theme mapped onto dark mode).
+   Operational, legible, not mascot-heavy. Status is never colour-only.
+   =================================================================== */
+
+:root {
+  --gm-bg: #f7f7f7;
+  --gm-surface: #ffffff;
+  --gm-surface-soft: #f2f2f2;
+  --gm-text: #000000;
+  --gm-text-muted: #5b6170;
+  --gm-border: #d9d9d9;
+  --gm-primary: #c8102e;
+  --gm-primary-text: #ffffff;
+  --gm-route: #1f6feb;
+  --gm-success: #168a4a;
+  --gm-warning: #b76b00;
+  --gm-danger: #c8102e;
+  --gm-focus: #c8102e;
+  --gm-shadow: 0 14px 34px rgba(0, 0, 0, 0.10);
+  --gm-radius: 8px;
+  --gm-radius-sm: 4px;
+  --gm-radius-lg: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --gm-bg: #000000;
+    --gm-surface: #111111;
+    --gm-surface-soft: #1d1d1d;
+    --gm-text: #ffffff;
+    --gm-text-muted: #d6d6d6;
+    --gm-border: #343434;
+    --gm-primary: #c8102e;
+    --gm-primary-text: #ffffff;
+    --gm-route: #58a6ff;
+    --gm-success: #6ddc91;
+    --gm-warning: #f5b83d;
+    --gm-danger: #ff6b6b;
+    --gm-focus: #c8102e;
+    --gm-shadow: 0 18px 45px rgba(0, 0, 0, 0.42);
+  }
+}
+
+* { box-sizing: border-box; }
+
+/* The panel/login/tab visibility is driven by the `hidden` attribute in admin.js.
+   Several of those elements set `display` (grid/flex), which would otherwise beat
+   the UA `hidden` rule — so make `hidden` authoritative. */
+[hidden] { display: none !important; }
+
+html, body { max-width: 100%; overflow-x: hidden; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Real Head Pro", "FF Real Head", Lato, Arial, sans-serif;
+  font-size: 18px;
+  line-height: 1.5;
+  color: var(--gm-text);
+  background: var(--gm-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { margin: 0; line-height: 1.1; letter-spacing: -0.01em; }
+
+/* ---------- Moses identity lockup ---------------------------------- */
+.moses-lockup { display: flex; align-items: center; gap: 14px; }
+
+.moses-mark {
+  width: 52px; height: 52px;
+  display: grid; place-items: center;
+  border: 6px solid #000000;
+  background: #ffffff;
+  border-radius: 6px;
+  flex: 0 0 auto;
+}
+.moses-mark img { width: 34px; height: 34px; object-fit: contain; display: block; }
+
+.moses-lockup-hero .moses-mark { border-color: var(--gm-primary); }
+
+.moses-id { display: flex; flex-direction: column; }
+.moses-name {
+  font-size: 30px; line-height: 0.9; letter-spacing: -0.055em;
+  font-weight: 900; color: var(--gm-text);
+}
+.moses-subtitle {
+  margin-top: 4px; font-size: 12px; line-height: 1.1;
+  font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--gm-text-muted);
+}
+
+/* ================================================================= */
+/*  LOGIN  (black hero surface)                                       */
+/* ================================================================= */
+.login-stage {
+  min-height: 100vh;
+  display: grid; place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(1100px 520px at 15% -10%, #1d1d1d 0%, #000 60%);
+}
+.login-card {
+  width: 100%; max-width: 420px;
+  background: #111111;
+  color: #ffffff;
+  border: 1px solid #343434;
+  border-radius: var(--gm-radius-lg);
+  padding: 30px 30px 22px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+.login-card .moses-name { color: #ffffff; }
+.login-card .moses-subtitle { color: #d6d6d6; }
+.login-title {
+  margin: 24px 0 6px; font-size: 26px; font-weight: 900; letter-spacing: -0.03em;
+}
+.login-lede { margin: 0 0 20px; color: #d6d6d6; font-size: 15px; }
+.login-form { display: grid; gap: 10px; }
+.field-label { font-size: 13px; font-weight: 800; letter-spacing: 0.04em; color: #d6d6d6; }
+.login-card input {
+  width: 100%; min-height: 46px;
+  background: #000; color: #fff;
+  border: 1px solid #343434; border-radius: 8px;
+  padding: 0 14px; font: inherit;
+}
+.login-card input::placeholder { color: #7d7d7d; }
+.login-affiliation {
+  margin: 22px -30px -22px; padding: 16px 30px;
+  border-top: 1px solid #343434;
+  background: #fff; border-radius: 0 0 var(--gm-radius-lg) var(--gm-radius-lg);
+}
+.login-affiliation img { display: block; max-width: 220px; height: auto; }
+
+/* ================================================================= */
+/*  APP BAR  (signature identity strip)                              */
+/* ================================================================= */
+.app-bar { background: var(--gm-surface); border-bottom: 1px solid var(--gm-border); }
+.app-bar-inner {
+  max-width: 1080px; margin: 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  padding: 16px 22px;
+}
+.app-bar-affiliation {
+  display: flex; align-items: center; gap: 16px; min-width: 0;
+}
+.app-bar-context {
+  font-size: 12px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--gm-text-muted); text-align: right;
+}
+.app-bar-lockup { height: 34px; width: auto; max-width: 220px; object-fit: contain; }
+@media (prefers-color-scheme: dark) {
+  /* keep the university lockup legible on dark by giving it a white plate */
+  .app-bar-lockup { background: #fff; padding: 5px 8px; border-radius: 6px; }
+  /* Hero/dark surfaces use the RED outline mark frame (brief: B for dark stages).
+     Light mode keeps the black app frame. The app-bar mark sits on the #111
+     surface here, so switch its frame to Northeastern red to match the login. */
+  .moses-mark { border-color: var(--gm-primary); }
+}
+.app-bar-rule { height: 4px; background: var(--gm-primary); }
+
+.console { max-width: 1080px; margin: 0 auto; padding: 22px 22px 60px; }
+
+/* ================================================================= */
+/*  TABS                                                             */
+/* ================================================================= */
+.tabs {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  border-bottom: 1px solid var(--gm-border);
+  margin-bottom: 22px;
+}
+.tabs button {
+  appearance: none; cursor: pointer;
+  border: none; background: none;
+  color: var(--gm-text-muted);
+  font: inherit; font-size: 15px; font-weight: 800;
+  padding: 12px 16px; min-height: 44px;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+  border-radius: 6px 6px 0 0;
+}
+.tabs button:hover { color: var(--gm-text); background: var(--gm-surface-soft); }
+.tabs button.active {
+  color: var(--gm-text);
+  border-bottom-color: var(--gm-primary);
+}
+
+/* ================================================================= */
+/*  CARDS                                                            */
+/* ================================================================= */
+.card {
+  background: var(--gm-surface);
+  border: 1px solid var(--gm-border);
+  border-radius: var(--gm-radius);
+  box-shadow: var(--gm-shadow);
+  padding: 20px 22px;
+  margin-bottom: 18px;
+}
+.card-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px 16px;
+  margin-bottom: 14px;
+}
+.card-head h2 { font-size: 19px; font-weight: 900; }
+.subhead {
+  font-size: 12px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--gm-text-muted);
+  margin: 22px 0 8px;
+}
+.card-safety { border-left: 4px solid var(--gm-primary); }
+
+.hint { color: var(--gm-text-muted); font-size: 14px; margin: 0; }
+.error { color: var(--gm-danger); min-height: 1.3em; font-size: 14px; font-weight: 800; margin: 12px 0 0; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 0 0; }
+.row-controls { margin-top: 16px; }
+
+/* ================================================================= */
+/*  BUTTONS                                                          */
+/* ================================================================= */
+button {
+  cursor: pointer;
+  font: inherit; font-size: 15px; font-weight: 800;
+  min-height: 40px; padding: 0 16px;
+  border: 1px solid var(--gm-border);
+  border-radius: 999px;
+  background: var(--gm-surface);
+  color: var(--gm-text);
+}
+button:hover { border-color: var(--gm-text-muted); }
+
+/* Primary CTA (Northeastern red) */
+.btn-primary,
+button[type="submit"],
+#prompt-save {
+  min-height: 44px;
+  background: var(--gm-primary);
+  border-color: var(--gm-primary);
+  color: var(--gm-primary-text);
+}
+.btn-primary:hover,
+button[type="submit"]:hover,
+#prompt-save:hover { border-color: var(--gm-primary); filter: brightness(1.06); }
+
+.btn-block { width: 100%; }
+.btn-sm { min-height: 38px; font-size: 14px; padding: 0 14px; }
+
+/* Ghost / secondary */
+.btn-ghost, .secondary {
+  background: var(--gm-surface);
+  color: var(--gm-text-muted);
+  border-color: var(--gm-border);
+}
+.btn-ghost:hover, .secondary:hover { color: var(--gm-text); border-color: var(--gm-text-muted); }
+
+/* Warning weight (stop) */
+.btn-warning {
+  min-height: 44px;
+  background: color-mix(in srgb, var(--gm-warning) 12%, var(--gm-surface));
+  border-color: var(--gm-warning);
+  color: var(--gm-warning);
+}
+.btn-warning:hover { background: var(--gm-warning); color: #fff; }
+
+/* Danger / safety controls (kill switch, abort, delete) — red, weighted */
+.btn-danger, .danger {
+  min-height: 44px;
+  background: color-mix(in srgb, var(--gm-danger) 12%, var(--gm-surface));
+  border: 1px solid var(--gm-danger);
+  color: var(--gm-danger);
+}
+.btn-danger:hover, .danger:hover { background: var(--gm-danger); color: #fff; }
+
+/* Kill switch gets full weight — it is a safety control */
+.robot .danger {
+  background: var(--gm-danger);
+  color: #fff;
+  letter-spacing: 0.04em;
+}
+.robot .danger:hover { filter: brightness(1.08); }
+
+/* Dark-mode kill switch: the hero `--gm-danger` (#ff6b6b) is a pale coral —
+   white text on it is only ~2:1 (WCAG fail). The kill switch must stay the
+   highest-contrast, most-urgent control, so fill it with the deep Northeastern
+   red (#c8102e) instead — white on #c8102e is ~5.9:1. Light mode is unchanged. */
+@media (prefers-color-scheme: dark) {
+  .robot .danger {
+    background: #c8102e;
+    border-color: #c8102e;
+    color: #ffffff;
+  }
+  .robot .danger:hover { filter: none; background: #e11331; border-color: #e11331; }
+}
+
+:focus-visible {
+  outline: 3px solid var(--gm-focus);
+  outline-offset: 2px;
+}
+
+/* ================================================================= */
+/*  INPUTS                                                           */
+/* ================================================================= */
+input, textarea, select {
+  font: inherit;
+  color: var(--gm-text);
+  background: var(--gm-surface);
+  border: 1px solid var(--gm-border);
+  border-radius: var(--gm-radius);
+  padding: 10px 12px;
+  max-width: 100%;
+}
+textarea {
+  width: 100%; resize: vertical; min-height: 180px; line-height: 1.5;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 14px;
+}
+select { min-height: 44px; }
+.inline-select {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 800; color: var(--gm-text-muted);
+}
+.kb-upload { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* Styled file picker — replaces the native OS "Choose File" chrome (light-gray
+   system button reads as foreign on the black card in dark mode). The real
+   <input type=file> is visually hidden (still focusable + functional, id kept);
+   the label's pill acts as the button and matches the system button spec. */
+.file-field { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; cursor: pointer; }
+.file-input {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; border: 0; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+.file-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: 0 18px;
+  border: 1px solid var(--gm-border); border-radius: 999px;
+  background: var(--gm-surface); color: var(--gm-text);
+  font-weight: 800; font-size: 15px;
+}
+.file-field:hover .file-btn { border-color: var(--gm-text-muted); }
+.file-field:focus-within .file-btn {
+  outline: 3px solid var(--gm-focus); outline-offset: 2px;
+}
+.file-name { color: var(--gm-text-muted); font-size: 14px; font-weight: 700; }
+
+/* ================================================================= */
+/*  STATUS PILLS  (always label + colour, never colour alone)        */
+/* ================================================================= */
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 26px; padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 13px; font-weight: 800; letter-spacing: 0.01em;
+  border: 1px solid var(--gm-border);
+  background: var(--gm-surface-soft);
+  color: var(--gm-text);
+  white-space: nowrap;
+}
+.pill::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%;
+  background: currentColor; flex: 0 0 auto;
+}
+.pill-ok      { color: var(--gm-success); border-color: color-mix(in srgb, var(--gm-success) 40%, var(--gm-border)); background: color-mix(in srgb, var(--gm-success) 12%, var(--gm-surface)); }
+.pill-warn    { color: var(--gm-warning); border-color: color-mix(in srgb, var(--gm-warning) 40%, var(--gm-border)); background: color-mix(in srgb, var(--gm-warning) 12%, var(--gm-surface)); }
+.pill-danger  { color: var(--gm-danger);  border-color: color-mix(in srgb, var(--gm-danger) 45%, var(--gm-border));  background: color-mix(in srgb, var(--gm-danger) 12%, var(--gm-surface)); }
+.pill-route   { color: var(--gm-route);   border-color: color-mix(in srgb, var(--gm-route) 40%, var(--gm-border));   background: color-mix(in srgb, var(--gm-route) 12%, var(--gm-surface)); }
+.pill-muted   { color: var(--gm-text-muted); }
+.pill-neutral { color: var(--gm-text); }
+.pill-plain::before { display: none; }
+
+/* ================================================================= */
+/*  FLAGS                                                            */
+/* ================================================================= */
+.flags-list { display: grid; gap: 2px; }
+.flag {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; min-height: 48px;
+  border: 1px solid var(--gm-border); border-radius: var(--gm-radius);
+  background: var(--gm-surface);
+  font-size: 15px; font-weight: 700;
+}
+.flag:hover { background: var(--gm-surface-soft); }
+.flag input {
+  width: 20px; height: 20px; margin: 0; padding: 0;
+  accent-color: var(--gm-primary); flex: 0 0 auto;
+  cursor: pointer;
+}
+
+/* ================================================================= */
+/*  LISTS  (requests / sessions)                                     */
+/* ================================================================= */
+.list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.list li {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--gm-border); border-radius: var(--gm-radius);
+  background: var(--gm-surface);
+  font-size: 15px;
+}
+.list li.hint {
+  display: block; text-align: center; padding: 26px 14px;
+  border-style: dashed; background: var(--gm-surface-soft);
+  color: var(--gm-text-muted); font-weight: 700;
+}
+.list li select { min-height: 40px; }
+.list li button { min-height: 40px; }
+
+/* ================================================================= */
+/*  ROBOT CARDS                                                      */
+/* ================================================================= */
+.robot-list { display: grid; gap: 12px; }
+.robot {
+  padding: 16px 18px;
+  border: 1px solid var(--gm-border); border-radius: var(--gm-radius);
+  background: var(--gm-surface);
+  display: grid; gap: 12px;
+}
+.robot-title {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 17px; font-weight: 900;
+}
+.robot-title .robot-name { font-weight: 900; }
+.dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+.dot.online { background: var(--gm-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gm-success) 22%, transparent); }
+.dot.offline { background: var(--gm-text-muted); }
+.robot-meta {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  color: var(--gm-text-muted); font-size: 14px;
+}
+.robot-meta .robot-empty { color: var(--gm-text-muted); }
+
+.holder-strip {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid var(--gm-border); border-radius: var(--gm-radius);
+  background: var(--gm-surface-soft);
+}
+.holder-label { font-size: 12px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gm-text-muted); }
+.holder-value { font-weight: 900; font-size: 16px; }
+.result-line { margin-top: 12px; font-size: 14px; font-weight: 700; color: var(--gm-text-muted); min-height: 1.2em; }
+
+/* ================================================================= */
+/*  TABLES                                                           */
+/* ================================================================= */
+.table-scroll { width: 100%; overflow-x: auto; border-radius: var(--gm-radius); border: 1px solid var(--gm-border); }
+.data-table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 480px; }
+.data-table thead th {
+  text-align: left; padding: 11px 14px;
+  background: var(--gm-surface-soft);
+  color: var(--gm-text-muted);
+  font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  border-bottom: 1px solid var(--gm-border); white-space: nowrap;
+}
+.data-table tbody td {
+  padding: 11px 14px; border-bottom: 1px solid var(--gm-border);
+  vertical-align: middle;
+}
+.data-table tbody tr:last-child td { border-bottom: none; }
+.data-table tbody tr:hover td { background: var(--gm-surface-soft); }
+.data-table td.hint, .data-table .hint {
+  color: var(--gm-text-muted); text-align: center; font-weight: 700; padding: 22px 14px;
+}
+.data-table td button { min-height: 36px; }
+
+/* ================================================================= */
+/*  TRANSCRIPT / LOG / MAPS                                          */
+/* ================================================================= */
+.transcript, .log-pre {
+  border: 1px solid var(--gm-border); border-radius: var(--gm-radius);
+  background: var(--gm-surface-soft);
+  padding: 14px 16px;
+  white-space: pre-wrap; word-break: break-word;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px; line-height: 1.55;
+  color: var(--gm-text);
+  overflow-x: auto;
+}
+.transcript { min-height: 130px; color: var(--gm-text-muted); }
+.log-pre { margin: 0; }
+
+.map-frame {
+  margin-top: 14px; padding: 12px;
+  border: 1px solid var(--gm-border); border-radius: var(--gm-radius);
+  background: var(--gm-surface-soft);
+  display: grid; place-items: center; min-height: 220px;
+}
+.map-frame img { max-width: 100%; height: auto; border-radius: var(--gm-radius-sm); }
+.empty-note { color: var(--gm-text-muted); font-weight: 700; margin: 0; }
+.refresh-help { margin-top: 16px; }
+.refresh-help summary {
+  cursor: pointer; font-weight: 800; font-size: 14px; color: var(--gm-text);
+  min-height: 44px; display: flex; align-items: center;
+}
+.refresh-help summary:hover { color: var(--gm-primary); }
+.refresh-help .log-pre { margin-top: 8px; }
+
+/* ================================================================= */
+/*  RESPONSIVE + MOTION                                              */
+/* ================================================================= */
+@media (max-width: 640px) {
+  body { font-size: 16px; }
+  .app-bar-context { display: none; }
+  .app-bar-inner { padding: 14px 16px; }
+  .console { padding: 18px 16px 48px; }
+  .card { padding: 16px; }
+  .moses-name { font-size: 26px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}

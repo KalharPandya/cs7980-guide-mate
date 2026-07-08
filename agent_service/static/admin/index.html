@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Moses — Operator Console</title>
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+  <!-- ===================== Login (black hero treatment) ==================== -->
+  <section id="login-view" class="login-stage">
+    <div class="login-card">
+      <div class="moses-lockup moses-lockup-hero">
+        <span class="moses-mark"><img src="moses-husky-head.svg" alt="Moses Husky head mark" /></span>
+        <span class="moses-id">
+          <span class="moses-name">Moses</span>
+          <span class="moses-subtitle">Operator Console</span>
+        </span>
+      </div>
+      <h1 class="login-title">Operator sign-in</h1>
+      <p class="login-lede">Restricted control surface for the Northeastern Vancouver guide-robot fleet. Motion is default-deny.</p>
+      <form id="login-form" class="login-form">
+        <label class="field-label" for="password">Admin password</label>
+        <input id="password" type="password" placeholder="Admin password" autocomplete="current-password" />
+        <button type="submit" class="btn btn-primary btn-block">Log in</button>
+      </form>
+      <p id="login-error" class="error" role="alert"></p>
+      <div class="login-affiliation">
+        <img src="northeastern-vancouver-lockup.png" alt="Northeastern University Vancouver" />
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================= Authenticated panel ========================= -->
+  <section id="panel" hidden>
+    <!-- Signature: identity bar -->
+    <header class="app-bar">
+      <div class="app-bar-inner">
+        <div class="moses-lockup">
+          <span class="moses-mark"><img src="moses-husky-head.svg" alt="Moses Husky head mark" /></span>
+          <span class="moses-id">
+            <span class="moses-name">Moses</span>
+            <span class="moses-subtitle">Operator Console</span>
+          </span>
+        </div>
+        <div class="app-bar-affiliation">
+          <span class="app-bar-context">Northeastern Vancouver &middot; Guide-robot fleet</span>
+          <img class="app-bar-lockup" src="northeastern-vancouver-lockup.png" alt="Northeastern University Vancouver" />
+        </div>
+      </div>
+      <div class="app-bar-rule" aria-hidden="true"></div>
+    </header>
+
+    <div class="console">
+      <nav class="tabs" aria-label="Console sections">
+        <button data-tab="flags" class="active">Flags</button>
+        <button data-tab="prompt">Prompt</button>
+        <button data-tab="requests">Requests</button>
+        <button data-tab="sessions">Sessions</button>
+        <button data-tab="robot">Robot</button>
+        <button data-tab="knowledge">Knowledge</button>
+        <button data-tab="maps">Maps</button>
+        <button data-tab="health">Health</button>
+      </nav>
+
+      <!-- Flags -->
+      <div id="tab-flags" class="tab">
+        <div class="card">
+          <div class="card-head">
+            <h2>Feature flags</h2>
+            <p class="hint">Toggling a flag saves immediately.</p>
+          </div>
+          <div id="flags-list" class="flags-list"></div>
+        </div>
+      </div>
+
+      <!-- Prompt -->
+      <div id="tab-prompt" class="tab" hidden>
+        <div class="card">
+          <div class="card-head">
+            <h2>System prompt</h2>
+            <p class="hint">Blank = built-in Moses persona.</p>
+          </div>
+          <textarea id="prompt-text" rows="10" placeholder="(built-in persona)"></textarea>
+          <div class="row">
+            <button id="prompt-save" class="btn btn-primary">Save</button>
+            <button id="prompt-clear" class="btn btn-ghost">Reset to persona</button>
+            <span id="prompt-status" class="hint"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Requests -->
+      <div id="tab-requests" class="tab" hidden>
+        <div class="card">
+          <div class="card-head">
+            <h2>Companion requests</h2>
+            <button id="reload-requests" class="btn btn-ghost btn-sm">Reload</button>
+          </div>
+          <ul id="requests-list" class="list"></ul>
+        </div>
+      </div>
+
+      <!-- Sessions -->
+      <div id="tab-sessions" class="tab" hidden>
+        <div class="card">
+          <div class="card-head">
+            <h2>Sessions</h2>
+            <button id="reload-sessions" class="btn btn-ghost btn-sm">Reload</button>
+          </div>
+          <ul id="sessions-list" class="list"></ul>
+          <h3 class="subhead">Transcript</h3>
+          <div id="transcript" class="transcript">Select a session to view its transcript.</div>
+        </div>
+      </div>
+
+      <!-- Robot -->
+      <div id="tab-robot" class="tab" hidden>
+        <div class="card">
+          <div class="card-head">
+            <h2>Robot status</h2>
+            <button id="robot-refresh" class="btn btn-ghost btn-sm">Refresh</button>
+          </div>
+          <div id="robot-list" class="robot-list"></div>
+        </div>
+
+        <div class="card card-safety">
+          <div class="card-head">
+            <h2>Robot session controls</h2>
+          </div>
+          <div id="robot-holder" class="holder-strip">
+            <span class="holder-label">Active physical session holder</span>
+            <span id="robot-holder-value" class="holder-value">(none)</span>
+          </div>
+          <div class="row row-controls">
+            <button id="robot-abort" class="btn btn-danger">Abort robot session</button>
+            <button id="robot-dock" class="btn btn-ghost">Send dock (expect refusal)</button>
+            <button id="robot-stop" class="btn btn-warning">Send stop</button>
+          </div>
+          <div id="robot-command-result" class="result-line"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Assignment undock/dock attempts</h2>
+            <p class="hint">Auto-refreshes every 3&nbsp;s. Refusals are shown deliberately — they are the Phase&nbsp;4 evidence.</p>
+          </div>
+          <pre id="assign-event" class="log-pre">No assignment commands yet.</pre>
+        </div>
+      </div>
+
+      <!-- Knowledge -->
+      <div id="tab-knowledge" class="tab" hidden>
+        <div class="card">
+          <div class="card-head">
+            <h2>Knowledge base</h2>
+          </div>
+          <form id="kb-upload-form" class="kb-upload">
+            <label class="file-field">
+              <input id="kb-file" type="file" class="file-input" />
+              <span class="file-btn">Choose file</span>
+              <span id="kb-file-name" class="file-name" aria-live="polite">No file chosen</span>
+            </label>
+            <button type="submit" class="btn btn-primary">Upload</button>
+          </form>
+          <div class="row">
+            <button id="kb-sync" class="btn btn-ghost">Sync (ingest)</button>
+            <span id="kb-sync-status" class="hint"></span>
+          </div>
+          <div class="table-scroll">
+            <table id="kb-table" class="data-table">
+              <thead><tr><th>Key</th><th>Size</th><th>Modified</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Maps -->
+      <div id="tab-maps" class="tab" hidden>
+        <div class="card">
+          <div class="card-head">
+            <h2>Maps</h2>
+          </div>
+          <div class="row">
+            <label class="inline-select">Robot
+              <select id="maps-robot"></select>
+            </label>
+            <span id="maps-timestamp" class="hint">&mdash;</span>
+          </div>
+          <div class="map-frame">
+            <img id="maps-image" alt="latest saved map" hidden />
+            <p id="maps-empty" class="empty-note" hidden>No map uploaded yet.</p>
+          </div>
+          <details class="refresh-help">
+            <summary>How to refresh this map</summary>
+            <p class="hint">Maps are operator-uploaded (the uploader needs SSH to the Pi, so it
+               can't run from this panel). From the Linux box:</p>
+            <pre class="log-pre">./scripts/upload_map_from_pi.sh turtlebot468</pre>
+          </details>
+        </div>
+      </div>
+
+      <!-- Health -->
+      <div id="tab-health" class="tab" hidden>
+        <div class="card">
+          <div class="card-head">
+            <h2>Health</h2>
+            <p class="hint">Auto-refreshes every 3&nbsp;s while this tab is open. Robot list is the real configured robot_ids.</p>
+          </div>
+
+          <h3 class="subhead">Robot presence</h3>
+          <div class="table-scroll">
+            <table id="health-robots-table" class="data-table">
+              <thead><tr><th>robot</th><th>presence</th><th>last heartbeat</th><th>battery</th><th>gates</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <h3 class="subhead">Last 10 commands</h3>
+          <div class="table-scroll">
+            <table id="health-commands-table" class="data-table">
+              <thead><tr><th>turn</th><th>robot</th><th>cmd</th><th>acks</th><th>rtt</th><th>gates</th><th>mode</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <h3 class="subhead">Bedrock latency (per turn)</h3>
+          <div class="table-scroll">
+            <table id="health-latency-table" class="data-table">
+              <thead><tr><th>turn</th><th>latency</th><th>session</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <h3 class="subhead">Errors</h3>
+          <div class="table-scroll">
+            <table id="health-errors-table" class="data-table">
+              <thead><tr><th>where</th><th>message</th><th>when</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script src="admin.js"></script>
+  <script src="health.js"></script>
+</body>
+</html>
