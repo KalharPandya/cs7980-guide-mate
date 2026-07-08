@@ -57,7 +57,9 @@ class Config:
             ),
             tts_backend=os.environ.get("GUIDEMATE_TTS_BACKEND", "polly"),
             stt_backend=os.environ.get("GUIDEMATE_STT_BACKEND", "transcribe"),
+            # Intentionally unprefixed — matches the ElevenLabs SDK's own env-var name.
             elevenlabs_api_key=os.environ.get("ELEVENLABS_API_KEY", ""),
+            # Intentionally unprefixed — common convention for a vendor voice ID.
             elevenlabs_voice_id=os.environ.get("ELEVENLABS_VOICE_ID", ""),
             elevenlabs_tts_model=os.environ.get(
                 "GUIDEMATE_ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5"

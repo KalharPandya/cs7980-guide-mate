@@ -20,9 +20,9 @@ def test_env_override_still_wins(monkeypatch):
 
 def test_speech_backends_default_to_aws(monkeypatch):
     for k in ("GUIDEMATE_TTS_BACKEND", "GUIDEMATE_STT_BACKEND",
-              "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"):
+              "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID",
+              "GUIDEMATE_ELEVENLABS_TTS_MODEL", "GUIDEMATE_ELEVENLABS_STT_MODEL"):
         monkeypatch.delenv(k, raising=False)
-    from guidemate_agent.config import Config
     cfg = Config.from_env()
     assert cfg.tts_backend == "polly"
     assert cfg.stt_backend == "transcribe"
@@ -36,7 +36,6 @@ def test_speech_backends_env_override(monkeypatch):
     monkeypatch.setenv("GUIDEMATE_STT_BACKEND", "elevenlabs")
     monkeypatch.setenv("ELEVENLABS_API_KEY", "sk-test")
     monkeypatch.setenv("ELEVENLABS_VOICE_ID", "voiceXYZ")
-    from guidemate_agent.config import Config
     cfg = Config.from_env()
     assert cfg.tts_backend == "elevenlabs"
     assert cfg.stt_backend == "elevenlabs"
