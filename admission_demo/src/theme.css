@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+/* Design tokens reused verbatim from security_demo/docs/02-design-system.md section 3.
+   Dark-tech engineering console. Off-black zinc base, no pure #000 / #fff.
+   One accent (electric blue). Semantic status colors carry real state.
+   New for this demo: --color-warn (amber) for the honest "PASSED L0" verdict —
+   a third real state (not safe, not blocked: admitted-but-untrusted). */
+@theme {
+  --color-bg: #0b0c0e;
+  --color-surface: #131519;
+  --color-elevated: #1a1d23;
+  --color-line: #262a31;
+  --color-fg: #e7e9ee;
+  --color-dim: #9aa0ab;
+  --color-mute: #6b7280;
+
+  --color-accent: #4c8dd6;
+  --color-accent-hi: #5b9bde;
+
+  --color-safe: #2fbf87;
+  --color-danger: #e5484d;
+  --color-warn: #d9a13c;
+
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", "Cascadia Code", monospace;
+
+  --radius-panel: 12px;
+  --radius-core: 8px;
+  --radius-chip: 6px;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  /* Shape lock: containers 12, inner core 8, chips 6. */
+  ::selection {
+    background: color-mix(in oklab, var(--color-accent) 40%, transparent);
+  }
+}
+
+@layer components {
+  .btn-ghost {
+    @apply rounded-md border border-line bg-transparent px-2 py-1.5 text-xs text-dim transition hover:border-accent hover:text-fg disabled:opacity-40;
+  }
+}
+
+/* Reduced motion: collapse everything to instant. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

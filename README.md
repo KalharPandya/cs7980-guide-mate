@@ -17,6 +17,11 @@ build/run/architecture and the hard-won gotchas.
   `depth_lidar_fusion` (~10× cheaper TF/image handling on the Pi-4, mirrors the Python
   numerics and output topic). Run the Python **or** the C++ fusion node, not both — this is
   the answer to Pi-4 compute saturation.
+- [`admission_demo`](admission_demo) (TypeScript / React + Vite) — **L0 admission-control
+  demo** from the security workstream: a rotating-QR kiosk check-in that filters the
+  internet out of the robot's dispatch API before any LLM runs. Runs offline with no
+  credentials; see [admission_demo/README.md](admission_demo/README.md). (Complements the
+  L1–L5 guardrail demo `security_demo/`, added separately.)
 
 ```bash
 cd ~/cs7980-guide-mate && colcon build --symlink-install

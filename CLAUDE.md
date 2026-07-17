@@ -16,6 +16,7 @@ cs7980-guide-mate/
 ├── CLAUDE.md              # this file
 ├── README.md
 ├── docs/                  # working docs (aws-iot/, camera.md, mapping/, network/, power.md)
+├── admission_demo/        # L0 admission-control demo (React + Vite; see its README)
 ├── src/
 │   ├── guide_mate_explorer/    # Python pkg: bfs_explorer, glass_guard, depth_lidar_fusion, combined runner
 │   └── guide_mate_perception/  # C++ pkg: rclcpp port of depth_lidar_fusion (~10x cheaper on the Pi-4)
@@ -137,6 +138,20 @@ top of this workspace. Work happens on branch **`kalhar/dog-agent-poc`**.
   (credential-file paths + a ready-to-paste warm-up prompt).
 - ⚠️ Robot 468 is docked and unobserved: **NO MOTION** without a human observer. Motion is
   default-deny by design (Device Shadow + dock guard + dry-run; see the spec).
+
+## Security workstream — admission-control demo
+The security/privacy workstream (Fazheng Han, han.faz@northeastern.edu) has a runnable
+artifact in **`admission_demo/`** — a React + Vite demo of an **admission-control layer
+("L0")**: a rotating-QR kiosk check-in that filters the open internet out of the robot's
+dispatch API before any LLM runs ("presence is a credential"). Shown in class 2026-07-17.
+**Start here:** [admission_demo/README.md](admission_demo/README.md) (run: `npm install &&
+npm run dev`, http://localhost:5173, **no credentials** — the broker is deterministic and
+in-memory). Design: [admission_demo/docs/](admission_demo/docs/) (00-design, 01-demo-script).
+- Fully deterministic and pre-LLM: no Bedrock, no `.env`, nothing to leak.
+- Not wired to the robots or `agent_service` — the phone, attacker, and robot are simulated
+  by design; the demo argues the admission-control idea, not robot integration.
+- Complements the L1–L5 guardrail demo `security_demo/` (added via a separate PR): L0
+  shrinks *who* can reach the robot, L1–L5 constrain *what* they can make it do.
 
 ## Status / roadmap
 - **Done:** BFS explorer; glass_guard + bump costmap layer; OAK-D-LITE depth brought up on USB2 and **validated to detect the glass metal base** (~0.32 m, floor rejected); depth → costmap pipeline; `depth_lidar_fusion` node built, offline-validated, and **HARDWARE-VALIDATED on robot 468 facing the glass wall** (depth saw the base on 205 beams 0.37–1.63 m where the lidar was blind/saw through; fusion injected 195 beams, raised 0); **`scan_fused` now wired into both SLAM (`slam_fused.yaml`) and Nav2 (`nav2_glass.yaml`) as the single fused obstacle source**; SLAM verified running (6.8 Hz lidar, map + map→odom); C++ port of the fusion node (`guide_mate_perception`, ~10x cheaper) and the combined `guide_mate_bringup` runner built; migrated into this repo as a colcon workspace.
