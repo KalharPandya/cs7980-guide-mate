@@ -34,6 +34,11 @@ Working documentation for the cs7980 TurtleBot 4 project.
 - [Echo TurtleBot Pal UI mockups](agent-poc/echo-turtlebot-pal-ui-mockups.html) - cleaner full-screen mockups using the selected TurtleBot Pal direction
 - [GuideMate Echo design package](agent-poc/design-package/README.md) - logos, mascot assets, light/dark themes, tokens, and design-doc-ready brief
 
+### Security workstream (WP A/B/C)
+- [Security workstream index](security/README.md) — design docs for WP A (ROS2/DDS LAN), WP B (cloud channel + broker), WP C (LLM safety guardrails); doc-language notes
+- [Guardrail design v2 + threat model (2026-07-03)](security/guardrail-design-2026-07-03.md) — current WP C design against the landed phone-chat/dispatch architecture *(Chinese)*
+- Code: [`security_demo/`](../security_demo/README.md) — the WP C guardrail **live demo** (React + Vite + Bedrock broker): jailbreak vs. layered deterministic guardrails L1–L5; Simulated mode runs with no credentials
+
 ---
 
 ## ⚠️ Security note

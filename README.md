@@ -17,6 +17,11 @@ build/run/architecture and the hard-won gotchas.
   `depth_lidar_fusion` (~10× cheaper TF/image handling on the Pi-4, mirrors the Python
   numerics and output topic). Run the Python **or** the C++ fusion node, not both — this is
   the answer to Pi-4 compute saturation.
+- [`security_demo`](security_demo) (TypeScript / React + Vite) — the **WP C guardrail live
+  demo** from the security workstream: jailbreak prompts vs. layered deterministic
+  guardrails (L1–L5) around an LLM dispatch pipeline (Claude Sonnet 4.6 on Bedrock).
+  Simulated mode runs offline with no credentials; see
+  [security_demo/README.md](security_demo/README.md).
 
 ```bash
 cd ~/cs7980-guide-mate && colcon build --symlink-install
@@ -44,3 +49,6 @@ See [docs/README.md](docs/README.md) for the full index. Highlights:
   working park (kill the processes)
 - [AWS IoT Core](docs/aws-iot/README.md) — thing/policy setup, service integration, and
   secure tunneling for remote access to robot 468
+- [Security workstream](docs/security/README.md) — WP A/B/C design docs: threat model,
+  LLM guardrail design v1/v2, and the demo design history behind
+  [`security_demo/`](security_demo)
