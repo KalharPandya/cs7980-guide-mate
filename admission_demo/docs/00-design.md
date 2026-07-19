@@ -44,6 +44,9 @@ heavyweight trust.
 | Robot hogging / request flooding by one visitor | Per-session rate limit (3 dispatches/min) + single active dispatch per session |
 | Anonymous abuse with no audit trail | Every dispatch is attributable to a session id + issuance timestamp |
 
+A companion **network-origin control (L0a)** narrows the admitted population further at
+zero UX cost — see §9.
+
 **Explicitly NOT addressed (residual — say so on stage and in the paper):**
 
 | Residual threat | Why it remains | Mitigation posture |
@@ -146,3 +149,49 @@ All user-visible copy is English; full copy inventory lives in `01-demo-script.m
   API contract above is written so the broker could be lifted into `agent_service` later).
 - No Bedrock, no floor map, no L1–L5 re-implementation.
 - Paper/threat-model-doc updates happen after the demo is validated, as a separate edit.
+
+---
+
+## 9. L0a — network-origin check (NUwave allowlist), companion control
+
+*Added 2026-07-19, proposed by the course instructor: only clients on NUwave
+(Northeastern's campus network) should be able to reach the robot.*
+
+This splits L0 into two orthogonal, composable deterministic checks:
+
+| | **L0a — network origin** | **L0b — rotating QR (this demo)** |
+|---|---|---|
+| Proves | *Affiliation-ish*: the client egresses from the campus network (NUwave login is 802.1X with an NEU account) | *Presence-now*: the client read the kiosk screen within the last 75 s |
+| UX cost | Zero (no kiosk interaction) | One scan |
+| Granularity | Coarse — all campus traffic NATs through a few egress IPs | Per-visitor anonymous session (rate limit, single active dispatch, audit) |
+| Check cost | One CIDR match, O(1) | One HMAC verify, tens of µs |
+
+**Mechanism.** The production dispatch service (`agent_service/`) runs on EC2 behind
+Caddy; NUwave clients hold private `10.x/19` addresses (measured in
+`docs/network/ros2-over-nuwave.md`) and reach it through Northeastern's public NAT
+egress. L0a is therefore an **allowlist of NEU public egress CIDRs at the service
+edge** — implemented as FastAPI middleware in `agent_service` (separate PR), shipped
+dark: `off → log → enforce`, CIDRs env-configurable. A Security-Group-only variant was
+rejected because closing 80/443 to the world breaks Let's Encrypt issuance for the
+Caddy-managed certificate.
+
+**Honest residuals (same discipline as §3):**
+
+- **NEU VPN defeats "physically on campus"** — GlobalProtect users egress from NEU IP
+  space from anywhere. L0a proves network affiliation, not presence; presence stays
+  L0b's job.
+- **Visitor-access tension** — the guide robot's target users are campus *visitors*,
+  who lack NEU accounts and cannot join NUwave proper. Either the NUwave-guest egress
+  range is also allowlisted (needs measurement) or the service is scoped to
+  NEU-affiliated users. This is a product decision, not a technical one.
+- **NAT aggregation** — thousands of users share a few egress IPs, so per-IP rate
+  limiting is meaningless behind L0a; per-session limits (L0b) remain necessary.
+- **Enforcement is gated on two on-campus measurements** (not yet done): the actual
+  NUwave egress IP(s) observed by the service, and whether NUwave-guest / NEU VPN
+  share that range.
+
+**Not implemented in this demo** — the demo runs on localhost, so source IPs would be
+simulated, and simulating the input of a *network*-layer check would prove nothing.
+The real control lives in `agent_service`; this section exists so the L0 threat model
+reads as one story: L0a shrinks *which networks* can speak, L0b makes presence
+*fresh*, L1–L5 constrain *what an admitted speaker can do*.
