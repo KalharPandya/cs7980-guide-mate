@@ -15,7 +15,8 @@ This repository **is** a ROS 2 colcon workspace.
 cs7980-guide-mate/
 ├── CLAUDE.md              # this file
 ├── README.md
-├── docs/                  # working docs (aws-iot/, camera.md, mapping/, network/, power.md)
+├── docs/                  # working docs (aws-iot/, camera.md, mapping/, network/, power.md, security/)
+├── security_demo/         # WP C guardrail live demo (React + Vite + Bedrock broker; see its README)
 ├── src/
 │   ├── guide_mate_explorer/    # Python pkg: bfs_explorer, glass_guard, depth_lidar_fusion, combined runner
 │   └── guide_mate_perception/  # C++ pkg: rclcpp port of depth_lidar_fusion (~10x cheaper on the Pi-4)
@@ -137,6 +138,24 @@ top of this workspace. Work happens on branch **`kalhar/dog-agent-poc`**.
   (credential-file paths + a ready-to-paste warm-up prompt).
 - ⚠️ Robot 468 is docked and unobserved: **NO MOTION** without a human observer. Motion is
   default-deny by design (Device Shadow + dock guard + dry-run; see the spec).
+
+## Security workstream (WP A/B/C) — guardrail live demo
+The security/privacy workstream (Fazheng Han, han.faz@northeastern.edu) covers **WP A**
+(ROS2/DDS LAN side), **WP B** (cloud channel + broker), and **WP C** (LLM safety
+guardrails). Its runnable artifact is **`security_demo/`** — a React + Vite web demo of
+jailbreak prompts vs. layered deterministic guardrails (L1–L5) around an LLM dispatch
+pipeline (Claude Sonnet 4.6 on Bedrock), shown in class 2026-07-08.
+**Start here:**
+1. [security_demo/README.md](security_demo/README.md) — what it shows, how to run
+   (`npm install && npm run dev`; Simulated mode needs **no credentials**).
+2. [docs/security/README.md](docs/security/README.md) — design history: threat model,
+   guardrail design v1/v2, June demo spec.
+3. [security_demo/docs/](security_demo/docs/) — the demo's own design docs (00–04:
+   overview, demo script, design system, architecture, screens & copy).
+- Live Bedrock mode: copy `security_demo/.env.example` → `.env` (gitignored — **never
+  commit credentials**). Region must be `us-west-2` (us-east-1 returns 403 for this model).
+- Not wired to the robots or `agent_service` — the dispatch pipeline and floor map are
+  simulated by design (the demo argues the guardrail architecture, not robot integration).
 
 ## Status / roadmap
 - **Done:** BFS explorer; glass_guard + bump costmap layer; OAK-D-LITE depth brought up on USB2 and **validated to detect the glass metal base** (~0.32 m, floor rejected); depth → costmap pipeline; `depth_lidar_fusion` node built, offline-validated, and **HARDWARE-VALIDATED on robot 468 facing the glass wall** (depth saw the base on 205 beams 0.37–1.63 m where the lidar was blind/saw through; fusion injected 195 beams, raised 0); **`scan_fused` now wired into both SLAM (`slam_fused.yaml`) and Nav2 (`nav2_glass.yaml`) as the single fused obstacle source**; SLAM verified running (6.8 Hz lidar, map + map→odom); C++ port of the fusion node (`guide_mate_perception`, ~10x cheaper) and the combined `guide_mate_bringup` runner built; migrated into this repo as a colcon workspace.
