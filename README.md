@@ -22,6 +22,11 @@ build/run/architecture and the hard-won gotchas.
   guardrails (L1–L5) around an LLM dispatch pipeline (Claude Sonnet 4.6 on Bedrock).
   Simulated mode runs offline with no credentials; see
   [security_demo/README.md](security_demo/README.md).
+- [`admission_demo`](admission_demo) (TypeScript / React + Vite) — the **L0 admission-control
+  demo** from the same workstream: a rotating-QR kiosk check-in that filters the open
+  internet out of the robot's dispatch API before any LLM runs. Runs offline with no
+  credentials; see [admission_demo/README.md](admission_demo/README.md). L0 shrinks *who*
+  can reach the robot; the L1–L5 `security_demo/` constrains *what* they can make it do.
 
 ```bash
 cd ~/cs7980-guide-mate && colcon build --symlink-install
