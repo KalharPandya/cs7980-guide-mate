@@ -27,10 +27,13 @@ before running the measurements below.
   rotating-QR check-in** (`admission_demo/`, design doc §9 covers how L0a and L0b
   compose). And because thousands of campus users share a few NAT egress IPs, **per-IP
   rate limiting is meaningless** behind L0a — per-session limits (L0b) remain necessary.
-- **Visitor-access tension (product decision needed):** the guide robot's target users
-  are campus *visitors*, who cannot join NUwave proper. Either the NUwave-guest egress
-  range is also allowlisted (measure it), or the service is scoped to NEU-affiliated
-  users.
+- **Visitor access: resolved by measurement (2026-07-22).** The guide robot's target
+  users are campus *visitors*, who cannot join NUwave proper — but NUwave-guest turns
+  out to share the exact same egress IP as NUwave (see the measurement log), so
+  allowlisting the campus /29 includes visitors automatically. The flip side: L0a
+  cannot scope the service to NEU-affiliated users only — IP cannot tell an 802.1X
+  NUwave login apart from a guest. Affiliation/per-user scoping, if ever wanted, is
+  L0b's (or an auth layer's) job.
 
 ## Where the check sits (trust model — read before touching)
 
@@ -80,16 +83,21 @@ phone (NUwave, private 10.x/19)
 | Date | Network | Vantage point | Local IP | Egress IP | Registered block (RDAP/ARIN) |
 |---|---|---|---|---|---|
 | 2026-07-22 | NUwave (SSID "NUwave 2") | Fazheng's laptop, Vancouver campus | 10.247.217.171 (GW 10.247.192.1) | 208.98.212.98 | **208.98.212.96/29** — `NET-208-98-212-96-1`, name `NORTHEASTERN-UNIVERSITY`, direct ASSIGNMENT to Northeastern University inside Shaw Communications' 208.98.192.0–208.98.221.255 |
+| 2026-07-22 | **NUwave-guest** | Fazheng's laptop, Vancouver campus | 10.247.147.156 (GW 10.247.128.1 — a different internal subnet) | 208.98.212.98 | same /29 — **guest shares the exact egress IP with NUwave proper** |
 
 - **Allowlist candidate so far: `208.98.212.96/29`** (8 addresses; the whole campus
   NATs out of this block, consistent with the per-IP-rate-limiting caveat above).
   Confirms the Boston default (`155.33.0.0/16,129.10.0.0/16`) is wrong for this campus.
 - **No IPv6 egress observed**: a dual-stack lookup (api64.ipify.org) returned the same
   IPv4, so an IPv4-only allowlist is currently safe here (re-check at enforce time).
+- **NUwave-guest egresses from the same IP as NUwave proper** (measured, same day, same
+  laptop): allowlisting the /29 includes visitors automatically — and, symmetrically,
+  L0a *cannot* exclude guests or distinguish them from NEU-account users by IP. Per-user
+  scoping is L0b's job.
 - Still pending before `enforce`: repeat samples (different day/building — confirm the
-  egress stays inside the /29), **NUwave-guest**, **NEU VPN (GlobalProtect)** — likely
-  egresses from the Boston ranges, which would decide whether 155.33/129.10 stay in —
-  and cellular as the negative control.
+  egress stays inside the /29), **NEU VPN (GlobalProtect)** — likely egresses from the
+  Boston ranges, which would decide whether 155.33/129.10 stay in — and cellular as the
+  negative control.
 
 ## Relation to the rest of L0
 
