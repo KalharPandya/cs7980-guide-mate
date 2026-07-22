@@ -56,7 +56,10 @@ phone (NUwave, private 10.x/19)
 
 ## Rollout runbook
 
-1. **Measure (on campus, ~30 min).** Deploy with `GUIDEMATE_ORIGIN_MODE=log`. From a
+1. **Measure (on campus, ~30 min).** Deploy with `GUIDEMATE_ORIGIN_MODE=log` — set it
+   in `/etc/guidemate.env` on the instance (`compose.yaml` forwards the three
+   `GUIDEMATE_ORIGIN_*` vars into the app container), then run
+   `agent_service/deploy/redeploy.sh`. From a
    phone on **NUwave** (WiFi, not cellular), load the chat page and send a message.
    Read the would-block/pass lines in CloudWatch (`/guidemate/agent-service`) — they
    contain the observed client IP. Repeat from: a second building if possible,
