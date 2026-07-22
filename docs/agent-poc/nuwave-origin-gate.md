@@ -84,6 +84,7 @@ phone (NUwave, private 10.x/19)
 |---|---|---|---|---|---|
 | 2026-07-22 | NUwave (SSID "NUwave 2") | Fazheng's laptop, Vancouver campus | 10.247.217.171 (GW 10.247.192.1) | 208.98.212.98 | **208.98.212.96/29** — `NET-208-98-212-96-1`, name `NORTHEASTERN-UNIVERSITY`, direct ASSIGNMENT to Northeastern University inside Shaw Communications' 208.98.192.0–208.98.221.255 |
 | 2026-07-22 | **NUwave-guest** | Fazheng's laptop, Vancouver campus | 10.247.147.156 (GW 10.247.128.1 — a different internal subnet) | 208.98.212.98 | same /29 — **guest shares the exact egress IP with NUwave proper** |
+| 2026-07-22 | NUwave (reconnect, different floor) | Fazheng's laptop, Vancouver campus | 10.247.217.171 (same lease/GW as row 1 — roaming kept the DHCP lease) | 208.98.212.98 | same — egress stable across reconnect + floor change; NOT an independent lease, the different-day sample below still stands |
 
 - **Allowlist candidate so far: `208.98.212.96/29`** (8 addresses; the whole campus
   NATs out of this block, consistent with the per-IP-rate-limiting caveat above).
@@ -94,9 +95,10 @@ phone (NUwave, private 10.x/19)
   laptop): allowlisting the /29 includes visitors automatically — and, symmetrically,
   L0a *cannot* exclude guests or distinguish them from NEU-account users by IP. Per-user
   scoping is L0b's job.
-- Still pending before `enforce`: repeat samples (different day/building — confirm the
-  egress stays inside the /29), **NEU VPN (GlobalProtect)** — likely egresses from the
-  Boston ranges, which would decide whether 155.33/129.10 stay in — and cellular as the
+- Still pending before `enforce`: a **different-day** sample (same-day floor-change
+  repeat done, but it kept the same DHCP lease — confirm a fresh lease still egresses
+  inside the /29), **NEU VPN (GlobalProtect)** — likely egresses from the Boston
+  ranges, which would decide whether 155.33/129.10 stay in — and cellular as the
   negative control.
 
 ## Relation to the rest of L0
