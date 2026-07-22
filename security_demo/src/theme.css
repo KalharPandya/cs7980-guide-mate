@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/* Design tokens (docs/02-design-system.md section 3).
+   Dark-tech engineering console. Off-black zinc base, no pure #000 / #fff.
+   One accent (electric blue). Two semantic status colors that carry real state. */
+@theme {
+  --color-bg: #0b0c0e;
+  --color-surface: #131519;
+  --color-elevated: #1a1d23;
+  --color-line: #262a31;
+  --color-fg: #e7e9ee;
+  --color-dim: #9aa0ab;
+  --color-mute: #6b7280;
+
+  --color-accent: #4c8dd6;
+  --color-accent-hi: #5b9bde;
+
+  --color-safe: #2fbf87;
+  --color-danger: #e5484d;
+
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", "Cascadia Code", monospace;
+
+  --radius-panel: 12px;
+  --radius-core: 8px;
+  --radius-chip: 6px;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  /* Shape lock: containers 12, inner core 8, chips 6, interactive pill. */
+  ::selection {
+    background: color-mix(in oklab, var(--color-accent) 40%, transparent);
+  }
+}
+
+/* Reduced motion: collapse everything to instant. Robot walk hook also checks this. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

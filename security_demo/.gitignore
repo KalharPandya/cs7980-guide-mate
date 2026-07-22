@@ -1,0 +1,10 @@
+node_modules
+dist
+dist-server
+stage
+deploy.tar.gz
+.env
+.env.*
+!.env.example
+*.local
+.DS_Store
