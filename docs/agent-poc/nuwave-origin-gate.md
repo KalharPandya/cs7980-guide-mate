@@ -72,6 +72,22 @@ phone (NUwave, private 10.x/19)
 5. **Note IPv6:** if the campus egresses IPv6, add those CIDRs too — an IPv4-only
    allowlist silently blocks IPv6 clients in enforce mode.
 
+### Measurement log (step 1 record)
+
+| Date | Network | Vantage point | Local IP | Egress IP | Registered block (RDAP/ARIN) |
+|---|---|---|---|---|---|
+| 2026-07-22 | NUwave (SSID "NUwave 2") | Fazheng's laptop, Vancouver campus | 10.247.217.171 (GW 10.247.192.1) | 208.98.212.98 | **208.98.212.96/29** — `NET-208-98-212-96-1`, name `NORTHEASTERN-UNIVERSITY`, direct ASSIGNMENT to Northeastern University inside Shaw Communications' 208.98.192.0–208.98.221.255 |
+
+- **Allowlist candidate so far: `208.98.212.96/29`** (8 addresses; the whole campus
+  NATs out of this block, consistent with the per-IP-rate-limiting caveat above).
+  Confirms the Boston default (`155.33.0.0/16,129.10.0.0/16`) is wrong for this campus.
+- **No IPv6 egress observed**: a dual-stack lookup (api64.ipify.org) returned the same
+  IPv4, so an IPv4-only allowlist is currently safe here (re-check at enforce time).
+- Still pending before `enforce`: repeat samples (different day/building — confirm the
+  egress stays inside the /29), **NUwave-guest**, **NEU VPN (GlobalProtect)** — likely
+  egresses from the Boston ranges, which would decide whether 155.33/129.10 stay in —
+  and cellular as the negative control.
+
 ## Relation to the rest of L0
 
 L0a (this gate) shrinks *which networks* can speak; L0b (rotating QR,
