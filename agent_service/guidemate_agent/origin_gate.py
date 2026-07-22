@@ -9,11 +9,15 @@ Ships dark. Modes (GUIDEMATE_ORIGIN_MODE):
               to run the on-campus egress-IP measurements.
   - "enforce" non-allowlisted clients get 403 (HTTP) / close 4403 (WebSocket).
 
-GUIDEMATE_ORIGIN_ALLOWLIST: comma-separated CIDRs. The default is Northeastern's
-Boston-registered public space — a PLACEHOLDER. This campus's NUwave egress
-(Vancouver) MUST be measured in "log" mode before anyone flips "enforce";
-see the runbook. Invalid entries are logged and skipped; enforcing with an
-empty allowlist fails CLOSED (every non-exempt request is blocked).
+GUIDEMATE_ORIGIN_ALLOWLIST: comma-separated CIDRs. The default is the measured
+Vancouver campus egress block (208.98.212.96/29, ARIN NORTHEASTERN-UNIVERSITY;
+NUwave and NUwave-guest both NAT out of it — measurement log in the runbook,
+2026-07-22). Boston's 155.33/16 + 129.10/16 are deliberately NOT included: the
+product is scoped to the Vancouver campus, which also means NEU-VPN
+(GlobalProtect) clients egressing from Boston space are blocked by design.
+Still confirm in "log" mode before anyone flips "enforce"; see the runbook.
+Invalid entries are logged and skipped; enforcing with an empty allowlist
+fails CLOSED (every non-exempt request is blocked).
 
 GUIDEMATE_ORIGIN_EXEMPT: comma-separated path prefixes that bypass the gate.
 Defaults cover the deploy probes (/healthz, /readyz) and the admin surface
@@ -38,9 +42,10 @@ log = logging.getLogger(__name__)
 
 IPAddress = Union[ipaddress.IPv4Address, ipaddress.IPv6Address]
 
-# Northeastern's Boston-registered ranges — placeholder until the local (Vancouver)
-# NUwave egress is measured. See docs/agent-poc/nuwave-origin-gate.md step 1.
-DEFAULT_ALLOWLIST = "155.33.0.0/16,129.10.0.0/16"
+# The Vancouver campus egress /29 (measured 2026-07-22: NUwave and NUwave-guest
+# share it; Boston ranges intentionally excluded — Vancouver-scoped product).
+# See the measurement log in docs/agent-poc/nuwave-origin-gate.md.
+DEFAULT_ALLOWLIST = "208.98.212.96/29"
 DEFAULT_EXEMPT = "/healthz,/readyz,/admin,/api/admin"
 
 _BLOCK_BODY = (

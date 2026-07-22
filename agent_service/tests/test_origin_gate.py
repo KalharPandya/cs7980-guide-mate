@@ -12,7 +12,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from guidemate_agent.origin_gate import OriginGate
 
-CAMPUS = "155.33.10.20"  # inside the default 155.33.0.0/16
+CAMPUS = "208.98.212.98"  # inside the default 208.98.212.96/29 (the measured egress)
 INTERNET = "203.0.113.9"  # TEST-NET-3, never allowlisted
 
 

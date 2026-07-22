@@ -7,14 +7,16 @@ feedback: only clients on NUwave (the campus network) should be able to reach th
 
 `agent_service` now carries an **ASGI middleware** (`guidemate_agent/origin_gate.py`)
 that can restrict visitor-facing routes to clients whose requests egress from the
-campus network. It **ships dark** (`GUIDEMATE_ORIGIN_MODE=off`, a pass-through) because
-nobody has measured this campus's real NUwave egress IPs yet. Do not flip `enforce`
-before running the measurements below.
+campus network. It **ships dark** (`GUIDEMATE_ORIGIN_MODE=off`, a pass-through). The
+campus egress **has been measured** (2026-07-22, see the measurement log): NUwave and
+NUwave-guest both NAT out of **`208.98.212.96/29`**, which is now the shipped default
+allowlist. Before flipping `enforce`, still run a day of `log` mode plus the two cheap
+remaining checks (cellular negative control, fresh-lease repeat).
 
 | Env var | Default | Meaning |
 |---|---|---|
 | `GUIDEMATE_ORIGIN_MODE` | `off` | `off` (no-op) / `log` (never blocks, logs would-blocks) / `enforce` (403 / WS close 4403) |
-| `GUIDEMATE_ORIGIN_ALLOWLIST` | `155.33.0.0/16,129.10.0.0/16` | Comma-separated CIDRs. The default is Northeastern's **Boston**-registered space — a **placeholder**; this campus (Vancouver) likely egresses elsewhere |
+| `GUIDEMATE_ORIGIN_ALLOWLIST` | `208.98.212.96/29` | Comma-separated CIDRs. Default = the **measured Vancouver campus egress block** (NUwave + NUwave-guest). Boston's `155.33/16`+`129.10/16` are deliberately **not** included — the product is Vancouver-scoped, so NEU-VPN (Boston egress) is blocked by design |
 | `GUIDEMATE_ORIGIN_EXEMPT` | `/healthz,/readyz,/admin,/api/admin` | Path prefixes that bypass the gate (deploy probes; admin surface has its own cookie auth and the team works off campus) |
 
 ## What it does / does not prove
@@ -22,11 +24,15 @@ before running the measurements below.
 - L0a proves **network affiliation**: NUwave login is 802.1X with an NEU account, so a
   campus-egress source IP weakly attests "NEU-affiliated (or on campus guest WiFi)". It
   costs the visitor **nothing** (no scan, no login on our side).
-- It does **not** prove physical presence: NEU **VPN (GlobalProtect)** users egress from
-  NEU IP space from anywhere on Earth. Presence-freshness is the job of the **L0b
-  rotating-QR check-in** (`admission_demo/`, design doc §9 covers how L0a and L0b
-  compose). And because thousands of campus users share a few NAT egress IPs, **per-IP
-  rate limiting is meaningless** behind L0a — per-session limits (L0b) remain necessary.
+- The classic "VPN defeats physical presence" hole is **closed by the scope decision
+  (2026-07-22)**: the product is Vancouver-campus-only, so the allowlist carries just the
+  Vancouver /29 and NEU **VPN (GlobalProtect)** users — who egress from NEU's *Boston*
+  space — are blocked **by design** (403 is working-as-intended, not a bug report).
+  Caveat kept honest: we did not measure whether GlobalProtect could egress inside the
+  Vancouver /29; no indication it does, and if it did, presence-freshness is still L0b's
+  job (`admission_demo/`, design doc §9 covers how L0a and L0b compose).
+- Because thousands of campus users share one NAT egress IP, **per-IP rate limiting is
+  meaningless** behind L0a — per-session limits (L0b) remain necessary.
 - **Visitor access: resolved by measurement (2026-07-22).** The guide robot's target
   users are campus *visitors*, who cannot join NUwave proper — but NUwave-guest turns
   out to share the exact same egress IP as NUwave (see the measurement log), so
@@ -59,19 +65,20 @@ phone (NUwave, private 10.x/19)
 
 ## Rollout runbook
 
-1. **Measure (on campus, ~30 min).** Deploy with `GUIDEMATE_ORIGIN_MODE=log` — set it
-   in `/etc/guidemate.env` on the instance (`compose.yaml` forwards the three
-   `GUIDEMATE_ORIGIN_*` vars into the app container), then run
-   `agent_service/deploy/redeploy.sh`. From a
-   phone on **NUwave** (WiFi, not cellular), load the chat page and send a message.
-   Read the would-block/pass lines in CloudWatch (`/guidemate/agent-service`) — they
-   contain the observed client IP. Repeat from: a second building if possible,
-   **NUwave-guest**, **NEU VPN**, and cellular (as the negative control). Record the
-   IPs/ranges here.
-2. **Decide policy.** Visitors (NUwave-guest) in or out? VPN acceptable? (VPN cannot be
-   distinguished from on-campus by IP if it shares the egress range.)
-3. **Set the real allowlist** (`GUIDEMATE_ORIGIN_ALLOWLIST=<measured CIDRs>`), keep
-   `log` for a day, confirm zero false "would block" lines for legitimate users.
+1. **Measure. — ✅ mostly done (2026-07-22, see the measurement log).** NUwave,
+   NUwave-guest, and a floor-change repeat all egress from `208.98.212.96/29`.
+   Remaining cheap checks: cellular (negative control) and a fresh-lease
+   different-day sample. For any future re-measurement: set
+   `GUIDEMATE_ORIGIN_MODE=log` in `/etc/guidemate.env` on the instance
+   (`compose.yaml` forwards the three `GUIDEMATE_ORIGIN_*` vars into the app
+   container), run `agent_service/deploy/redeploy.sh`, then read the
+   would-block/pass lines in CloudWatch (`/guidemate/agent-service`).
+2. **Decide policy. — ✅ resolved (2026-07-22).** Visitors: **in** (NUwave-guest shares
+   the egress IP, included automatically). VPN: **out** — the product is scoped to the
+   Vancouver campus, so the Boston ranges are not allowlisted and GlobalProtect users
+   are blocked by design.
+3. **Validate in `log` mode.** The measured /29 is now the shipped default allowlist —
+   run `log` for a day and confirm zero false "would block" lines for legitimate users.
 4. **Flip `enforce`** (`agent_service/deploy/redeploy.sh` with the env set). Verify:
    campus phone works; cellular phone gets the 403 JSON (`NOT_ON_CAMPUS`); `/admin`
    still reachable off campus; `/healthz` + `/readyz` still green.
@@ -86,20 +93,23 @@ phone (NUwave, private 10.x/19)
 | 2026-07-22 | **NUwave-guest** | Fazheng's laptop, Vancouver campus | 10.247.147.156 (GW 10.247.128.1 — a different internal subnet) | 208.98.212.98 | same /29 — **guest shares the exact egress IP with NUwave proper** |
 | 2026-07-22 | NUwave (reconnect, different floor) | Fazheng's laptop, Vancouver campus | 10.247.217.171 (same lease/GW as row 1 — roaming kept the DHCP lease) | 208.98.212.98 | same — egress stable across reconnect + floor change; NOT an independent lease, the different-day sample below still stands |
 
-- **Allowlist candidate so far: `208.98.212.96/29`** (8 addresses; the whole campus
-  NATs out of this block, consistent with the per-IP-rate-limiting caveat above).
-  Confirms the Boston default (`155.33.0.0/16,129.10.0.0/16`) is wrong for this campus.
+- **`208.98.212.96/29` adopted as the shipped default (2026-07-22)** — in
+  `origin_gate.py` (`DEFAULT_ALLOWLIST`) and mirrored in `compose.yaml`. The original
+  Boston placeholder (`155.33.0.0/16,129.10.0.0/16`) was measured wrong for this campus
+  and removed per the Vancouver-only scope decision. (8 addresses; the whole campus NATs
+  out of this block, consistent with the per-IP-rate-limiting caveat above.)
 - **No IPv6 egress observed**: a dual-stack lookup (api64.ipify.org) returned the same
   IPv4, so an IPv4-only allowlist is currently safe here (re-check at enforce time).
 - **NUwave-guest egresses from the same IP as NUwave proper** (measured, same day, same
   laptop): allowlisting the /29 includes visitors automatically — and, symmetrically,
   L0a *cannot* exclude guests or distinguish them from NEU-account users by IP. Per-user
   scoping is L0b's job.
+- **NEU VPN measurement dropped (scope decision 2026-07-22):** the product is
+  Vancouver-campus-only, so whether GlobalProtect egresses from Boston space no longer
+  matters — those clients are outside the allowlist by design.
 - Still pending before `enforce`: a **different-day** sample (same-day floor-change
   repeat done, but it kept the same DHCP lease — confirm a fresh lease still egresses
-  inside the /29), **NEU VPN (GlobalProtect)** — likely egresses from the Boston
-  ranges, which would decide whether 155.33/129.10 stay in — and cellular as the
-  negative control.
+  inside the /29) and **cellular** as the negative control.
 
 ## Relation to the rest of L0
 

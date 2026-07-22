@@ -16,7 +16,7 @@ services:
       # covers empty values — an empty EXEMPT would block /healthz in enforce mode).
       # Set real values in /etc/guidemate.env; see docs/agent-poc/nuwave-origin-gate.md.
       - GUIDEMATE_ORIGIN_MODE=${GUIDEMATE_ORIGIN_MODE:-off}
-      - GUIDEMATE_ORIGIN_ALLOWLIST=${GUIDEMATE_ORIGIN_ALLOWLIST:-155.33.0.0/16,129.10.0.0/16}
+      - GUIDEMATE_ORIGIN_ALLOWLIST=${GUIDEMATE_ORIGIN_ALLOWLIST:-208.98.212.96/29}
       - GUIDEMATE_ORIGIN_EXEMPT=${GUIDEMATE_ORIGIN_EXEMPT:-/healthz,/readyz,/admin,/api/admin}
 
   caddy:
