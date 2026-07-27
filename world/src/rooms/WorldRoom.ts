@@ -1,5 +1,5 @@
-import { Room } from "@colyseus/core";
-import type { Client } from "@colyseus/core";
+import { Room } from "colyseus";
+import type { Client } from "colyseus";
 
 import { WorldState } from "./schema/WorldState.js";
 

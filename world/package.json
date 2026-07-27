@@ -17,8 +17,7 @@
     "@colyseus/schema": "4.0.30",
     "@colyseus/ws-transport": "0.17.13",
     "colyseus": "0.17.10",
-    "express": "^5.2.1",
-    "zod": "^4.4.3"
+    "express": "^5.2.1"
   },
   "devDependencies": {
     "@colyseus/sdk": "0.17.43",

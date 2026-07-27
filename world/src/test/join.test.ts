@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 
 import { Client } from "@colyseus/sdk";
-import { Server } from "@colyseus/core";
+import { Server } from "colyseus";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import express from "express";
 

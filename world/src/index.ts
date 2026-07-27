@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 
-import { Server } from "@colyseus/core";
+import { Server } from "colyseus";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import express from "express";
 
