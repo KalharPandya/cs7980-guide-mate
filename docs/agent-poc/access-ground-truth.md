@@ -318,3 +318,43 @@ session-less `/api/chat` path (no `session_id`), so nothing was written to the
 - **Policy:** `guidemate-sim-policy` (tag `project=guidemate-poc`) — connect as client `guidemate-*`; publish/subscribe/receive on `guidemate/turtlebotsim/*` and `$aws/things/Turtlebot-Sim/shadow/*` only.
 - **Classic shadow:** default-deny `{motion_enabled:false, max_speed:0.15, dry_run:true}`, same as the real robot. Flipped `true` **only** during a sim motion run, then reset to locked.
 - **Provisioning:** `scripts/create_sim_identity.sh` (idempotent — re-run skips existing thing/policy and reuses the local cert). **Note:** AWS IoT does not support tagging individual `thing` resources (only thing-groups/types/billing-groups), so the thing itself carries no tag — the script's `tag-resource || true` absorbs the `InvalidRequestException`; the **policy** carries `project=guidemate-poc`. The `sts get-caller-identity` account lookup in the ARN resolves to `852373397000`.
+
+## Virtual fleet identity (Virtual-Fleet), PROVISIONING PENDING (2026-07-27, Phase 2 Task 2.2)
+Script written and dry-run verified only. **Not yet applied to AWS**, the controller must
+review the policy statement below with the human, then re-run with `--apply`. This is a THIRD
+identity, separate from `Turtlebot-468` (real robot) and `Turtlebot-Sim` (single Gazebo sim);
+neither is touched by this script.
+- **Script:** `scripts/create_virtual_fleet_identity.sh` (clone of `create_sim_identity.sh`,
+  same idempotent structure: skip-if-exists thing/policy/cert, `tag-resource || true` for the
+  same untaggable-`thing` quirk, default-deny shadow). **Safe by default:** with no flags it is
+  a dry run that prints every AWS CLI call plus the exact policy JSON and mutates nothing;
+  `--apply` is required to actually create anything. Verified 2026-07-27: default-mode run
+  printed the full plan, and a follow-up `aws iot list-things` / `list-policies` confirmed
+  nothing new was created (still only `Turtlebot-Sim`/`Turtlebot-468` and the five existing
+  policies).
+- **Planned thing:** `Virtual-Fleet` (not yet created). **Planned policy:**
+  `guidemate-fleet-policy` (tag `project=guidemate-poc`), a NEW additive policy rather than
+  widening `guidemate-sim-policy`: cleaner blast radius (one policy per identity, easy to
+  revoke independently) and the sim policy's `guidemate/turtlebotsim/*` scope is unrelated to
+  the fleet's `guidemate/virtual/*` scope, so there's no shared statement to merge.
+- **Planned cert/key (local, not committed):** `~/.aws/guidemate-fleet.cert.pem` +
+  `~/.aws/guidemate-fleet.key.pem` (chmod 600 on creation), following the same
+  never-in-the-repo convention as the sim and dev certs.
+- **Proposed policy scope:** connect as client `guidemate-*` (already covered by the existing
+  sim/robot policies, included here too so this policy is self-contained); publish/subscribe/
+  receive on `guidemate/virtual/*` and `$aws/things/Virtual-Fleet/shadow/*` only.
+- **Topic naming assumption (flag for Task 2.3, the Node MQTT bridge):** the design spec
+  writes the fleet scope as `guidemate/virtual/+/*`. The existing
+  `shared/guidemate_msgs/guidemate_msgs/messages.py` `cmd_topic()`/`status_topic()` helpers
+  build flat topics `guidemate/{robot_id}/cmd|status`, so to land under `guidemate/virtual/...`
+  with those helpers unchanged, each virtual robot's `robot_id` needs its own `virtual/`
+  namespace, e.g. `robot_id="virtual/1"` → `guidemate/virtual/1/cmd`. The policy scopes to the
+  root `guidemate/virtual/*` (one trailing wildcard, matching the sim policy's own
+  `guidemate/turtlebotsim/*` granularity) so any id depth under that root is covered. If Task
+  2.3 instead uses flat ids like `virtual-1` (topic `guidemate/virtual-1/cmd`), that does **not**
+  fall under `guidemate/virtual/*`, and the policy will need a second statement or a broader
+  root. Confirm the chosen id scheme before `--apply`.
+- **Planned shadow:** default-deny, same shape as the real robot and `Turtlebot-Sim`:
+  `desired = {motion_enabled: false, max_speed: 0.15, dry_run: true}`. The virtual fleet has no
+  physical motor, so these fields don't gate real hardware here; they exist so a future
+  fleet-wide kill switch can reconcile one schema across real/sim/virtual identities.
