@@ -1,0 +1,6 @@
+# Binary CC0 3D assets - never text-diff or line-ending-convert these.
+# See README.md in this directory for source + license per asset:
+#   - robot.glb        three.js RobotExpressive (Don McCurdy, CC0)
+#   - visitor.glb      Quaternius human via poly.pizza (Quaternius, CC0)
+#   - furniture/*.glb  Kenney Furniture Kit (kenney.nl, CC0)
+*.glb binary
