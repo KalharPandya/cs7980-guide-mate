@@ -14,7 +14,7 @@ Worktree: `.claude/worktrees/feat+kalhar-virtual-world`, branch `feat/kalhar-vir
 | 2 | 0.2 Three.js/R3F client scaffold | **completed** | commit 23f4c53. Spec + quality review both clean, "ready to merge: yes". **Screenshot proof still outstanding** (environment/session constraint, not a code bug - see log). Forward notes for Task 3.1/3.2: (a) floor-14.json's real footprint spans roughly x:[0,36] z:[0,21], centroid ~(18,10), NOT centered on origin like the placeholder plane - Task 3.1 must recenter the floor-plan geometry or recompute the camera/MapControls target from the floor plan's actual bounds; (b) the directionalLight's default shadow-camera frustum (~10x10 centered on target) is too small for the real ~36x21 floor - Task 3.2 (first shadow-casting agents) will need to widen `shadow-camera` bounds. |
 | 3 | 0.3 Floor-plan data | **completed** | controller-authored, `world/data/floor-14.json` |
 | 4 | 0.4 CC0 asset fetch script | **completed** | commit 7cf481d; spec + quality review both passed, "ready to merge: yes". Minor nice-to-have not required: add `*.part` to .gitignore for interrupted-download cleanup. |
-| 5 | 1.1 Navmesh generation | pending | blocked by #1 |
+| 5 | 1.1 Navmesh generation | **completed (impl), review pending** | commit 2e63430 (impl, 18/18 rooms path-reachable) + 0d72704 (patch-package fix for a real @recast-navigation/core|generators tsc/build break - bare extensionless .d.ts export specifiers don't resolve under NodeNext; fixed + verified via clean node_modules reinstall). Spec/quality review not yet dispatched - controller pivoted to building a minimal live-demo slice (Task 1.2/3.3 subset) for a requested architecture video; formal review of 1.1 to follow. |
 | 6 | 1.2 Crowd simulation loop | pending | blocked by #5 |
 | 7 | 1.3 Load test ~95 agents | pending | blocked by #6 |
 | 8 | 2.1 navigate command schema | **completed** | commit 477006a; spec review + quality review both clean, no fixes needed |
@@ -41,6 +41,54 @@ Worktree: `.claude/worktrees/feat+kalhar-virtual-world`, branch `feat/kalhar-vir
 3. Read this file's table for the narrative version + any notes below.
 4. Pick the lowest-ID pending, unblocked task and dispatch its implementer subagent using the
    full task text from `2026-07-26-virtual-world-implementation-plan.md`.
+
+## Architecture-video live-clip slice (2026-07-26, side excursion)
+
+Kalhar asked for an architecture video and confirmed he wants "diagram + a live clip," not just
+a diagram. Built the smallest real vertical slice that proves the pipeline, NOT a preview of
+Tasks 1.2/3.2/3.3's real scope:
+- `world/src/rooms/WorldRoom.ts` now seeds one demo agent and walks it to a random room's real
+  navmesh-computed door path each tick, looping forever. Explicitly commented as scaffolding for
+  Task 1.2 to extend/replace, not the finished Detour Crowd loop.
+- `world-client/src/net/useWorldRoom.ts` + `world-client/src/scene/DemoAgents.tsx`: a Colyseus
+  client connection + a plain colored box that lerps to the synced position. Explicitly
+  commented as a stand-in for Task 3.2's real GLB models.
+- Fixed a real bug found in the process, not a workaround: `useWorldRoom()` must be called
+  outside `<Canvas>` (in the plain React DOM tree), not inside it -- react-three-fiber's own
+  reconciler defers committing child components until it renders a frame, which never happens
+  while the tab is hidden/backgrounded, so a hook called inside `<Canvas>` never even ran its
+  effect. `App.tsx` now calls the hook itself and passes `agentIds`/`agents` down as props. This
+  is the correct architecture regardless of the hidden-tab issue that surfaced it.
+- Verified live end-to-end twice: once via a throwaway Node script (`@colyseus/sdk` client
+  sampling the room every second, real changing x/z over a real WebSocket) and once via the
+  actual browser client (a temporary `window.__DEBUG_AGENTS__` expose, removed before commit,
+  polled with `javascript_tool` -- confirmed the browser genuinely receives continuously
+  changing positions, not a static snapshot).
+- Commits: `2e63430` (Task 1.1 impl), `0d72704` (Task 1.1 tsc/build fix), `ae830c1` (this slice).
+
+**How to run it for the actual recording** (do this on your own machine, in a real browser --
+this session's Browser pane cannot composite/screenshot frames, a separate, already-diagnosed
+limitation unrelated to whether the app works):
+```
+cd world && npm run dev        # starts the Colyseus server on :2567
+cd world-client && npm run dev # starts the Vite dev server, note the printed port
+```
+Open the printed `world-client` URL in a real browser. You'll see the grey placeholder floor and
+one green box (the demo robot) walking a real path to a random room and back, forever, with
+`MapControls` for drag/zoom. That's the live clip.
+
+**Formal spec/quality review of Task 1.1 (navmesh generation) is still outstanding** -- this
+excursion took priority once the video request came in. Resume subagent-driven-development
+there when picking this back up: dispatch a spec-compliance reviewer for commits
+`2e63430`+`0d72704` together (same two-stage process as every other task in this plan), then a
+code-quality reviewer, before moving on to the real Task 1.2.
+
+## Note on the harness task tracker
+The TaskList/TaskCreate tracker used earlier in this session was reset (likely tied to the
+session interruption) and no longer holds tasks #1-#15. This markdown file and
+`2026-07-26-virtual-world-implementation-plan.md` are the durable source of truth going
+forward -- don't assume the tracker has state; recreate it from this table if useful, but it's
+not required to resume work.
 
 ## Log
 - 2026-07-26: Design spec + implementation plan + task tracker created. floor-14.json authored.
