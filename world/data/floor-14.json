@@ -1,0 +1,111 @@
+{
+  "units": "meters",
+  "floor": 14,
+  "source": "Eyeballed from the Northeastern University Vancouver 14th Floor plan (pasted into chat 2026-07-26). Coordinates are approximate, not survey-accurate -- good enough for a browser-demo navmesh. Refine per-room if a route reads wrong in the renderer.",
+  "note": "x = west(0) to east(36), z = south(0) to north(21). Building outline is a rounded/irregular shape (approximated below). South/North Collaboration Space are open-plan zones (no surrounding walls in the source plan); all other named rooms are fully enclosed with a door gap toward the nearest corridor.",
+
+  "walkableOutline": [
+    [2, 0], [12, 0], [16, 0], [24, 0], [30, 1], [34, 4],
+    [36, 9], [35, 15], [30, 19], [22, 21], [12, 21],
+    [6, 20], [1, 17], [0, 10], [0, 3]
+  ],
+
+  "holes": [
+    { "name": "elevator-stair-core", "polygon": [[14, 4], [20, 4], [20, 18], [14, 18]] }
+  ],
+
+  "walls": [
+    { "a": [4, 16], "b": [4, 20], "height": 2.7, "glass": false, "note": "Quiet Study Space - west wall" },
+    { "a": [4, 20], "b": [10.5, 20], "height": 2.7, "glass": false, "note": "Quiet Study Space - north wall" },
+    { "a": [11, 20], "b": [11, 16], "height": 2.7, "glass": false, "note": "Quiet Study Space - east wall (door gap toward core corridor at z 16-16.6)" },
+    { "a": [4, 16], "b": [11, 16], "height": 2.7, "glass": false, "note": "Quiet Study Space - south wall" },
+
+    { "a": [11, 18], "b": [13, 18], "height": 2.7, "glass": false, "note": "1429 - south wall" },
+    { "a": [13, 18], "b": [13, 20.5], "height": 2.7, "glass": false, "note": "1429 - east wall" },
+    { "a": [13, 20.5], "b": [11, 20.5], "height": 2.7, "glass": false, "note": "1429 - north wall (door gap on west side toward Quiet Study corridor)" },
+
+    { "a": [11, 15], "b": [13, 15], "height": 2.7, "glass": false, "note": "1430 - south wall" },
+    { "a": [13, 15], "b": [13, 17.6], "height": 2.7, "glass": false, "note": "1430 - east wall (door gap at north end toward corridor)" },
+    { "a": [13, 17.6], "b": [11, 17.6], "height": 2.7, "glass": false, "note": "1430 - north wall" },
+
+    { "a": [2, 10], "b": [2, 15], "height": 2.7, "glass": false, "note": "Classroom 1426 - west wall" },
+    { "a": [2, 15], "b": [9, 15], "height": 2.7, "glass": false, "note": "Classroom 1426 - north wall" },
+    { "a": [9, 15], "b": [9, 11], "height": 2.7, "glass": false, "note": "Classroom 1426 - east wall (door gap z 11-11.6 toward corridor)" },
+    { "a": [9, 10], "b": [2, 10], "height": 2.7, "glass": false, "note": "Classroom 1426 - south wall" },
+
+    { "a": [1, 5], "b": [1, 9.5], "height": 2.7, "glass": false, "note": "Classroom 1425 - west wall" },
+    { "a": [1, 9.5], "b": [8, 9.5], "height": 2.7, "glass": false, "note": "Classroom 1425 - north wall" },
+    { "a": [8, 9.5], "b": [8, 6], "height": 2.7, "glass": false, "note": "Classroom 1425 - east wall (door gap z 6-6.6 toward corridor)" },
+    { "a": [8, 5], "b": [1, 5], "height": 2.7, "glass": false, "note": "Classroom 1425 - south wall" },
+
+    { "a": [0, 2], "b": [2, 2], "height": 2.7, "glass": false, "note": "Wellness Room - south wall" },
+    { "a": [2, 2], "b": [2, 4.6], "height": 2.7, "glass": false, "note": "Wellness Room - east wall (door gap at top toward South Collaboration Space)" },
+
+    { "a": [8, 0], "b": [8, 2.6], "height": 2.7, "glass": false, "note": "Classroom 1418 - west wall (door gap at top toward corridor)" },
+    { "a": [8, 3], "b": [12, 3], "height": 2.7, "glass": false, "note": "Classroom 1418 - north wall" },
+    { "a": [12, 3], "b": [12, 0], "height": 2.7, "glass": false, "note": "Classroom 1418 - east wall" },
+
+    { "a": [12.4, 0], "b": [12.4, 2.6], "height": 2.7, "glass": false, "note": "Classroom 1417 - west wall (door gap at top toward corridor)" },
+    { "a": [12.4, 3], "b": [16, 3], "height": 2.7, "glass": false, "note": "Classroom 1417 - north wall" },
+    { "a": [16, 3], "b": [16, 0], "height": 2.7, "glass": false, "note": "Classroom 1417 - east wall" },
+
+    { "a": [13, 2], "b": [13, 4], "height": 2.1, "glass": false, "note": "Female Washroom - west wall" },
+    { "a": [13, 4], "b": [16, 4], "height": 2.1, "glass": false, "note": "Female Washroom - north wall (door gap x 15-15.8)" },
+    { "a": [13, 2], "b": [16.5, 2], "height": 2.1, "glass": false, "note": "Female Washroom - south wall" },
+
+    { "a": [16.5, 2], "b": [16.5, 4], "height": 2.1, "glass": false, "note": "Male Washroom - west wall shared with Female Washroom" },
+    { "a": [16.5, 4], "b": [19.5, 4], "height": 2.1, "glass": false, "note": "Male Washroom - north wall (door gap x 18-18.8)" },
+    { "a": [19.5, 2], "b": [19.5, 4], "height": 2.1, "glass": false, "note": "Male Washroom - east wall" },
+    { "a": [16.5, 2], "b": [19.5, 2], "height": 2.1, "glass": false, "note": "Male Washroom - south wall" },
+
+    { "a": [19.5, 3], "b": [21, 3], "height": 2.1, "glass": false, "note": "Gender Neutral Washroom - south wall" },
+    { "a": [21, 3], "b": [21, 4], "height": 2.1, "glass": false, "note": "Gender Neutral Washroom - east wall" },
+    { "a": [21, 4], "b": [19.5, 4], "height": 2.1, "glass": false, "note": "Gender Neutral Washroom - north wall (door gap toward corridor)" },
+
+    { "a": [22, 8], "b": [22, 13], "height": 2.7, "glass": false, "note": "Kitchen - west wall" },
+    { "a": [22, 13], "b": [27, 13], "height": 2.7, "glass": false, "note": "Kitchen - north wall" },
+    { "a": [27, 13], "b": [27, 9], "height": 2.7, "glass": true, "note": "Kitchen - east wall, glass front toward North Collaboration Space (door gap z 9-9.8)" },
+    { "a": [27, 8], "b": [22, 8], "height": 2.7, "glass": false, "note": "Kitchen - south wall" },
+
+    { "a": [28, 9], "b": [28, 12], "height": 2.7, "glass": true, "note": "1407 - west wall, glass toward collaboration space" },
+    { "a": [28, 12], "b": [31, 12], "height": 2.7, "glass": false, "note": "1407 - north wall" },
+    { "a": [31, 12], "b": [31, 9.6], "height": 2.7, "glass": false, "note": "1407 - east wall (door gap toward 1408 corridor)" },
+    { "a": [31, 9], "b": [28, 9], "height": 2.7, "glass": false, "note": "1407 - south wall" },
+
+    { "a": [31.4, 8], "b": [31.4, 11], "height": 2.7, "glass": false, "note": "1408 - west wall (door gap toward corridor)" },
+    { "a": [31.4, 11], "b": [34, 11], "height": 2.7, "glass": true, "note": "1408 - north wall, glass toward Event Space" },
+    { "a": [34, 11], "b": [34, 8], "height": 2.7, "glass": false, "note": "1408 - east wall" },
+    { "a": [34, 8], "b": [31.4, 8], "height": 2.7, "glass": false, "note": "1408 - south wall" },
+
+    { "a": [28, 1], "b": [28, 3.6], "height": 2.7, "glass": false, "note": "1409 - west wall (door gap toward corridor)" },
+    { "a": [28, 4], "b": [32, 4], "height": 2.7, "glass": false, "note": "1409 - north wall" },
+    { "a": [32, 4], "b": [32, 1], "height": 2.7, "glass": false, "note": "1409 - east wall" },
+    { "a": [32, 1], "b": [28, 1], "height": 2.7, "glass": false, "note": "1409 - south wall" },
+
+    { "a": [24, 14], "b": [24, 20], "height": 2.7, "glass": true, "note": "Event Space - west wall, full glass front toward the core/corridor" },
+    { "a": [24, 20], "b": [33, 19.4], "height": 2.7, "glass": true, "note": "Event Space - north wall, glass" }
+  ],
+
+  "rooms": [
+    { "name": "Quiet Study Space", "aliases": ["quiet study"], "center": [7.5, 18], "door": [11.4, 16.3] },
+    { "name": "1429", "aliases": ["room 1429"], "center": [12, 19.2], "door": [10.7, 19.2] },
+    { "name": "1430", "aliases": ["room 1430"], "center": [12, 16.3], "door": [10.7, 16.3] },
+    { "name": "Classroom 1426", "aliases": ["1426", "room 1426"], "center": [5.5, 12.5], "door": [9.4, 11.3] },
+    { "name": "Classroom 1425", "aliases": ["1425", "room 1425"], "center": [4.5, 7.2], "door": [8.4, 6.3] },
+    { "name": "Wellness Room", "aliases": ["wellness"], "center": [1, 1], "door": [2.4, 3] },
+    { "name": "South Collaboration Space", "aliases": ["south collaboration"], "center": [5, 2.5], "door": [5, 2.5] },
+    { "name": "Classroom 1418", "aliases": ["1418", "room 1418"], "center": [10, 1.5], "door": [7.7, 1.8] },
+    { "name": "Classroom 1417", "aliases": ["1417", "room 1417"], "center": [14, 1.5], "door": [12.1, 1.8] },
+    { "name": "Female Washroom", "aliases": ["female washroom", "women's washroom"], "center": [14.5, 3], "door": [15.4, 4.3] },
+    { "name": "Male Washroom", "aliases": ["male washroom", "men's washroom"], "center": [18, 3], "door": [18.4, 4.3] },
+    { "name": "Gender Neutral Washroom", "aliases": ["gender neutral washroom"], "center": [20.2, 3.5], "door": [20.2, 4.3] },
+    { "name": "Kitchen", "aliases": ["kitchen"], "center": [24.5, 10.5], "door": [27.3, 9.4] },
+    { "name": "1407", "aliases": ["room 1407"], "center": [29.5, 10.5], "door": [27.7, 10.5] },
+    { "name": "1408", "aliases": ["room 1408"], "center": [32.7, 9.5], "door": [31.2, 9.5] },
+    { "name": "1409", "aliases": ["room 1409"], "center": [30, 2.5], "door": [27.7, 2.8] },
+    { "name": "North Collaboration Space", "aliases": ["north collaboration"], "center": [29, 6.5], "door": [29, 6.5] },
+    { "name": "Event Space", "aliases": ["event space"], "center": [28, 17], "door": [23.7, 17] }
+  ],
+
+  "entrance": { "name": "entrance", "point": [17, 0.5] }
+}
