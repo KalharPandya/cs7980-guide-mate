@@ -11,13 +11,16 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "test": "tsx src/test/join.test.ts"
+    "test": "tsx src/test/join.test.ts",
+    "test:nav": "tsx src/nav/__tests__/loadFloorPlan.test.ts && tsx src/nav/__tests__/buildNavMesh.geometry.test.ts && tsx src/nav/__tests__/buildNavMesh.test.ts"
   },
   "dependencies": {
     "@colyseus/schema": "4.0.30",
     "@colyseus/ws-transport": "0.17.13",
     "colyseus": "0.17.10",
-    "express": "^5.2.1"
+    "earcut": "3.2.3",
+    "express": "^5.2.1",
+    "recast-navigation": "0.43.1"
   },
   "devDependencies": {
     "@colyseus/sdk": "0.17.43",
