@@ -50,11 +50,15 @@ async function main(): Promise<void> {
 
     const state = room.state as { agents: Map<string, unknown>; floor: number };
 
-    assert.equal(state.agents.size, 0, "agents map should start empty");
+    // WorldRoom now seeds one demo agent on creation (a minimal architecture-proof movement
+    // loop, see WorldRoom.ts -- not the real Task 1.2 crowd simulation). This test's original
+    // "agents map should start empty" assumption no longer holds; it's not a regression, it's
+    // this task's own change to what "initial state" means.
+    assert.equal(state.agents.size, 1, "agents map should start with the one demo agent");
     assert.equal(typeof state.floor, "number", "floor should be present as a number");
 
     await room.leave();
-    console.log("PASS: joined 'world' room, received initial state (agents empty, floor present)");
+    console.log("PASS: joined 'world' room, received initial state (1 demo agent, floor present)");
   } finally {
     await gameServer.gracefullyShutdown(false);
   }
