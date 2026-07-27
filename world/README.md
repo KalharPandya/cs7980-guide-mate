@@ -15,6 +15,14 @@ cd world
 npm install
 ```
 
+`npm install` runs a `postinstall` step that applies `patch-package` patches from
+`world/patches/`: `@recast-navigation+core+0.43.1.patch` and
+`@recast-navigation+generators+0.43.1.patch`. These fix bare, extensionless import
+specifiers in the vendored `@recast-navigation/*` `.d.ts` re-exports, which don't
+resolve under this project's `moduleResolution: NodeNext` and break `tsc`/`npm run
+build` (runtime behavior is unaffected). If you see patch-package output during
+install, that's expected: it's re-applying these two patches, not an error.
+
 ## Run (dev)
 
 ```bash
@@ -48,3 +56,17 @@ Boots a throwaway instance of the server on a separate port, joins the `world`
 room with a Colyseus client, and asserts the initial state has an empty `agents`
 map and a `floor` number. This is a single smoke-test script, not a full test
 harness.
+
+```bash
+npm run test:nav
+```
+
+Runs the navmesh/pathfinding test suite (`src/nav/__tests__/`): floor-plan loading,
+navmesh geometry, and navmesh build/pathfinding. `npm test` alone does not run
+these, they're a separate script.
+
+```bash
+npm run test:all
+```
+
+Runs both suites in sequence (`npm test`, then `npm run test:nav`).

@@ -13,7 +13,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "test": "tsx src/test/join.test.ts",
-    "test:nav": "tsx src/nav/__tests__/loadFloorPlan.test.ts && tsx src/nav/__tests__/buildNavMesh.geometry.test.ts && tsx src/nav/__tests__/buildNavMesh.test.ts"
+    "test:nav": "tsx src/nav/__tests__/loadFloorPlan.test.ts && tsx src/nav/__tests__/buildNavMesh.geometry.test.ts && tsx src/nav/__tests__/buildNavMesh.test.ts",
+    "test:all": "npm run test && npm run test:nav"
   },
   "dependencies": {
     "@colyseus/schema": "4.0.30",
