@@ -238,6 +238,12 @@ Acceptance: browser preview screenshot showing the floor plan recognizably match
 layout (compare against `floor-14.json`'s room list), glass walls visually distinct from solid
 walls, no z-fighting between floor and walls.
 
+**Known forward-note from Task 0.2's review:** `floor-14.json`'s real footprint spans roughly
+x:[0,36] z:[0,21], centroid ~(18,10) -- NOT centered on the origin like Task 0.2's placeholder
+plane. You must either recenter the floor-plan geometry to straddle the origin, or recompute the
+camera/`MapControls` target from the floor plan's actual bounds (e.g. its centroid). Don't leave
+the view off-center by accident.
+
 **Task 3.2 — Animated agents (robots + visitors)** (depends on 0.2, 0.4; independent of 3.1)
 Files: `world-client/src/scene/Robot.tsx`, `world-client/src/scene/Visitor.tsx`,
 `world-client/src/scene/AgentInstances.tsx`.
@@ -253,6 +259,12 @@ hardcoded agents at fixed positions, some `moving`, some not.
 Acceptance: browser preview screenshot showing several robots (one draw call, verify via the
 browser's performance/spector tooling or just trust the `<Instances>` API) and several animated
 walking/idle visitors.
+
+**Known forward-note from Task 0.2's review:** the scaffold's `directionalLight` has a default
+shadow-camera frustum (~10x10 units centered on its target) that's too small for the real floor
+(~36x21). Once agents cast shadows, widen the `shadow-camera` bounds (e.g.
+`light.shadow.camera.left/right/top/bottom`) to cover the actual floor footprint, or shadows will
+clip/vanish outside a small central area.
 
 **Task 3.3 — Colyseus client wiring + route line** (depends on 3.1, 3.2, and 1.2/2.3 being live
 for real data, but CAN be built/tested against Task 1.2's test room in the meantime)
