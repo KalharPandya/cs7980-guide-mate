@@ -1,5 +1,7 @@
+import { useMemo } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { MapControls } from '@react-three/drei'
+import * as THREE from 'three'
 
 import { useWorldRoom } from './net/useWorldRoom'
 import { useFloorPlan } from './net/useFloorPlan'
@@ -22,9 +24,49 @@ import { computeOutlineBounds } from './scene/floorPlanUtils'
 // The network layer belongs to the DOM-level React tree; only the visual result (agentIds/
 // agents) is handed down as props to what's drawn inside the Canvas. useFloorPlan() is called
 // here for the same reason (it's a plain fetch(), not an R3F concern).
+
+/**
+ * Fixed (x, y, z) offset from the directional light's aim point (the floor's center, at y=0) to
+ * the light's own position -- NOT scaled by the floor plan's size, so the lighting angle stays
+ * the same regardless of floor-14.json's real extent. Used for both the light's `position` prop
+ * below and, via LIGHT_OFFSET_DISTANCE, for sizing the shadow-camera's near/far planes from the
+ * light's actual distance to what it's aimed at.
+ */
+const LIGHT_OFFSET: readonly [number, number, number] = [10, 20, 5]
+const LIGHT_OFFSET_DISTANCE = Math.hypot(...LIGHT_OFFSET)
+
+/**
+ * Extra room (in meters) added around the floor's own X/Z footprint when sizing the directional
+ * light's orthographic shadow-camera frustum (Task 3.2 code-review Fix 1: the default ~10x10
+ * frustum clips/vanishes shadows outside a small central patch of the real ~36x21m floor). The
+ * light sits at LIGHT_OFFSET away from its aim point rather than straight overhead (~29 degrees
+ * off vertical for the offset above), so the shadow camera's local left/right/top/bottom axes
+ * don't line up 1:1 with world X/Z -- top/bottom in particular needs more headroom than sizeZ/2
+ * alone would give. Verified against floor-14.json's real bounds (sizeX=36, sizeZ=21) by
+ * projecting the floor's corners through the actual tilted view matrix: the exact required
+ * half-extents came out to ~17.4m in X and +19.6m/-18.2m in top/bottom. Using the LARGER of
+ * sizeX/sizeZ for BOTH axes plus this margin comfortably covers both, without having to compute
+ * the exact tilted projection at runtime.
+ */
+const SHADOW_MARGIN_M = 6
+
+/**
+ * Rough ceiling on how far above the floor plane (y=0) anything that casts or receives a shadow
+ * gets -- floor-14.json's tallest wall is 2.7m (Walls.tsx), and Robot.tsx/Visitor.tsx agents top
+ * out under 1.7m. Only used to pad the shadow-camera's near/far planes (see shadowCornerDistance
+ * below).
+ */
+const SHADOW_HEIGHT_PAD_M = 3
+
 function App() {
   const { agentIds, agents } = useWorldRoom()
   const { floorPlan, error } = useFloorPlan()
+  // Stable target the directional light aims at (see the <primitive>/`target` prop below). A
+  // THREE.DirectionalLight's `target` is itself an Object3D that three.js reads `matrixWorld`
+  // from every frame to aim the shadow camera -- but it only gets a real (non-identity)
+  // matrixWorld if it's actually part of the rendered scene graph, which is why this is rendered
+  // as a <primitive> below rather than just assigned a position and left unmounted.
+  const lightTarget = useMemo(() => new THREE.Object3D(), [])
 
   if (error) {
     return (
@@ -53,6 +95,27 @@ function App() {
     bounds.centerZ + bounds.sizeZ * 0.7,
   ]
 
+  const lightPosition: [number, number, number] = [
+    target[0] + LIGHT_OFFSET[0],
+    LIGHT_OFFSET[1],
+    target[2] + LIGHT_OFFSET[2],
+  ]
+
+  // Half-width/height of the shadow camera's orthographic frustum -- see SHADOW_MARGIN_M's doc
+  // comment for why the LARGER of sizeX/sizeZ is used for both axes rather than sizing each
+  // axis independently off its own dimension.
+  const shadowHalfExtent = maxExtent / 2 + SHADOW_MARGIN_M
+
+  // near/far bound the shadow camera's depth range along its (tilted) view axis. Rather than
+  // projecting the exact tilted frustum at runtime, this bounds near/far by the worst-case
+  // straight-line distance from the light's aim point to any corner of the floor's footprint
+  // (padded up to SHADOW_HEIGHT_PAD_M tall) -- a corner's distance measured along the view axis
+  // can never exceed its full 3D distance from the aim point, so this is always a safe (if
+  // slightly generous) bound.
+  const shadowCornerDistance = Math.hypot(bounds.sizeX / 2, bounds.sizeZ / 2, SHADOW_HEIGHT_PAD_M)
+  const shadowNear = Math.max(0.5, LIGHT_OFFSET_DISTANCE - shadowCornerDistance)
+  const shadowFar = LIGHT_OFFSET_DISTANCE + shadowCornerDistance
+
   return (
     <Canvas
       shadows
@@ -60,7 +123,22 @@ function App() {
       style={{ width: '100vw', height: '100vh', display: 'block' }}
     >
       <ambientLight intensity={0.6} />
-      <directionalLight position={[target[0] + 10, 20, target[2] + 5]} intensity={1.2} castShadow />
+      <directionalLight
+        position={lightPosition}
+        target={lightTarget}
+        intensity={1.2}
+        castShadow
+        shadow-mapSize={[2048, 2048]}
+        shadow-camera-left={-shadowHalfExtent}
+        shadow-camera-right={shadowHalfExtent}
+        shadow-camera-top={shadowHalfExtent}
+        shadow-camera-bottom={-shadowHalfExtent}
+        shadow-camera-near={shadowNear}
+        shadow-camera-far={shadowFar}
+      />
+      {/* Aims the directional light above (world space, at the floor's actual center) -- must be
+          mounted in the scene graph, not just referenced, so its matrixWorld is real. */}
+      <primitive object={lightTarget} position={target} />
 
       <Floor floorPlan={floorPlan} />
       <Walls walls={floorPlan.walls} />

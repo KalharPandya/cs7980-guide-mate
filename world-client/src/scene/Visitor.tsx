@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js'
 
 import type { AgentSnapshot } from '../net/useWorldRoom'
+import { lerpXZToward } from './agentMotion'
 
 const VISITOR_MODEL_URL = '/models/visitor.glb'
 
@@ -71,9 +72,7 @@ function VisitorInstance({
   const playingClipRef = useRef<string | null>(null)
 
   useFrame((_state, delta) => {
-    const lerpFactor = Math.min(delta * 6, 1)
-    clonedScene.position.x = THREE.MathUtils.lerp(clonedScene.position.x, snapshot.x, lerpFactor)
-    clonedScene.position.z = THREE.MathUtils.lerp(clonedScene.position.z, snapshot.z, lerpFactor)
+    lerpXZToward(clonedScene, snapshot.x, snapshot.z, delta)
     clonedScene.rotation.y = snapshot.heading
 
     // `snapshot.state` is mutated in place by useWorldRoom's onChange callback, NOT via React

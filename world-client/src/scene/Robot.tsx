@@ -1,9 +1,9 @@
 import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Instance, Instances, useGLTF, type PositionMesh } from '@react-three/drei'
-import * as THREE from 'three'
 
 import type { AgentSnapshot } from '../net/useWorldRoom'
+import { lerpXZToward } from './agentMotion'
 import { bakeToStandingGeometry } from './modelBake'
 
 const ROBOT_MODEL_URL = '/models/robot.glb'
@@ -41,9 +41,7 @@ function RobotInstance({ snapshot }: { snapshot: AgentSnapshot }) {
   useFrame((_state, delta) => {
     const instance = ref.current
     if (!instance) return
-    const lerpFactor = Math.min(delta * 6, 1)
-    instance.position.x = THREE.MathUtils.lerp(instance.position.x, snapshot.x, lerpFactor)
-    instance.position.z = THREE.MathUtils.lerp(instance.position.z, snapshot.z, lerpFactor)
+    lerpXZToward(instance, snapshot.x, snapshot.z, delta)
     instance.rotation.y = snapshot.heading
   })
 
@@ -53,18 +51,28 @@ function RobotInstance({ snapshot }: { snapshot: AgentSnapshot }) {
 }
 
 /**
- * Renders every `kind === "robot"` agent as one batched draw call.
+ * Renders every `kind === "robot"` agent with true GPU instancing (drei's <Instances>/<Instance>,
+ * one InstancedMesh, transform-per-instance), as the Task 3.2 brief prefers for robots.
  *
- * Instancing-vs-clone decision: TRUE GPU instancing (drei's <Instances>/<Instance>, one
- * InstancedMesh, transform-per-instance) as the Task 3.2 brief prefers for robots. This is only
- * possible because RobotExpressive.glb, despite being rigged (2 of its 15 primitives are truly
- * skinned -- the hands; 13 are plain meshes parented at bone nodes), never needs to animate a
- * *different* pose per instance here: robots don't play per-agent walk cycles in this design, so
- * the whole rig can be frozen into ONE static merged geometry (see modelBake.ts) at load time and
- * reused across every robot instance, with only position/rotation varying per instance. If a
- * later task wants per-robot walk animation, that reintroduces per-instance skinning, which
- * InstancedMesh cannot do natively -- at that point this should fall back to individual
- * SkeletonUtils clones like Visitor.tsx, not before.
+ * Instancing-vs-clone decision: this is only possible because RobotExpressive.glb, despite being
+ * rigged, never needs to animate a *different* pose per instance here: robots don't play
+ * per-agent walk cycles in this design, so the whole rig can be frozen into one static merged
+ * geometry (see modelBake.ts) at load time and reused across every robot instance, with only
+ * position/rotation varying per instance. If a later task wants per-robot walk animation, that
+ * reintroduces per-instance skinning, which InstancedMesh cannot do natively -- at that point this
+ * should fall back to individual SkeletonUtils clones like Visitor.tsx, not before.
+ *
+ * Draw-call count (re-verified directly from robot.glb's glTF JSON, not carried over from an
+ * earlier guess): the asset has 19 primitives total across 3 materials, spread over 14 named
+ * meshes/nodes (Torso and Head alone contribute 2 and 3 primitives respectively). Only 4 of those
+ * 19 primitives -- the two in Hand.L and the two in Hand.R -- actually carry JOINTS_0/WEIGHTS_0
+ * (truly skinned); the rest are plain meshes parented at bone nodes. modelBake.ts's
+ * bakeToStandingGeometry() bakes ONE THREE.BufferGeometry per primitive (skinned or not, via
+ * getVertexPosition) and merges all of them with `mergeGeometries(..., true)`, which keeps one
+ * geometry `.group` (and thus one material slot) per input primitive. So the merged geometry
+ * <Instances> renders here is up to ~19 draw calls, not literally one -- but that ~19 is FIXED
+ * regardless of how many robots are on screen (vs. 19 draw calls PER robot without instancing),
+ * which is still the whole point of baking + instancing for the ~50-robot fleet target.
  */
 export function Robots({ agentIds, agents }: { agentIds: string[]; agents: Map<string, AgentSnapshot> }) {
   const gltf = useGLTF(ROBOT_MODEL_URL)

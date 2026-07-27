@@ -16,7 +16,7 @@ const SOLID_WALL_COLOR = '#d8d3c8'
 /**
  * Extrudes one floor-plan wall segment into a box running from `a` to `b`, `height` meters tall,
  * standing on the floor (base at y=0, matching Floor.tsx's mesh which sits just below y=0 to
- * avoid z-fighting). Coordinate convention matches Floor.tsx/RoomLabels.tsx/DemoAgents.tsx:
+ * avoid z-fighting). Coordinate convention matches Floor.tsx/RoomLabels.tsx/AgentInstances.tsx:
  * world (x, z) = floor-plan (x, z) directly, no recentering.
  *
  * BoxGeometry is authored with its length along local +X. To align that with the wall's actual
