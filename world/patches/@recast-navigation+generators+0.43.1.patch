@@ -1,0 +1,22 @@
+diff --git a/node_modules/@recast-navigation/generators/dist/generators/index.d.ts b/node_modules/@recast-navigation/generators/dist/generators/index.d.ts
+index 0f9ca0e..57250b3 100644
+--- a/node_modules/@recast-navigation/generators/dist/generators/index.d.ts
++++ b/node_modules/@recast-navigation/generators/dist/generators/index.d.ts
+@@ -1,5 +1,5 @@
+-export * from './common';
+-export * from './generate-solo-nav-mesh';
+-export * from './generate-tile-cache';
+-export * from './generate-tiled-nav-mesh';
+-export * from './merge-positions-and-indices';
++export * from './common.js';
++export * from './generate-solo-nav-mesh.js';
++export * from './generate-tile-cache.js';
++export * from './generate-tiled-nav-mesh.js';
++export * from './merge-positions-and-indices.js';
+diff --git a/node_modules/@recast-navigation/generators/dist/index.d.ts b/node_modules/@recast-navigation/generators/dist/index.d.ts
+index cb82623..8e0bbc5 100644
+--- a/node_modules/@recast-navigation/generators/dist/index.d.ts
++++ b/node_modules/@recast-navigation/generators/dist/index.d.ts
+@@ -1 +1 @@
+-export * from './generators';
++export * from './generators/index.js';
