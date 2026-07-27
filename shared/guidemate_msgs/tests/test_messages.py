@@ -38,6 +38,69 @@ def test_command_stop_requires_stop_name():
         Command(type="stop", name="halt")
 
 
+def test_command_accepts_all_emote_names_unchanged():
+    for name in ("happy", "yes", "no"):
+        cmd = Command(type="emote", name=name)
+        assert cmd.type == "emote"
+        assert cmd.name == name
+
+
+def test_command_accepts_all_motion_names_unchanged():
+    for name in ("circle", "spin", "dock", "undock", "forward"):
+        cmd = Command(type="motion", name=name)
+        assert cmd.type == "motion"
+        assert cmd.name == name
+
+
+def test_command_stop_unchanged():
+    cmd = Command(type="stop", name="stop")
+    assert cmd.type == "stop"
+    assert cmd.name == "stop"
+    with pytest.raises(ValidationError):
+        Command(type="stop", name="halt")
+
+
+def test_command_navigate_valid_with_room():
+    cmd = Command(type="navigate", name="goto", params={"room": "1425"})
+    assert cmd.type == "navigate"
+    assert cmd.name == "goto"
+    assert cmd.params == {"room": "1425"}
+    restored = Command.model_validate_json(cmd.model_dump_json())
+    assert restored == cmd
+
+
+def test_command_navigate_valid_with_xz():
+    cmd = Command(type="navigate", name="goto", params={"x": 1.5, "z": -2.0})
+    assert cmd.type == "navigate"
+    assert cmd.params == {"x": 1.5, "z": -2.0}
+    restored = Command.model_validate_json(cmd.model_dump_json())
+    assert restored == cmd
+
+
+def test_command_navigate_valid_with_int_xz():
+    cmd = Command(type="navigate", name="goto", params={"x": 1, "z": 2})
+    assert cmd.params == {"x": 1, "z": 2}
+
+
+def test_command_navigate_rejects_neither_room_nor_xz():
+    with pytest.raises(ValidationError):
+        Command(type="navigate", name="goto", params={})
+    with pytest.raises(ValidationError):
+        Command(type="navigate", name="goto", params={"x": 1.0})
+    with pytest.raises(ValidationError):
+        Command(type="navigate", name="goto", params={"z": 1.0})
+
+
+def test_command_navigate_rejects_non_string_room():
+    with pytest.raises(ValidationError):
+        Command(type="navigate", name="goto", params={"room": 1425})
+
+
+def test_command_navigate_rejects_bad_name():
+    with pytest.raises(ValidationError):
+        Command(type="navigate", name="warp", params={"room": "1425"})
+
+
 def test_ack_defaults():
     ack = Ack(cmd_id="abc", state="done", simulated=True)
     assert ack.reason is None

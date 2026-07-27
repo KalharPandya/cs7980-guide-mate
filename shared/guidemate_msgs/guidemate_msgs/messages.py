@@ -14,10 +14,20 @@ _EMOTE_NAMES = ("happy", "yes", "no")
 # choreography"), and the Phase 2 safety layer refuses them as motion while locked.
 # Bridge-side EXECUTION (Create 3 dock actions + dock-guard exemption) is Phase 8.
 _MOTION_NAMES = ("circle", "spin", "dock", "undock", "forward")
+# "navigate" targets are open-ended (room numbers/labels/coordinates), not a fixed
+# short enum like emotes/motions, so `name` is a stable constant (mirrors `stop`'s
+# name always being "stop") and the *destination* is validated via `params` instead:
+# either a `room` string key or both `x`/`z` numeric keys must be present.
+_NAVIGATE_NAMES = ("goto",)
 
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _is_number(value: object) -> bool:
+    """int/float, excluding bool (bool is technically an int subclass)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def new_cmd_id() -> str:
@@ -26,7 +36,7 @@ def new_cmd_id() -> str:
 
 class Command(BaseModel):
     cmd_id: str = Field(default_factory=new_cmd_id)
-    type: Literal["emote", "motion", "stop"]
+    type: Literal["emote", "motion", "stop", "navigate"]
     name: str
     params: dict = Field(default_factory=dict)
     ts: str = Field(default_factory=_utc_now_iso)
@@ -39,6 +49,16 @@ class Command(BaseModel):
             raise ValueError(f"motion name must be one of {_MOTION_NAMES}, got {self.name!r}")
         if self.type == "stop" and self.name != "stop":
             raise ValueError(f"stop command name must be 'stop', got {self.name!r}")
+        if self.type == "navigate":
+            if self.name not in _NAVIGATE_NAMES:
+                raise ValueError(f"navigate name must be one of {_NAVIGATE_NAMES}, got {self.name!r}")
+            has_room = isinstance(self.params.get("room"), str)
+            has_xz = _is_number(self.params.get("x")) and _is_number(self.params.get("z"))
+            if not (has_room or has_xz):
+                raise ValueError(
+                    "navigate params must contain a 'room' string or both 'x' and 'z' "
+                    f"numeric keys, got {self.params!r}"
+                )
         return self
 
 
