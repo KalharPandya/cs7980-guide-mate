@@ -3,16 +3,18 @@ import { MapControls } from '@react-three/drei'
 
 import { useWorldRoom } from './net/useWorldRoom'
 import { useFloorPlan } from './net/useFloorPlan'
-import { DemoAgents } from './scene/DemoAgents'
+import { AgentInstances } from './scene/AgentInstances'
 import { Floor } from './scene/Floor'
 import { Walls } from './scene/Walls'
 import { RoomLabels } from './scene/RoomLabels'
 import { computeOutlineBounds } from './scene/floorPlanUtils'
 
 // Task 0.2 scaffold, extended by Task 3.1 with the real floor/wall/label geometry (see
-// scene/Floor.tsx, scene/Walls.tsx, scene/RoomLabels.tsx) and by the architecture-video slice
-// with <DemoAgents/>, which renders whatever the world-server is really simulating -- not
-// hardcoded, not a mock. Full robot/visitor models are Task 3.2.
+// scene/Floor.tsx, scene/Walls.tsx, scene/RoomLabels.tsx) and by Task 3.2 with
+// <AgentInstances/>, which renders whatever the world-server is really simulating as real
+// animated robot/visitor GLB models (scene/Robot.tsx, scene/Visitor.tsx) -- not hardcoded, not a
+// mock, and no longer the placeholder colored boxes from the architecture-video slice
+// (scene/DemoAgents.tsx, now removed).
 //
 // useWorldRoom() is called here, OUTSIDE <Canvas>, deliberately: react-three-fiber's scene
 // graph is a separate reconciler tied to its own render/animation loop, so a WebSocket
@@ -64,7 +66,7 @@ function App() {
       <Walls walls={floorPlan.walls} />
       <RoomLabels rooms={floorPlan.rooms} />
 
-      <DemoAgents agentIds={agentIds} agents={agents} />
+      <AgentInstances agentIds={agentIds} agents={agents} />
 
       <MapControls target={target} />
     </Canvas>

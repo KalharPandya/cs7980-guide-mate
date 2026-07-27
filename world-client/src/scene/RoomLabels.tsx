@@ -13,14 +13,25 @@ const LABEL_HEIGHT = 1.6 // meters above the floor
  * verification bar for this task is zero console errors. <Html> renders a real DOM node using
  * the system font stack, so there's no external asset that can fail to load.
  *
- * Coordinate convention matches Floor.tsx/Walls.tsx/DemoAgents.tsx: world (x, z) = floor-plan
+ * Coordinate convention matches Floor.tsx/Walls.tsx/AgentInstances.tsx: world (x, z) = floor-plan
  * (x, z) directly, no recentering.
+ *
+ * `occlude` (Task 3.2 forward-note): without it, the label's DOM node has no depth test against
+ * the WebGL scene, so it bleeds through walls at some camera angles. The plain boolean form
+ * occludes against every other object drei tracks (root scene), which is enough here -- there's
+ * no separate wall/label depth-testing pass to wire up for this simple demo.
  */
 export function RoomLabels({ rooms }: { rooms: FloorPlanRoom[] }) {
   return (
     <>
       {rooms.map((room) => (
-        <Html key={room.name} position={[room.center[0], LABEL_HEIGHT, room.center[1]]} center distanceFactor={10}>
+        <Html
+          key={room.name}
+          position={[room.center[0], LABEL_HEIGHT, room.center[1]]}
+          center
+          distanceFactor={10}
+          occlude
+        >
           <div
             data-room-label={room.name}
             style={{

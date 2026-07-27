@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import * as THREE from 'three'
 
 import type { FloorPlanWall } from './floorPlanTypes'
+import { directionToYRotation } from './floorPlanUtils'
 
 /**
  * floor-14.json gives each wall only a centerline (`a` -> `b`) and a height, no thickness, so
@@ -19,9 +20,10 @@ const SOLID_WALL_COLOR = '#d8d3c8'
  * world (x, z) = floor-plan (x, z) directly, no recentering.
  *
  * BoxGeometry is authored with its length along local +X. To align that with the wall's actual
- * direction in the XZ plane, the mesh is rotated about Y by atan2(-dz, dx), where (dx, dz) is the
- * b-minus-a direction: three.js's Y-axis rotation maps local +X to world (cos(theta), -sin(theta))
- * in the (x, z) plane, so solving cos(theta) = dx/len and -sin(theta) = dz/len gives that angle.
+ * direction in the XZ plane, the mesh is rotated about Y by directionToYRotation(dx, dz), where
+ * (dx, dz) is the b-minus-a direction -- see floorPlanUtils.ts for the full derivation of that
+ * formula (three.js's Y-axis rotation maps local +X to world (cos(theta), -sin(theta)) in the
+ * (x, z) plane, so solving cos(theta) = dx/len and -sin(theta) = dz/len gives that angle).
  */
 function Wall({ wall }: { wall: FloorPlanWall }) {
   const { geometry, position, rotationY } = useMemo(() => {
@@ -34,7 +36,7 @@ function Wall({ wall }: { wall: FloorPlanWall }) {
     return {
       geometry: new THREE.BoxGeometry(length, wall.height, WALL_THICKNESS),
       position: new THREE.Vector3((ax + bx) / 2, wall.height / 2, (az + bz) / 2),
-      rotationY: Math.atan2(-dz, dx),
+      rotationY: directionToYRotation(dx, dz),
     }
   }, [wall])
 
