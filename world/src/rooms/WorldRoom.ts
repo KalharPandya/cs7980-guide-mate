@@ -3,31 +3,55 @@ import type { Client } from "colyseus";
 
 import { Agent, WorldState } from "./schema/WorldState.js";
 import { buildNavMesh } from "../nav/buildNavMesh.js";
-import type { BuiltNavMesh } from "../nav/buildNavMesh.js";
+import type { BuiltNavMesh, RoomTarget } from "../nav/buildNavMesh.js";
 import { loadFloorPlan } from "../nav/loadFloorPlan.js";
 import type { FloorPlan } from "../nav/loadFloorPlan.js";
+import { AgentCrowd } from "../nav/crowd.js";
+import type { AgentParams } from "../nav/crowd.js";
 
 /**
- * Minimal architecture-proof slice, not the real Task 1.2 (Crowd simulation for ~50 agents).
- * One demo robot walks the real navmesh to a random room's door and back, on a loop, purely
- * so a live client can be recorded showing real server-computed movement over a WebSocket --
- * this is NOT the multi-agent Detour Crowd loop Task 1.2 will build (no local avoidance, no
- * pool of many agents). Task 1.2's implementer should treat this as scaffolding to extend or
- * replace, not as the finished crowd-simulation loop.
+ * Task 1.2: the real Detour Crowd simulation loop, replacing the single-demo-agent
+ * scaffold from commit ae830c1 (that scaffold walked one agent along a raw
+ * `NavMeshQuery.computePath` path by hand -- no local avoidance, no agent pool; it was
+ * explicitly scaffolding for this task to replace, not extend).
+ *
+ * One `AgentCrowd` (world/src/nav/crowd.ts) owns every agent's steering/local-avoidance;
+ * WorldRoom's job is just: build the navmesh, own the crowd, step it on a fixed
+ * simulated timestep, and mirror each crowd agent's resulting position/heading into the
+ * synced `WorldState.agents` schema map every tick.
  */
-const DEMO_AGENT_ID = "demo-robot-1";
-const DEMO_AGENT_SPEED_MPS = 1.4;
-const DEMO_AGENT_PAUSE_MS = 1000;
+const MAX_AGENTS = 128;
+const MAX_AGENT_RADIUS_M = 0.5;
 
-interface DemoPath {
-  points: { x: number; z: number }[];
-  index: number;
-}
+/** Guide-robot / visitor-avatar movement tuning. `radius`/`height` match the footprint
+ * buildNavMesh.ts already eroded the walkable area by -- keep these two in sync if that
+ * changes, or the crowd will think agents fit through gaps the navmesh doesn't actually
+ * have room for (or vice versa). */
+const DEFAULT_AGENT_PARAMS: AgentParams = {
+  radius: 0.2,
+  height: 1.8,
+  maxAcceleration: 8,
+  maxSpeed: 1.4,
+  collisionQueryRange: 2.5,
+  pathOptimizationRange: 0,
+  separationWeight: 2,
+};
+
+/** No visitors/robots distinction concept yet (that's Phase 4) -- this is the one test
+ * agent seeded on room creation so Task 1.2 is independently testable without the IoT
+ * bridge or Moses. */
+const TEST_AGENT_ID = "test-robot-1";
+
+/** Colyseus's setSimulationInterval callback delivers deltaTime in MILLISECONDS; Detour's
+ * `crowd.update()` expects SECONDS. Clamped so a stall (e.g. a slow tick after GC) can't
+ * teleport an agent through a wall in a single step. (Verified-correct pattern carried
+ * over from the demo scaffold this task replaces.) */
+const MAX_TICK_SECONDS = 0.1;
 
 export class WorldRoom extends Room<{ state: WorldState }> {
   private nav!: BuiltNavMesh;
   private plan!: FloorPlan;
-  private demoPath: DemoPath | null = null;
+  private crowd!: AgentCrowd;
 
   async onCreate(): Promise<void> {
     this.setState(new WorldState());
@@ -37,71 +61,92 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     this.state.floor = this.plan.floor;
     this.nav = await buildNavMesh(this.plan);
 
-    const demoAgent = new Agent();
-    demoAgent.id = DEMO_AGENT_ID;
-    demoAgent.kind = "robot";
-    demoAgent.state = "idle";
-    demoAgent.x = this.plan.entrance.point[0];
-    demoAgent.z = this.plan.entrance.point[1];
-    this.state.agents.set(DEMO_AGENT_ID, demoAgent);
+    this.crowd = new AgentCrowd(this.nav.navMesh, {
+      maxAgents: MAX_AGENTS,
+      maxAgentRadius: MAX_AGENT_RADIUS_M,
+    });
 
-    this.pickNextDemoTarget();
+    this.addAgent(TEST_AGENT_ID, "robot", {
+      x: this.plan.entrance.point[0],
+      z: this.plan.entrance.point[1],
+    });
+
     this.setSimulationInterval((deltaMs) => this.update(deltaMs));
   }
 
-  /** Picks a random room, computes a real navmesh path to its door, and starts walking it. */
-  private pickNextDemoTarget(attemptsLeft = this.plan.rooms.length): void {
-    const agent = this.state.agents.get(DEMO_AGENT_ID);
-    if (!agent) return;
+  /**
+   * Adds a new tracked agent to both the Crowd (for steering) and the synced schema (for
+   * clients). `kind` is cosmetic today -- Phase 4 will actually distinguish robots from
+   * visitors; every agent added here gets the same movement tuning.
+   */
+  addAgent(id: string, kind: "robot" | "visitor", spawn: { x: number; z: number }): void {
+    this.crowd.addAgent(id, { x: spawn.x, y: 0, z: spawn.z }, DEFAULT_AGENT_PARAMS);
 
-    const room = this.plan.rooms[Math.floor(Math.random() * this.plan.rooms.length)];
-    const { success, path } = this.nav.navMeshQuery.computePath(
-      { x: agent.x, y: 0, z: agent.z },
-      { x: room.door[0], y: 0, z: room.door[1] },
-    );
-
-    if (!success || path.length === 0) {
-      console.warn(`WorldRoom: demo agent path to "${room.name}" failed, retrying`);
-      if (attemptsLeft > 1) this.pickNextDemoTarget(attemptsLeft - 1);
-      return;
-    }
-
-    this.demoPath = { points: path.map((p) => ({ x: p.x, z: p.z })), index: 0 };
-    agent.state = `walking to ${room.name}`;
-    console.log(`WorldRoom: demo agent heading to "${room.name}" (${path.length} waypoints)`);
+    const agent = new Agent();
+    agent.id = id;
+    agent.kind = kind;
+    agent.state = "idle";
+    agent.x = spawn.x;
+    agent.z = spawn.z;
+    this.state.agents.set(id, agent);
   }
 
-  private update(deltaMs: number): void {
-    const agent = this.state.agents.get(DEMO_AGENT_ID);
-    if (!agent || !this.demoPath) return;
+  /**
+   * Resolves `roomNameOrCoords` (a room name/alias via Task 1.1's `findRoomTarget`, or a
+   * literal nav-space `{x, z}` point) and requests the crowd agent `agentId` move there.
+   * Returns `false` (and logs why) if the agent id is unknown or the target can't be
+   * resolved -- this never edits floor-14.json to work around an unreachable room; an
+   * unresolvable target is reported, not silently worked around.
+   */
+  moveAgentTo(agentId: string, roomNameOrCoords: string | RoomTarget): boolean {
+    const target =
+      typeof roomNameOrCoords === "string"
+        ? this.nav.findRoomTarget(roomNameOrCoords)
+        : roomNameOrCoords;
 
-    // Colyseus's setSimulationInterval callback receives deltaTime in MILLISECONDS; recast's
-    // own step math is meters/second, so this must convert -- and clamp so a stall (e.g. a
-    // slow tick after GC) doesn't teleport the agent through a wall in one step.
-    const dt = Math.min(deltaMs / 1000, 0.1);
-    const step = DEMO_AGENT_SPEED_MPS * dt;
-
-    const target = this.demoPath.points[this.demoPath.index];
-    const dx = target.x - agent.x;
-    const dz = target.z - agent.z;
-    const dist = Math.hypot(dx, dz);
-
-    if (dist <= step) {
-      agent.x = target.x;
-      agent.z = target.z;
-      this.demoPath.index += 1;
-
-      if (this.demoPath.index >= this.demoPath.points.length) {
-        agent.state = "idle";
-        this.demoPath = null;
-        setTimeout(() => this.pickNextDemoTarget(), DEMO_AGENT_PAUSE_MS);
-      }
-      return;
+    if (!target) {
+      console.warn(
+        `WorldRoom.moveAgentTo: could not resolve target ${JSON.stringify(roomNameOrCoords)} ` +
+          `for agent "${agentId}"`,
+      );
+      return false;
     }
 
-    agent.heading = Math.atan2(dx, dz);
-    agent.x += (dx / dist) * step;
-    agent.z += (dz / dist) * step;
+    const requested = this.crowd.requestMoveTarget(agentId, {
+      x: target.x,
+      y: 0,
+      z: target.z,
+    });
+    if (!requested) {
+      console.warn(
+        `WorldRoom.moveAgentTo: requestMoveTarget failed for agent "${agentId}" -> ` +
+          `(${target.x.toFixed(2)}, ${target.z.toFixed(2)})`,
+      );
+    }
+    return requested;
+  }
+
+  /**
+   * The simulation tick: converts Colyseus's millisecond deltaTime to the seconds Detour
+   * expects (clamped, see MAX_TICK_SECONDS), steps the crowd, and mirrors each agent's
+   * resulting position/heading into its synced schema entry.
+   *
+   * Public (not just wired via setSimulationInterval) so tests can drive deterministic,
+   * wall-clock-free simulated time by calling this directly with a synthetic deltaMs
+   * instead of waiting on Colyseus's real interval timer.
+   */
+  update(deltaMs: number): void {
+    const dtSeconds = Math.min(deltaMs / 1000, MAX_TICK_SECONDS);
+    const snapshots = this.crowd.tick(dtSeconds);
+
+    for (const snap of snapshots) {
+      const agent = this.state.agents.get(snap.id);
+      if (!agent) continue;
+      agent.x = snap.x;
+      agent.z = snap.z;
+      agent.heading = snap.heading;
+      agent.state = snap.speed >= 0.05 ? "moving" : "idle";
+    }
   }
 
   onJoin(client: Client): void {
