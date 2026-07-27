@@ -21,6 +21,7 @@ import earcut from "earcut";
 
 import type { FloorPlan, FloorPlanWall, Point2D } from "./loadFloorPlan.js";
 import { loadFloorPlan } from "./loadFloorPlan.js";
+import { AGENT_HEIGHT_M, AGENT_RADIUS_M } from "./agentProfile.js";
 
 export interface RoomTarget {
   x: number;
@@ -58,10 +59,9 @@ function ensureRecastInit(): Promise<void> {
 const CS = 0.1;
 const CH = 0.1;
 
-/** Guide-robot / visitor-avatar footprint radius used to erode the walkable area. */
-const AGENT_RADIUS_M = 0.2;
-/** Minimum clearance height for the agent to be considered able to stand/walk under. */
-const AGENT_HEIGHT_M = 1.8;
+// AGENT_RADIUS_M / AGENT_HEIGHT_M live in ./agentProfile.js: WorldRoom.ts's Detour Crowd
+// agents must be sized identically to the footprint the navmesh below is eroded for, or
+// the crowd and the navmesh will disagree about what fits through a gap.
 /** Maximum step/ledge height the agent can climb (floor unevenness, thresholds). */
 const AGENT_MAX_CLIMB_M = 0.2;
 

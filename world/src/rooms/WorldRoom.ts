@@ -8,6 +8,7 @@ import { loadFloorPlan } from "../nav/loadFloorPlan.js";
 import type { FloorPlan } from "../nav/loadFloorPlan.js";
 import { AgentCrowd } from "../nav/crowd.js";
 import type { AgentParams } from "../nav/crowd.js";
+import { AGENT_HEIGHT_M, AGENT_RADIUS_M } from "../nav/agentProfile.js";
 
 /**
  * Task 1.2: the real Detour Crowd simulation loop, replacing the single-demo-agent
@@ -23,13 +24,13 @@ import type { AgentParams } from "../nav/crowd.js";
 const MAX_AGENTS = 128;
 const MAX_AGENT_RADIUS_M = 0.5;
 
-/** Guide-robot / visitor-avatar movement tuning. `radius`/`height` match the footprint
- * buildNavMesh.ts already eroded the walkable area by -- keep these two in sync if that
- * changes, or the crowd will think agents fit through gaps the navmesh doesn't actually
- * have room for (or vice versa). */
+/** Guide-robot / visitor-avatar movement tuning. `radius`/`height` come from
+ * `../nav/agentProfile.js`, the same footprint buildNavMesh.ts erodes the walkable area
+ * by -- importing the shared constants (instead of re-declaring the literals here) is
+ * what keeps the crowd and the navmesh from disagreeing about what fits through a gap. */
 const DEFAULT_AGENT_PARAMS: AgentParams = {
-  radius: 0.2,
-  height: 1.8,
+  radius: AGENT_RADIUS_M,
+  height: AGENT_HEIGHT_M,
   maxAcceleration: 8,
   maxSpeed: 1.4,
   collisionQueryRange: 2.5,
@@ -48,10 +49,18 @@ const TEST_AGENT_ID = "test-robot-1";
  * over from the demo scaffold this task replaces.) */
 const MAX_TICK_SECONDS = 0.1;
 
+/** Below this speed (m/s), the synced schema reports the agent as "idle" rather than
+ * "moving". Distinct from crowd.ts's `MIN_HEADING_SPEED_MPS` (0.01): that one keeps a
+ * stopped agent's *heading* from jittering to atan2(0, 0); this one is purely the
+ * idle-vs-moving classification exposed to clients, and the two thresholds are allowed to
+ * (and do) differ. */
+const IDLE_SPEED_THRESHOLD_MPS = 0.05;
+
 export class WorldRoom extends Room<{ state: WorldState }> {
   private nav!: BuiltNavMesh;
   private plan!: FloorPlan;
   private crowd!: AgentCrowd;
+  private disposed = false;
 
   async onCreate(): Promise<void> {
     this.setState(new WorldState());
@@ -145,7 +154,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       agent.x = snap.x;
       agent.z = snap.z;
       agent.heading = snap.heading;
-      agent.state = snap.speed >= 0.05 ? "moving" : "idle";
+      agent.state = snap.speed >= IDLE_SPEED_THRESHOLD_MPS ? "moving" : "idle";
     }
   }
 
@@ -155,5 +164,31 @@ export class WorldRoom extends Room<{ state: WorldState }> {
 
   onLeave(client: Client): void {
     console.log(`WorldRoom: client left (sessionId=${client.sessionId})`);
+  }
+
+  /**
+   * Frees the WASM-backed native allocations this room owns: the Detour Crowd, then the
+   * NavMesh/NavMeshQuery it steps on. Colyseus's `autoDispose` defaults to true, meaning
+   * this room IS disposed the moment its last client disconnects -- a browser refresh, a
+   * dropped WS, a kiosk reboot -- so this has to actually run reliably, not just exist for
+   * an explicit shutdown path. This also closes the NavMesh/NavMeshQuery disposal gap
+   * Task 1.1's review flagged: WorldRoom is the sole owner of all three native objects, so
+   * one onDispose here resolves both.
+   *
+   * Guarded so it's safe to call more than once (a native double-free would be a crash,
+   * not a soft failure) and safe to call even if onCreate() never finished setting up
+   * `crowd`/`nav` (defensive only -- Colyseus does not call onDispose before onCreate
+   * resolves).
+   *
+   * Order matters: the crowd holds a reference to the navmesh it was constructed with, so
+   * it must be destroyed before the navmesh/query underneath it.
+   */
+  onDispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+
+    this.crowd?.destroy();
+    this.nav?.navMesh.destroy();
+    this.nav?.navMeshQuery.destroy();
   }
 }

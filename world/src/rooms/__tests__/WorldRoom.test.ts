@@ -112,6 +112,13 @@ async function main(): Promise<void> {
   assert.equal(badResult, false, "moveAgentTo should return false for an unresolvable target");
   console.log("PASS: moveAgentTo returns false for an unknown room name");
 
+  // --- onDispose: must free the WASM-backed crowd/navmesh/query without throwing, and be
+  // safe to call more than once (Colyseus disposing a room twice would otherwise be a
+  // native double-free, not a soft failure). ---
+  assert.doesNotThrow(() => room.onDispose(), "onDispose() should not throw");
+  assert.doesNotThrow(() => room.onDispose(), "onDispose() should be idempotent (safe to call twice)");
+  console.log("PASS: onDispose() frees native resources without throwing and is idempotent");
+
   console.log("\nALL PASS: WorldRoom.test.ts");
 }
 
