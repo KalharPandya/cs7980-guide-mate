@@ -131,8 +131,52 @@ export class WorldRoom extends Room<{ state: WorldState }> {
         `WorldRoom.moveAgentTo: requestMoveTarget failed for agent "${agentId}" -> ` +
           `(${target.x.toFixed(2)}, ${target.z.toFixed(2)})`,
       );
+      return requested;
     }
+
+    this.updateAgentRoute(agentId, target);
     return requested;
+  }
+
+  /**
+   * Task 3.3: computes the DISPLAY polyline for the client's glowing route-line renderer
+   * and stores it (flattened x,z pairs) on the agent's synced `route`. This is a one-shot
+   * snapshot taken here, at the moment the move is requested -- NOT re-derived from
+   * Detour's internal corridor every tick (see nav/crowd.ts's module doc comment: the
+   * Crowd already owns per-frame steering/avoidance; asking it to also expose its live
+   * corridor every tick would mean re-walking/re-encoding a schema array 20x/second per
+   * agent for a line that's only cosmetic). `navMeshQuery.computePath` gives the same
+   * "as the crow flies across the navmesh" polyline Task 1.1's `findRoomTarget` already
+   * relies on `findClosestPoint` for, so no new nav primitive is introduced.
+   *
+   * Uses the agent's last-synced (x, z) as the path start -- this fires in the same
+   * synchronous call as `requestMoveTarget`, before `update()` has moved the agent again,
+   * so it's the agent's real current position, not stale.
+   *
+   * Failure (no path found) clears the route rather than leaving a stale one and returns
+   * without throwing: the crowd steering request above already succeeded independently of
+   * this, so a missing DISPLAY path shouldn't be treated as `moveAgentTo` failing overall.
+   */
+  private updateAgentRoute(agentId: string, target: RoomTarget): void {
+    const agent = this.state.agents.get(agentId);
+    if (!agent) return;
+
+    agent.route.clear();
+
+    const { success, path } = this.nav.navMeshQuery.computePath(
+      { x: agent.x, y: 0, z: agent.z },
+      { x: target.x, y: 0, z: target.z },
+    );
+    if (!success) {
+      console.warn(
+        `WorldRoom.moveAgentTo: computePath failed for agent "${agentId}"; route line will be empty`,
+      );
+      return;
+    }
+
+    for (const point of path) {
+      agent.route.push(point.x, point.z);
+    }
   }
 
   /**
@@ -154,7 +198,16 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       agent.x = snap.x;
       agent.z = snap.z;
       agent.heading = snap.heading;
-      agent.state = snap.speed >= IDLE_SPEED_THRESHOLD_MPS ? "moving" : "idle";
+
+      const nextState = snap.speed >= IDLE_SPEED_THRESHOLD_MPS ? "moving" : "idle";
+      // Task 3.3: the route line is only meaningful while the agent is actually en route --
+      // clear it the moment the schema settles to "idle" (arrival, or any other reason the
+      // crowd agent stops) so the client never keeps drawing a route to a destination the
+      // agent already reached.
+      if (nextState === "idle" && agent.route.length > 0) {
+        agent.route.clear();
+      }
+      agent.state = nextState;
     }
   }
 

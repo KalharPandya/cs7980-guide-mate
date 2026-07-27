@@ -11,6 +11,8 @@
  *      position converge to within tolerance of that room's door.
  *   3. moveAgentTo reports failure (not a throw or silent no-op) for an unresolvable
  *      target.
+ *   4. (Task 3.3) moveAgentTo populates the agent's synced `route` (flattened x,z pairs)
+ *      with a real computePath polyline, and arrival (state settling to "idle") clears it.
  *
  * Run with: npx tsx src/rooms/__tests__/WorldRoom.test.ts
  */
@@ -29,6 +31,7 @@ interface SyncedAgent {
   z: number;
   heading: number;
   state: string;
+  route: { length: number; [index: number]: number };
 }
 
 async function main(): Promise<void> {
@@ -56,6 +59,27 @@ async function main(): Promise<void> {
   const beforeClampZ = initialAgent!.z;
   const moveOk = room.moveAgentTo(TEST_AGENT_ID, "Classroom 1425");
   assert.ok(moveOk, 'moveAgentTo("Classroom 1425") should succeed (it is reachable per Task 1.1)');
+
+  // --- Task 3.3: moveAgentTo should populate the synced `route` (flattened x,z pairs)
+  // with a real computePath polyline for the client's route-line renderer. ---
+  const routedAgent = state.agents.get(TEST_AGENT_ID)!;
+  assert.ok(
+    routedAgent.route.length >= 4 && routedAgent.route.length % 2 === 0,
+    `moveAgentTo should populate route with >=2 flattened (x,z) points (even length); ` +
+      `got length ${routedAgent.route.length}`,
+  );
+  const routeEndX = routedAgent.route[routedAgent.route.length - 2];
+  const routeEndZ = routedAgent.route[routedAgent.route.length - 1];
+  const routeEndDist = Math.hypot(routeEndX - doorX, routeEndZ - doorZ);
+  assert.ok(
+    routeEndDist <= DOOR_TOLERANCE_M,
+    `route's last point (${routeEndX.toFixed(2)}, ${routeEndZ.toFixed(2)}) should land near ` +
+      `Classroom 1425's door (${doorX}, ${doorZ}); distance was ${routeEndDist.toFixed(2)}m`,
+  );
+  console.log(
+    `PASS: moveAgentTo("Classroom 1425") populated route with ${routedAgent.route.length / 2} points, ` +
+      `ending ${routeEndDist.toFixed(2)}m from the door`,
+  );
 
   room.update(5000); // 5000ms -- if ms->seconds were skipped this would be read as 5000s
   const afterClampAgent = state.agents.get(TEST_AGENT_ID)!;
@@ -106,6 +130,11 @@ async function main(): Promise<void> {
   }
   assert.equal(settledState, "idle", 'agent schema state should settle to "idle" once arrived and stopped');
   console.log('PASS: agent schema state settles to "idle" once converged (not stuck on "moving")');
+
+  // --- Task 3.3: arrival (state settling to "idle") should clear the synced `route`. ---
+  const settledAgent = state.agents.get(TEST_AGENT_ID)!;
+  assert.equal(settledAgent.route.length, 0, "route should be cleared once the agent settles to idle");
+  console.log('PASS: route is cleared once the agent settles to "idle"');
 
   // --- unknown target: moveAgentTo should report failure, not throw or silently no-op ---
   const badResult = room.moveAgentTo(TEST_AGENT_ID, "this room does not exist");

@@ -1,22 +1,25 @@
 import { useMemo } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { MapControls } from '@react-three/drei'
+import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import * as THREE from 'three'
 
 import { useWorldRoom } from './net/useWorldRoom'
 import { useFloorPlan } from './net/useFloorPlan'
 import { AgentInstances } from './scene/AgentInstances'
+import { RouteLines } from './scene/RouteLine'
 import { Floor } from './scene/Floor'
 import { Walls } from './scene/Walls'
 import { RoomLabels } from './scene/RoomLabels'
 import { computeOutlineBounds } from './scene/floorPlanUtils'
 
 // Task 0.2 scaffold, extended by Task 3.1 with the real floor/wall/label geometry (see
-// scene/Floor.tsx, scene/Walls.tsx, scene/RoomLabels.tsx) and by Task 3.2 with
+// scene/Floor.tsx, scene/Walls.tsx, scene/RoomLabels.tsx), by Task 3.2 with
 // <AgentInstances/>, which renders whatever the world-server is really simulating as real
 // animated robot/visitor GLB models (scene/Robot.tsx, scene/Visitor.tsx) -- not hardcoded, not a
-// mock, and no longer the placeholder colored boxes from the architecture-video slice
-// (scene/DemoAgents.tsx, now removed).
+// mock, and no longer the placeholder colored boxes from the architecture-video slice (the
+// old scene/DemoAgents.tsx, since removed) -- and by Task 3.3 with <RouteLines/> (the glowing
+// carpet-projected route line, scene/RouteLine.tsx) plus a scene-wide bloom pass so it glows.
 //
 // useWorldRoom() is called here, OUTSIDE <Canvas>, deliberately: react-three-fiber's scene
 // graph is a separate reconciler tied to its own render/animation loop, so a WebSocket
@@ -145,8 +148,18 @@ function App() {
       <RoomLabels rooms={floorPlan.rooms} />
 
       <AgentInstances agentIds={agentIds} agents={agents} />
+      <RouteLines agentIds={agentIds} agents={agents} />
 
       <MapControls target={target} />
+
+      {/* Task 3.3: scene-wide bloom so RouteLine.tsx's overdriven-color ribbon actually
+          glows instead of just being a flat bright line -- see RouteLine.tsx's
+          ROUTE_LINE_COLOR comment for why the color itself is pushed past 1.0. Low
+          luminanceThreshold + mipmapBlur keeps only genuinely bright things (the route
+          line) blooming, not the regular lit floor/walls/models. */}
+      <EffectComposer>
+        <Bloom luminanceThreshold={0.3} luminanceSmoothing={0.9} intensity={1.4} mipmapBlur />
+      </EffectComposer>
     </Canvas>
   )
 }

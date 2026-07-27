@@ -9,12 +9,13 @@ import type { FloorPlan, Point2D } from './floorPlanTypes'
  * doesn't render "through" the core. Flat grey carpet material per Task 3.1 -- a tiling normal
  * map is optional future work, not required here.
  *
- * Coordinate convention (shared with Walls.tsx, RoomLabels.tsx, and DemoAgents.tsx): world
- * (x, y-up, z) maps directly to floor-plan (x, up, z) -- NOT recentered on the origin. This
- * matters because the world-server already emits agent positions in these same raw meters (see
- * world/src/rooms/WorldRoom.ts, which sets demoAgent.x/z straight from plan.entrance.point /
- * room.door, and DemoAgents.tsx, which renders snapshot.x/z as-is). Recentering the geometry
- * here would desync it from the agents that already share this file's coordinates. Instead,
+ * Coordinate convention (shared with Walls.tsx, RoomLabels.tsx, and AgentInstances.tsx's
+ * Robot.tsx/Visitor.tsx): world (x, y-up, z) maps directly to floor-plan (x, up, z) -- NOT
+ * recentered on the origin. This matters because the world-server already emits agent
+ * positions in these same raw meters (see world/src/rooms/WorldRoom.ts, which sets
+ * agent.x/z straight from plan.entrance.point / room.door, and Robot.tsx/Visitor.tsx, which
+ * render snapshot.x/z as-is). Recentering the geometry here would desync it from the agents
+ * that already share this file's coordinates. Instead,
  * App.tsx points the camera and MapControls target at the floor plan's bounding-box center
  * (computed from walkableOutline, not hardcoded) -- see the Task 3.1 forward-note about
  * floor-14.json's footprint not being centered on the origin.

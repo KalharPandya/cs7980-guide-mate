@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { Client, getStateCallbacks } from "@colyseus/sdk";
 
 /**
- * Minimal architecture-proof client connection, not the full Task 3.3 (route line, bloom,
- * proper reconnect handling). Joins the 'world' Colyseus room and keeps a mutable snapshot of
+ * Task 3.3 extends this with `route` (the live, server-synced navigation polyline used by
+ * scene/RouteLine.tsx), on top of the Task 3.2 architecture-proof client connection (still
+ * not full reconnect handling). Joins the 'world' Colyseus room and keeps a mutable snapshot of
  * each synced agent's live fields in a ref (read every frame by scene components via
  * useFrame -- not React state, so 20Hz server patches don't force a React re-render per tick).
  * `agentIds` is plain React state and only changes when an agent is added/removed, which is
@@ -16,6 +17,23 @@ export interface AgentSnapshot {
   z: number;
   heading: number;
   state: string;
+  /**
+   * Flattened (x0, z0, x1, z1, ...) polyline of this agent's current navigation route, or
+   * empty when idle -- see world/src/rooms/schema/WorldState.ts's Agent.route doc comment
+   * for why it's flattened numbers rather than an ArraySchema of a Point sub-schema.
+   *
+   * This is the LIVE Colyseus ArraySchema instance (captured once in `onAdd` below), not a
+   * plain-array copy re-synced on every onChange like x/z/heading/state are: Colyseus
+   * mutates one stable ArraySchema object in place via push()/clear() as patches arrive
+   * (the same way `room.state.agents` itself is one stable MapSchema, never replaced), and
+   * the callbacks API's "any property change" onChange is documented to fire for changes to
+   * an instance's OWN directly-owned properties -- it is not guaranteed to also fire when a
+   * property that is itself a nested collection is mutated internally. Rather than depend on
+   * that undocumented behavior, RouteLine.tsx reads this reference fresh every frame in its
+   * own useFrame poll (matching the same "poll, don't rely on a re-render" pattern
+   * Robot.tsx/Visitor.tsx already use for x/z/heading/state).
+   */
+  route: ArrayLike<number>;
 }
 
 const WORLD_SERVER_URL =
@@ -54,6 +72,7 @@ export function useWorldRoom(): {
             z: agent.z,
             heading: agent.heading,
             state: agent.state,
+            route: agent.route,
           });
           setAgentIds(Array.from(agentsRef.current.keys()));
 
@@ -64,6 +83,10 @@ export function useWorldRoom(): {
               snapshot.z = agent.z;
               snapshot.heading = agent.heading;
               snapshot.state = agent.state;
+              // route is NOT reassigned here -- `agent.route` stays the same ArraySchema
+              // instance for the agent's lifetime (see the AgentSnapshot.route doc comment
+              // above); the snapshot's `route` reference from onAdd is still valid and
+              // already reflects whatever push()/clear() calls the server has made.
             }
           });
         });

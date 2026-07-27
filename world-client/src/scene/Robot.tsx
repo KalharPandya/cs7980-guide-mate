@@ -28,8 +28,8 @@ const MAX_ROBOT_INSTANCES = 200
 
 /**
  * One instance's live transform, driven by the synced snapshot every frame. Lerps position (the
- * server patches at ~20Hz, the client renders at 60fps -- see DemoAgents.tsx, the file this
- * replaces, for why a per-frame lerp rather than a snap is required) and assigns rotation.y
+ * server patches at ~20Hz, the client renders at 60fps -- see agentMotion.ts's lerpXZToward doc
+ * comment for why a per-frame lerp rather than a snap is required) and assigns rotation.y
  * straight from `snapshot.heading`. That field is already a three.js Y-rotation, not a raw
  * direction vector -- see floorPlanUtils.ts's directionToYRotation doc comment for why it is
  * NOT routed through that helper (it aligns a different axis) and why assigning it directly is
