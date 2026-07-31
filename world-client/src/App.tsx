@@ -1,8 +1,9 @@
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { MapControls } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import * as THREE from 'three'
+import type { MapControls as MapControlsImpl } from 'three-stdlib'
 
 import { useWorldRoom } from './net/useWorldRoom'
 import { useFloorPlan } from './net/useFloorPlan'
@@ -12,6 +13,7 @@ import { Floor } from './scene/Floor'
 import { Walls } from './scene/Walls'
 import { RoomLabels } from './scene/RoomLabels'
 import { computeOutlineBounds } from './scene/floorPlanUtils'
+import { useIsKiosk, useKioskFullscreen, useIdleAutoOrbit } from './KioskMode'
 
 // Task 0.2 scaffold, extended by Task 3.1 with the real floor/wall/label geometry (see
 // scene/Floor.tsx, scene/Walls.tsx, scene/RoomLabels.tsx), by Task 3.2 with
@@ -20,6 +22,9 @@ import { computeOutlineBounds } from './scene/floorPlanUtils'
 // mock, and no longer the placeholder colored boxes from the architecture-video slice (the
 // old scene/DemoAgents.tsx, since removed) -- and by Task 3.3 with <RouteLines/> (the glowing
 // carpet-projected route line, scene/RouteLine.tsx) plus a scene-wide bloom pass so it glows.
+// Task 5.4 adds kiosk/big-screen mode (./KioskMode.ts): a `?kiosk=1` URL param that requests
+// fullscreen on the first user gesture and drives an idle auto-orbit through MapControls'
+// own autoRotate, without ever disabling MapControls itself.
 //
 // useWorldRoom() is called here, OUTSIDE <Canvas>, deliberately: react-three-fiber's scene
 // graph is a separate reconciler tied to its own render/animation loop, so a WebSocket
@@ -70,6 +75,13 @@ function App() {
   // matrixWorld if it's actually part of the rendered scene graph, which is why this is rendered
   // as a <primitive> below rather than just assigned a position and left unmounted.
   const lightTarget = useMemo(() => new THREE.Object3D(), [])
+
+  // Task 5.4: kiosk/big-screen mode, entirely opt-in via ?kiosk=1 (see ./KioskMode.ts for the
+  // full reasoning on each hook). No-ops in every other way when the param is absent.
+  const isKiosk = useIsKiosk()
+  useKioskFullscreen(isKiosk)
+  const mapControlsRef = useRef<MapControlsImpl>(null)
+  const { onInteractionStart, onInteractionEnd } = useIdleAutoOrbit(isKiosk, mapControlsRef)
 
   if (error) {
     return (
@@ -150,7 +162,12 @@ function App() {
       <AgentInstances agentIds={agentIds} agents={agents} />
       <RouteLines agentIds={agentIds} agents={agents} />
 
-      <MapControls target={target} />
+      <MapControls
+        ref={mapControlsRef}
+        target={target}
+        onStart={onInteractionStart}
+        onEnd={onInteractionEnd}
+      />
 
       {/* Task 3.3: scene-wide bloom so RouteLine.tsx's overdriven-color ribbon actually
           glows instead of just being a flat bright line -- see RouteLine.tsx's
