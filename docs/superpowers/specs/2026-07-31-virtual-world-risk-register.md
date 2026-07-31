@@ -54,25 +54,35 @@ hardware, against real AWS.
 
 ## Rehearsal checklist (for Kalhar, in order)
 
+**Steps 2 through 4 below are now packaged into one guided script**:
+`scripts/virtual_world_go_live.sh`. It walks through the IoT identity dry-run/apply, the deploy,
+and the observability push, with an explicit typed "yes" gate before each AWS-mutating action.
+Nothing in it runs without you approving that specific step. Only Kalhar runs this script.
+
+**Real finding closed out (2026-07-31):** `feat/kalhar-virtual-world` had never been pushed to
+`origin`, every commit from this entire project existed only in the local worktree. Deploying
+would have failed silently (`redeploy.sh`'s `git fetch origin <branch>` would find nothing).
+Pushed now (with explicit approval), and `scripts/virtual_world_go_live.sh` pushes it too if it's
+ever missing again. Also: `redeploy.sh` defaults to branch `kalhar/dog-agent-poc`, not this one,
+so the guided script always passes `GUIDEMATE_BRANCH=feat/kalhar-virtual-world` explicitly, don't
+run `redeploy.sh` bare for this project.
+
 1. **Look at it** (resolves risk #1): `cd world && npm run dev`, `cd world-client && npm run dev`,
    open the printed URL. Confirm the floor plan looks right, robots/visitors animate, the route
    line glows during motion. Try `?kiosk=1` per Task 5.4's manual steps.
-2. **Apply the virtual fleet IoT identity** (resolves risk #2, item A): review
-   `scripts/create_virtual_fleet_identity.sh`'s dry-run output one more time, then
-   `--apply`.
-3. **Deploy world-server** (resolves risk #3): follow the 5 steps in
-   `docs/agent-poc/access-ground-truth.md`'s deploy section.
-4. **Real IoT round-trip**: with the identity applied and world-server deployed, run the gated
+2. **Apply the virtual fleet IoT identity + deploy + observability** (resolves risk #2 item A and
+   risk #3): run `scripts/virtual_world_go_live.sh` and follow its prompts.
+3. **Real IoT round-trip**: with the identity applied and world-server deployed, run the gated
    integration tests (`GUIDEMATE_INTEGRATION=1`) for Tasks 2.3/4.2, and/or a manual
    `aws iot-data publish` against the fleet topic, confirm a virtual robot actually moves.
-5. **Load-check on the real instance** (resolves risk #4): Task 1.3's load test against the live
+4. **Load-check on the real instance** (resolves risk #4): Task 1.3's load test against the live
    world-server, watch `docker stats` and the CloudWatch dashboard.
-6. **Full end-to-end, one sitting** (resolves risk #6): scan the QR code (`GET /api/join-qr`) on
+5. **Full end-to-end, one sitting** (resolves risk #6): scan the QR code (`GET /api/join-qr`) on
    a phone, chat with Moses, ask to be guided to a named room, watch the big screen for: a robot
    getting assigned, the visitor-bound banner appearing on the phone, the avatar walking with an
    escort, the route line, arrival. Then try the admin fleet kill-switch mid-escort and confirm
    the world visibly freezes and resumes cleanly, and (if enabling Task 5.3) confirm robot 468
    mirrors an emote, WITH A HUMAN PRESENT AND WATCHING THE ROBOT (resolves risk #5's
    people-process requirement).
-7. **Only after all of the above passes**, consider the "NOT YET DEPLOYED"/"provisioning-pending"
+6. **Only after all of the above passes**, consider the "NOT YET DEPLOYED"/"provisioning-pending"
    markers in `access-ground-truth.md` retired, and update them to reflect the live state.
