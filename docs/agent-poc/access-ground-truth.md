@@ -425,6 +425,13 @@ Task 1.3's actual 95-agent load test, `node --import tsx scripts/loadtest.ts` in
   best available local proxy, not a substitute for that on-instance measurement).
 
 ### Manual deploy steps (Kalhar runs these himself, NOT executed by the implementer/controller)
+
+**Updated 2026-07-31: use `scripts/virtual_world_go_live.sh` instead of running the steps below
+by hand.** It walks through the IoT identity dry-run/apply, the push-to-origin check, the deploy
+(with the correct branch override baked in, see the warning in step 3), and the observability
+push, with an explicit typed "yes" gate before each AWS-mutating action. The steps below are kept
+for reference/manual fallback only.
+
 1. Review the diff: `world/Dockerfile` (new), `agent_service/compose.yaml`,
    `agent_service/compose.prod.yaml`, `agent_service/Caddyfile`, `scripts/setup_observability.sh`,
    `agent_service/deploy/user_data.sh` (procstat block: only affects a *future* `launch_ec2.sh`
@@ -437,10 +444,14 @@ Task 1.3's actual 95-agent load test, `node --import tsx scripts/loadtest.ts` in
 3. Redeploy the live instance (same one-command path as every prior phase, this rebuilds all
    three services, `world-server` included, since it's now in the same `compose.yaml`):
    ```bash
-   agent_service/deploy/redeploy.sh
+   GUIDEMATE_BRANCH=feat/kalhar-virtual-world agent_service/deploy/redeploy.sh
    ```
-   This SSHes nothing; it's one `aws ssm send-command` that does `git fetch/checkout/reset --hard`
-   to the latest `kalhar/dog-agent-poc`-equivalent branch tip on `/opt/guidemate`, then
+   **Do NOT run `redeploy.sh` bare.** It defaults `GUIDEMATE_BRANCH` to `kalhar/dog-agent-poc`,
+   not this branch, so a bare run would deploy the wrong code and silently skip this entire
+   project. `feat/kalhar-virtual-world` also has to actually exist on `origin` for this to work
+   at all (it does now, pushed 2026-07-31; if you're reading this much later and it's somehow
+   gone missing, push it again first). This SSHes nothing; it's one `aws ssm send-command` that
+   does `git fetch/checkout/reset --hard` to this branch's tip on `/opt/guidemate`, then
    `docker compose --env-file /etc/guidemate.env -f compose.yaml -f compose.prod.yaml up -d
    --build` on the instance. No new env vars are *required* in `/etc/guidemate.env` for
    `world-server` to come up (its `GUIDEMATE_IOT_ENDPOINT`/`CERT`/`KEY` default to empty, same
