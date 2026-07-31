@@ -21,7 +21,7 @@ import assert from "node:assert/strict";
 
 import { WorldRoom } from "../WorldRoom.js";
 import { loadFloorPlan } from "../../nav/loadFloorPlan.js";
-import { SIMULATED_VISITOR_TARGET } from "../visitors.js";
+import { SIMULATED_VISITOR_TARGET } from "../simulatedVisitorSpawner.js";
 
 const DOOR_TOLERANCE_M = 1.0; // matches WorldRoom.test.ts's convergence tolerance
 const TICK_MS = 16.6;
