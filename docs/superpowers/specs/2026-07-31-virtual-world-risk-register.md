@@ -67,6 +67,17 @@ ever missing again. Also: `redeploy.sh` defaults to branch `kalhar/dog-agent-poc
 so the guided script always passes `GUIDEMATE_BRANCH=feat/kalhar-virtual-world` explicitly, don't
 run `redeploy.sh` bare for this project.
 
+**Checked and confirmed a non-issue (2026-07-31):** `world-client` has no explicit deployment
+step anywhere, by design: it's a browser client meant to run locally on whichever machine drives
+the big screen, pointed at the deployed `world-server` via `VITE_WORLD_SERVER_URL`, not something
+hosted on the cloud instance itself. This means it always connects cross-origin (different port
+in dev, different host entirely once `world-server` is deployed), and `world/src/index.ts` has no
+CORS middleware configured. Verified this is fine anyway, using real evidence already gathered
+earlier in this session: `world-client` (port 5173) against `world-server` (port 2567), genuinely
+different origins, and the network trace showed `POST /matchmake/joinOrCreate/world` succeeding
+with `200 OK`. Colyseus's built-in matchmake handler sets permissive CORS by default. No fix
+needed, no CORS setup missing.
+
 1. **Look at it** (resolves risk #1): `cd world && npm run dev`, `cd world-client && npm run dev`,
    open the printed URL. Confirm the floor plan looks right, robots/visitors animate, the route
    line glows during motion. Try `?kiosk=1` per Task 5.4's manual steps.
