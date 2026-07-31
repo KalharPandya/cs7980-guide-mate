@@ -18,7 +18,7 @@
  */
 import assert from "node:assert/strict";
 
-import { WorldRoom } from "../WorldRoom.js";
+import { WorldRoom, MAX_AGENTS } from "../WorldRoom.js";
 import { loadFloorPlan } from "../../nav/loadFloorPlan.js";
 
 const TEST_AGENT_ID = "test-robot-1";
@@ -205,6 +205,72 @@ async function main(): Promise<void> {
     }
     assert.ok(moved, "resume() should restore normal ticking (agent should move again)");
     console.log("PASS: resume() restores normal tick advancement after a pause");
+  }
+
+  // --- Security-review finding (Minor, closed out here): addAgent() and the fleet
+  // `assign` handler never checked the live agent count against MAX_AGENTS before
+  // calling into the Crowd. Verified empirically (see crowd.ts's AgentCrowd.addAgent doc
+  // comment) that recast-navigation's Crowd.addAgent does NOT throw at capacity -- it
+  // silently returns a "ghost" CrowdAgent wrapping an invalid index that never moves and
+  // never accepts a move request. Fill the room to exactly MAX_AGENTS, then confirm one
+  // more addAgent is refused cleanly: no throw, no schema/crowd corruption, and every
+  // agent already tracked is completely unaffected. ---
+  {
+    const spawn = { x: plan.entrance.point[0], z: plan.entrance.point[1] };
+    let filled = 0;
+    while (state.agents.size < MAX_AGENTS) {
+      const ok = room.addAgent(`capacity-fill-${filled}`, "robot", {
+        x: spawn.x + filled * 0.01,
+        z: spawn.z,
+      });
+      assert.ok(ok, `addAgent should succeed while under MAX_AGENTS (added ${filled} fill agents so far)`);
+      filled++;
+    }
+    assert.equal(state.agents.size, MAX_AGENTS, `room should now be exactly at MAX_AGENTS (${MAX_AGENTS})`);
+    console.log(`PASS: filled room to MAX_AGENTS (${MAX_AGENTS}) via ${filled} addAgent calls, all succeeding`);
+
+    // Snapshot every already-tracked agent's synced state before the overflow attempt.
+    const before = new Map<string, { x: number; z: number; state: string }>();
+    for (const [id, agent] of state.agents) {
+      before.set(id, { x: agent.x, z: agent.z, state: agent.state });
+    }
+
+    let threw = false;
+    let overflowResult = true;
+    try {
+      overflowResult = room.addAgent("capacity-overflow", "visitor", spawn);
+    } catch {
+      threw = true;
+    }
+    assert.equal(threw, false, "addAgent at MAX_AGENTS must not throw");
+    assert.equal(overflowResult, false, "addAgent should return false once the room is at MAX_AGENTS");
+    assert.equal(
+      state.agents.size,
+      MAX_AGENTS,
+      "room's tracked agent count must not grow past MAX_AGENTS after a refused add",
+    );
+    assert.equal(
+      state.agents.has("capacity-overflow"),
+      false,
+      "the refused agent must not appear in the synced schema",
+    );
+    console.log("PASS: addAgent refuses cleanly (no throw, returns false) once the room is at MAX_AGENTS");
+
+    for (const [id, snapshotBefore] of before) {
+      const current = state.agents.get(id)!;
+      assert.equal(current.x, snapshotBefore.x, `agent "${id}" x must be unaffected by the refused overflow add`);
+      assert.equal(current.z, snapshotBefore.z, `agent "${id}" z must be unaffected by the refused overflow add`);
+      assert.equal(
+        current.state,
+        snapshotBefore.state,
+        `agent "${id}" state must be unaffected by the refused overflow add`,
+      );
+    }
+    console.log("PASS: every already-tracked agent is unaffected by the refused overflow add");
+
+    // A tick after the refused add should not throw or otherwise disturb the crowd.
+    assert.doesNotThrow(() => room.update(TICK_MS), "ticking after a refused overflow add must not throw");
+    console.log("PASS: crowd.tick() after a refused overflow add does not throw");
   }
 
   // --- onDispose: must free the WASM-backed crowd/navmesh/query without throwing, and be

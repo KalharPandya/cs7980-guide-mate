@@ -125,7 +125,18 @@ export class SimulatedVisitorSpawner {
 
     const id = `sim-visitor-${this.nextSimulatedId++}`;
     const spawn = { x: this.host.plan.entrance.point[0], z: this.host.plan.entrance.point[1] };
-    this.host.addAgent(id, "visitor", spawn);
+    const added = this.host.addAgent(id, "visitor", spawn);
+    if (!added) {
+      // Defense-in-depth backstop only -- simulatedTarget already keeps this spawner
+      // well under MAX_AGENTS, so this isn't expected to fire in practice. Just skip
+      // this spawn attempt for the tick rather than registering a visitor record for an
+      // agent that was never actually added to the Crowd/schema; the next tickSpawner
+      // call (after spawnStaggerS) will retry.
+      console.warn(
+        `SimulatedVisitorSpawner: addAgent refused "${id}" (world at capacity); skipping this spawn attempt`,
+      );
+      return;
+    }
 
     const room = this.pickRandomRoom();
     const record: VisitorRecord = {

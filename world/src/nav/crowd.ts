@@ -61,14 +61,32 @@ export class AgentCrowd {
    * buildNavMesh.ts is a flat single floor). Throws if `id` is already tracked: a silent
    * overwrite would orphan the previous CrowdAgent inside the underlying Crowd (it would
    * keep stepping and consuming a slot up to `maxAgents`, invisibly).
+   *
+   * Returns `false` (does NOT track the agent) if the underlying Crowd is already at its
+   * `maxAgents` capacity. Verified empirically (recast-navigation 0.43.1, not guessed):
+   * `Crowd.addAgent` does not throw and does not return null/undefined at capacity --
+   * the native `dtCrowd::addAgent` returns agentIndex `-1`, and the JS wrapper still
+   * builds and returns a `CrowdAgent` wrapping that invalid index (see
+   * `node_modules/@recast-navigation/core/dist/index.mjs`'s `Crowd.addAgent`). That
+   * "ghost" agent's `.position()` reads a garbage default (`{0,0,0}`), `.state()` reads
+   * an invalid enum value, and `.requestMoveTarget()` always returns `false` -- but the
+   * OTHER already-tracked agents are unaffected and the crowd's real agent count doesn't
+   * change. So this checks `agent.agentIndex < 0` right after the call and refuses to
+   * register the ghost rather than trusting it: the caller (WorldRoom.addAgent) is
+   * expected to pre-check the live agent count against MAX_AGENTS before ever reaching
+   * here, so this is a defense-in-depth backstop, not the primary gate.
    */
-  addAgent(id: string, position: Vec3Like, params: AgentParams = {}): void {
+  addAgent(id: string, position: Vec3Like, params: AgentParams = {}): boolean {
     if (this.byId.has(id)) {
       throw new Error(`AgentCrowd.addAgent: agent id "${id}" already exists`);
     }
     const agent = this.crowd.addAgent(position, params);
+    if (agent.agentIndex < 0) {
+      return false;
+    }
     this.byId.set(id, agent);
     this.lastHeading.set(id, 0);
+    return true;
   }
 
   /** Removes a tracked agent from the crowd. No-op if `id` isn't tracked. */

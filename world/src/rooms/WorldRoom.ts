@@ -23,7 +23,9 @@ import type { VisitorDebugStats, VisitorHost } from "./visitors.js";
  * simulated timestep, and mirror each crowd agent's resulting position/heading into the
  * synced `WorldState.agents` schema map every tick.
  */
-const MAX_AGENTS = 128;
+/** Exported so tests (WorldRoom.test.ts's MAX_AGENTS capacity-guard test) can drive the
+ * exact same number instead of duplicating the literal 128 and risking drift. */
+export const MAX_AGENTS = 128;
 const MAX_AGENT_RADIUS_M = 0.5;
 
 /** Guide-robot / visitor-avatar movement tuning. `radius`/`height` come from
@@ -114,9 +116,41 @@ export class WorldRoom extends Room<{ state: WorldState }> {
    * Adds a new tracked agent to both the Crowd (for steering) and the synced schema (for
    * clients). `kind` is cosmetic today -- Phase 4 will actually distinguish robots from
    * visitors; every agent added here gets the same movement tuning.
+   *
+   * Security-review finding (Minor, closed out here): neither this method nor the fleet
+   * `assign` handler (world/src/iot/bridge.ts) used to check the live agent count against
+   * MAX_AGENTS before calling into the Crowd. Judged implausible at current demo scale
+   * (~95 agents under Task 1.3's load test, well under 128) and the underlying library's
+   * exact at-capacity behavior was unvalidated -- now verified (see crowd.ts's
+   * `AgentCrowd.addAgent` doc comment): recast-navigation's `Crowd.addAgent` doesn't
+   * throw at capacity, it silently hands back a "ghost" `CrowdAgent` wrapping an invalid
+   * `agentIndex` that never moves and never accepts move requests, which would have left
+   * a schema `Agent` permanently stuck at its spawn point.
+   *
+   * Returns `false` (adds nothing to either the Crowd or the schema) if the world is
+   * already at `MAX_AGENTS` -- checked here, BEFORE ever calling into the Crowd, so this
+   * is the primary gate; `AgentCrowd.addAgent`'s own `agentIndex < 0` check is a second,
+   * defense-in-depth backstop for a caller that reaches the Crowd some other way. Callers
+   * decide what a refusal means for them: the fleet `assign` handler acks
+   * failed/"world_at_capacity"; the simulated-visitor spawner just skips that spawn
+   * attempt for the tick (its own `simulatedTarget` cap keeps it well under 128, so this
+   * is not expected to actually fire there).
    */
-  addAgent(id: string, kind: "robot" | "visitor", spawn: { x: number; z: number }): void {
-    this.crowd.addAgent(id, { x: spawn.x, y: 0, z: spawn.z }, DEFAULT_AGENT_PARAMS);
+  addAgent(id: string, kind: "robot" | "visitor", spawn: { x: number; z: number }): boolean {
+    if (this.state.agents.size >= MAX_AGENTS) {
+      console.warn(
+        `WorldRoom.addAgent: refusing to add agent "${id}" -- world already at MAX_AGENTS (${MAX_AGENTS})`,
+      );
+      return false;
+    }
+
+    const added = this.crowd.addAgent(id, { x: spawn.x, y: 0, z: spawn.z }, DEFAULT_AGENT_PARAMS);
+    if (!added) {
+      console.warn(
+        `WorldRoom.addAgent: Crowd refused agent "${id}" (at capacity) despite the MAX_AGENTS pre-check`,
+      );
+      return false;
+    }
 
     const agent = new Agent();
     agent.id = id;
@@ -125,6 +159,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     agent.x = spawn.x;
     agent.z = spawn.z;
     this.state.agents.set(id, agent);
+    return true;
   }
 
   /**

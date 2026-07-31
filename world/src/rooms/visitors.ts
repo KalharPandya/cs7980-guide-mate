@@ -45,7 +45,11 @@ export interface VisitorHost {
   readonly plan: FloorPlan;
   readonly nav: BuiltNavMesh;
   readonly agents: MapSchema<Agent>;
-  addAgent(id: string, kind: "robot" | "visitor", spawn: { x: number; z: number }): void;
+  /** Returns `false` (adds nothing) if the world is already at MAX_AGENTS -- see
+   * `WorldRoom.addAgent`'s doc comment. `simulatedVisitorSpawner.ts`'s spawner checks
+   * this and skips the spawn attempt for the tick rather than registering a visitor
+   * record for an agent that was never actually added. */
+  addAgent(id: string, kind: "robot" | "visitor", spawn: { x: number; z: number }): boolean;
   removeAgent(id: string): void;
   moveAgentTo(agentId: string, roomNameOrCoords: string | RoomTarget): boolean;
   requestMoveTarget(agentId: string, target: { x: number; z: number }): boolean;

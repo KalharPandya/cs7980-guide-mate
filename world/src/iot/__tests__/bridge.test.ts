@@ -85,6 +85,10 @@ class FakeWorldRoom implements WorldRoomLike {
   requestGuideResult: { robotId: string } | null = { robotId: "virtual/1" };
   requestGuideCalls: { visitorId: string; target: unknown }[] = [];
   addAgentCalls: { id: string; kind: "robot" | "visitor"; spawn: { x: number; z: number } }[] = [];
+  /** Test hook for the MAX_AGENTS guard (security-review finding closed out alongside
+   * this): set `false` to simulate `WorldRoom.addAgent` refusing because the world is
+   * already at capacity, without needing to actually spawn 128 agents in this fake. */
+  addAgentResult = true;
   entrancePoint = { x: 0, z: 0 };
 
   // ---- Task 5.2 test hooks: fleet-wide pause/resume ----
@@ -109,9 +113,11 @@ class FakeWorldRoom implements WorldRoomLike {
     return this.requestGuideResult;
   }
 
-  addAgent(id: string, kind: "robot" | "visitor", spawn: { x: number; z: number }): void {
+  addAgent(id: string, kind: "robot" | "visitor", spawn: { x: number; z: number }): boolean {
     this.addAgentCalls.push({ id, kind, spawn });
+    if (!this.addAgentResult) return false;
     this.state.agents.set(id, { state: "idle", x: spawn.x, z: spawn.z });
+    return true;
   }
 
   getEntrancePoint(): { x: number; z: number } {
@@ -562,6 +568,26 @@ async function main(): Promise<void> {
     assert.equal(failedAck.reason, "no_idle_robot");
     assert.equal(failedAck.assigned_robot_id, null);
     console.log("PASS: requestGuide returning null acks failed/no_idle_robot");
+  }
+
+  // ---- security-review finding: addAgent refuses because the world is at MAX_AGENTS
+  // capacity -> failed/world_at_capacity, requestGuide is never called for a visitor
+  // that was never actually added to the Crowd/schema ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    room.addAgentResult = false;
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(assignCmd("cmd-a3b", "visitor-3b")));
+
+    assert.deepEqual(room.addAgentCalls, [{ id: "visitor-3b", kind: "visitor", spawn: room.entrancePoint }],
+      "addAgent should still be attempted for a brand-new visitor_id");
+    assert.equal(room.requestGuideCalls.length, 0, "requestGuide must not be called for a visitor addAgent refused");
+    assert.deepEqual(client.acksFor("cmd-a3b"), ["received", "failed"]);
+    const failedAck = client.published.find((p) => p.payload.cmd_id === "cmd-a3b" && p.payload.state === "failed")!.payload;
+    assert.equal(failedAck.reason, "world_at_capacity");
+    console.log("PASS: addAgent refusing (world at MAX_AGENTS) acks failed/world_at_capacity without calling requestGuide");
   }
 
   // ---- no live WorldRoom -> failed/world_not_ready, visitor never spawned ----

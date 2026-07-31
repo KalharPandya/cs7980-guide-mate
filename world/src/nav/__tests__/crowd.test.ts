@@ -87,6 +87,44 @@ async function main(): Promise<void> {
     crowd.destroy();
   }
 
+  // --- capacity guard: recast-navigation's Crowd.addAgent does NOT throw at capacity --
+  // verified empirically that it silently hands back a CrowdAgent wrapping an invalid
+  // agentIndex (-1) instead. AgentCrowd.addAgent must detect that and refuse to track
+  // the ghost agent (returning false), rather than trusting it and corrupting byId. ---
+  {
+    const MAX = 3;
+    const crowd = new AgentCrowd(navMesh, { maxAgents: MAX, maxAgentRadius: 0.5 });
+
+    for (let i = 0; i < MAX; i++) {
+      const ok = crowd.addAgent(`fill-${i}`, { x: start.x + i * 0.1, y: 0, z: start.z }, AGENT_PARAMS);
+      assert.ok(ok, `addAgent should succeed for agent ${i} of ${MAX} (under maxAgents)`);
+    }
+
+    let threw = false;
+    let overflowOk = true;
+    try {
+      overflowOk = crowd.addAgent("overflow", { x: start.x + 99, y: 0, z: start.z }, AGENT_PARAMS);
+    } catch {
+      threw = true;
+    }
+    assert.equal(threw, false, "addAgent at maxAgents must not throw");
+    assert.equal(overflowOk, false, "addAgent should return false once the crowd is at maxAgents");
+    assert.equal(crowd.has("overflow"), false, "the refused agent must not be tracked");
+
+    // Existing agents must be completely unaffected -- a tick should behave exactly as it
+    // would have without the overflow attempt (no throw, all MAX agents still reported).
+    const snapshots = crowd.tick(1 / 60);
+    assert.equal(snapshots.length, MAX, "tick() should still report exactly the MAX tracked agents, no ghost entry");
+    for (let i = 0; i < MAX; i++) {
+      assert.ok(crowd.has(`fill-${i}`), `agent fill-${i} should still be tracked after the refused overflow add`);
+    }
+
+    console.log(
+      `PASS: AgentCrowd.addAgent refuses cleanly (no throw, returns false, no ghost tracked) once at maxAgents (${MAX})`,
+    );
+    crowd.destroy();
+  }
+
   // --- measured crowd.update wall-clock time per tick, 1 agent ---
   {
     const crowd = new AgentCrowd(navMesh, { maxAgents: 8, maxAgentRadius: 0.5 });

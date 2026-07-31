@@ -76,7 +76,9 @@ class FakeWorldRoom implements WorldRoomLike {
     return null;
   }
 
-  addAgent(): void {}
+  addAgent(): boolean {
+    return true;
+  }
 
   getEntrancePoint(): { x: number; z: number } {
     return { x: 0, z: 0 };

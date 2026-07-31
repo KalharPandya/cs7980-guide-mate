@@ -98,8 +98,11 @@ export interface WorldRoomLike {
    */
   requestGuide(visitorId: string, roomNameOrCoords: string | { x: number; z: number }): { robotId: string } | null;
   /** Adds a new tracked agent (Crowd + synced schema) -- see `WorldRoom.addAgent`. Used
-   * here to spawn a brand-new "real" visitor at the entrance before its first `assign`. */
-  addAgent(id: string, kind: "robot" | "visitor", spawn: { x: number; z: number }): void;
+   * here to spawn a brand-new "real" visitor at the entrance before its first `assign`.
+   * Returns `false` (adds nothing) if the world is already at MAX_AGENTS --
+   * `handleFleetCommand` below acks failed/"world_at_capacity" in that case rather than
+   * proceeding to `requestGuide` for a visitor that was never actually added. */
+  addAgent(id: string, kind: "robot" | "visitor", spawn: { x: number; z: number }): boolean;
   /** Nav-space entrance point to spawn a fresh real visitor at -- see
    * `WorldRoom.getEntrancePoint`. */
   getEntrancePoint(): { x: number; z: number };
@@ -371,7 +374,13 @@ export class IotBridge {
     // the entrance the first time this bridge sees this visitor_id. A visitor that
     // already exists (e.g. a retried/second assign for the same session) is left as-is.
     if (!room.state.agents.get(visitorId)) {
-      room.addAgent(visitorId, "visitor", room.getEntrancePoint());
+      const added = room.addAgent(visitorId, "visitor", room.getEntrancePoint());
+      if (!added) {
+        this.publishFleetAck(
+          makeAck({ cmd_id: cmd.cmd_id, state: "failed", reason: "world_at_capacity", simulated: true }),
+        );
+        return;
+      }
     }
 
     const result = room.requestGuide(visitorId, roomName);
