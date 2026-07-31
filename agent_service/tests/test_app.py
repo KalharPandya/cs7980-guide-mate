@@ -145,6 +145,29 @@ def test_fake_robot_registry_send_fleet_command_simulates_assign():
     assert ("(fleet)", "assign", "assign") in reg.sent
 
 
+def test_fake_robot_registry_send_fleet_command_simulates_stop_and_resume():
+    """Task 5.2's fleet-wide kill switch (admin.py's /world/stop and
+    /world/resume) publishes type="stop"/name="stop" via send_fleet_command --
+    before this, FakeRobotRegistry only knew "assign" and would ack
+    failed/unsupported_command_type for a stop, so the kill switch couldn't be
+    demoed under GUIDEMATE_FAKE_ROBOT=1."""
+    from guidemate_agent.fakes import FakeRobotRegistry
+    from guidemate_msgs.messages import Command
+
+    reg = FakeRobotRegistry(["turtlebot468"])
+
+    stop_cmd = Command(type="stop", name="stop")
+    stop_acks = reg.send_fleet_command(stop_cmd)
+    assert [a.state for a in stop_acks] == ["received", "done"]
+    assert all(a.simulated for a in stop_acks)
+    assert ("(fleet)", "stop", "stop") in reg.sent
+
+    resume_cmd = Command(type="stop", name="stop", params={"resume": True})
+    resume_acks = reg.send_fleet_command(resume_cmd)
+    assert [a.state for a in resume_acks] == ["received", "done"]
+    assert ("(fleet)", "stop", "stop") in reg.sent
+
+
 def test_admin_ui_served_and_router_mounted(monkeypatch):
     monkeypatch.setenv("GUIDEMATE_FAKE_ROBOT", "1")
     monkeypatch.setenv("GUIDEMATE_ADMIN_PASSWORD", "secret")

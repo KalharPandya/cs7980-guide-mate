@@ -11,7 +11,9 @@ was actually published. dock/undock return the bridge's motion-locked refusal
 (``received`` then ``failed(reason="motion_disabled …")``) so both the admin
 'dock' control and the assignment undock/dock exercise their refusal path,
 matching robot 468's motion-locked state; everything else acks
-received -> running -> done (simulated)."""
+received -> running -> done (simulated). send_fleet_command's fleet-scoped
+"stop" (Task 5.2's world pause/resume, see admin.py) also just acks
+received -> done, since there's no fake WorldRoom to actually pause."""
 from __future__ import annotations
 
 from guidemate_msgs.messages import Ack, Command
@@ -84,6 +86,20 @@ class FakeRobotRegistry:
         the WS chat pipeline under GUIDEMATE_FAKE_ROBOT=1 (caught by _run_pipeline's
         top-level except, so it looked like just another silent failure, not a crash)."""
         self.sent.append(("(fleet)", cmd.type, cmd.name))
+        if cmd.type == "stop":
+            # Task 5.2's fleet-wide kill switch (admin.py's /world/stop and
+            # /world/resume, both publish type="stop"/name="stop" -- resume is
+            # the same command overloaded with params={"resume": True}, see
+            # admin.py's doc comment). The real handler (world/src/iot/
+            # bridge.ts's handleFleetStop) pauses/resumes the actual WorldRoom;
+            # there is no fake WorldRoom here to pause, so this just acks the
+            # same received -> done sequence the real bridge sends on success,
+            # so the admin panel/demo doesn't error or hang under
+            # GUIDEMATE_FAKE_ROBOT=1.
+            return [
+                Ack(cmd_id=cmd.cmd_id, state="received", simulated=True),
+                Ack(cmd_id=cmd.cmd_id, state="done", simulated=True),
+            ]
         if cmd.type != "assign":
             return [Ack(cmd_id=cmd.cmd_id, state="failed", simulated=True,
                         reason="unsupported_command_type")]
