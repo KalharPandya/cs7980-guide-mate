@@ -140,6 +140,41 @@ top of this workspace. Work happens on branch **`kalhar/dog-agent-poc`**.
 - ⚠️ Robot 468 is docked and unobserved: **NO MOTION** without a human observer. Motion is
   default-deny by design (Device Shadow + dock guard + dry-run; see the spec).
 
+## ACTIVE: virtual world guide fleet (2026-07-26 to 2026-07-31, Phases 0-5 done)
+The closure-demo direction decided 2026-07-26: instead of more physical-robot work, the
+existing central agent (Moses) drives up to ~50 virtual guide-robots through a
+browser-based 3D floor of Northeastern Vancouver. Physical robot 468 stays emotes-only
+(with an optional emote-mirror hook, see below). Work happens on branch
+**`feat/kalhar-virtual-world`**, in the isolated worktree
+`.claude/worktrees/feat+kalhar-virtual-world` (this repo has multiple concurrent Claude
+sessions sharing the main tree, see memory `multi-agent-shared-worktree-git-discipline`).
+
+**Start here if you're joining this effort, read in this order:**
+1. [docs/superpowers/plans/2026-07-26-virtual-world-progress.md](docs/superpowers/plans/2026-07-26-virtual-world-progress.md), the living status doc: task-by-task state, every real bug found and fixed, how to resume.
+2. [docs/superpowers/specs/2026-07-31-virtual-world-risk-register.md](docs/superpowers/specs/2026-07-31-virtual-world-risk-register.md), what's code-verified vs. still needing a human to look at it, deploy it, or apply real AWS changes, plus a rehearsal checklist.
+3. [docs/superpowers/specs/2026-07-26-virtual-world-guide-fleet-design.md](docs/superpowers/specs/2026-07-26-virtual-world-guide-fleet-design.md), the original architecture/design spec.
+4. [docs/superpowers/plans/2026-07-26-virtual-world-implementation-plan.md](docs/superpowers/plans/2026-07-26-virtual-world-implementation-plan.md), the full task-by-task breakdown.
+5. [world/README.md](world/README.md) and [world-client/README.md](world-client/README.md) for the two new packages themselves (Colyseus room server, Three.js/R3F big-screen client).
+
+**Stack:** Node Colyseus world-server (navmesh/Detour Crowd navigation, ~45 simulated
+visitors, an optional MQTT/IoT bridge letting Moses dispatch virtual robots the same way
+it dispatches the real one) plus a Three.js/React-Three-Fiber renderer. Both are new
+top-level packages, `world/` and `world-client/`, alongside the existing ROS2 `src/`
+packages and the `agent_service/` FastAPI backend.
+
+**What's done:** every task in the implementation plan (Phases 0 through 5), each
+implementer-subagent-built, spec-reviewed, and code-quality-reviewed, with every real
+bug found along the way fixed and independently re-verified. Full test suite is green
+across `world/`, `world-client/`, `shared/guidemate_msgs`, and `agent_service`.
+
+**What's NOT done, all requiring Kalhar's own action (per the risk register):**
+applying the virtual-fleet IoT identity (`scripts/create_virtual_fleet_identity.sh
+--apply`, an AWS-account-mutating step no Claude session should run autonomously),
+deploying `world-server` to the live `echo.kalhar.ca` instance, and actually looking at
+the rendered scene in a real browser (the dev sessions that built this hit an
+environment limitation where the embedded Browser pane never composited a frame, so
+nothing here has been visually confirmed by a human or AI yet).
+
 ## Security workstream (WP A/B/C)
 The security/privacy workstream (Fazheng Han, han.faz@northeastern.edu) covers **WP A**
 (ROS2/DDS LAN side), **WP B** (cloud channel + broker), and **WP C** (LLM safety
