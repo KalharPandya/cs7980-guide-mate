@@ -29,12 +29,17 @@
  *   - `received`  as soon as a valid `navigate` command is parsed and the robot id maps
  *                 to a live WorldRoom (mirrors the Python bridge's "parsed and accepted").
  *   - `running`   once `moveAgentTo` returns `true` (the Crowd accepted the goal).
- *   - `done`      once this bridge OBSERVES the agent's synced schema state transition
- *                 from "moving" back to "idle" (WorldRoom.update() already treats that
- *                 transition as "arrived": see WorldRoom.ts's `updateAgentRoute`/`update`
- *                 and the convergence check in WorldRoom.test.ts). Polled via `state.
- *                 agents.get(id).state`, not re-derived navigation math -- this bridge
- *                 does not own the sim loop.
+ *   - `done`      EITHER (a) immediately, synchronously right after `running`, if the
+ *                 agent is already within ARRIVAL_TOLERANCE_M of the resolved target (see
+ *                 that constant's doc comment -- a repeat/idempotent navigate, e.g. Moses
+ *                 re-issuing the same room target, never crosses IDLE_SPEED_THRESHOLD_MPS
+ *                 so the moving->idle edge below would never fire and this would
+ *                 wrongly hang to nav_timeout); OR (b) once this bridge OBSERVES the
+ *                 agent's synced schema state transition from "moving" back to "idle"
+ *                 (WorldRoom.update() already treats that transition as "arrived": see
+ *                 WorldRoom.ts's `updateAgentRoute`/`update` and the convergence check in
+ *                 WorldRoom.test.ts). Polled via `state.agents.get(id).state`, not
+ *                 re-derived navigation math -- this bridge does not own the sim loop.
  *   - `failed`    if `moveAgentTo` returns `false` (target/agent unresolved), if the
  *                 WorldRoom is disposed while a nav is in flight, if arrival isn't
  *                 observed within `navTimeoutMs`, or if a NEW `navigate` command for the
@@ -59,6 +64,7 @@ import mqtt from "mqtt";
 import type { MqttClient, IClientOptions } from "mqtt";
 
 import { type Ack, type Command, cmdTopic, statusTopic, makeAck, parseCommand } from "./messages.js";
+import { AGENT_RADIUS_M } from "../nav/agentProfile.js";
 
 /** Minimal surface of `WorldRoom` this bridge depends on -- kept structural (not an
  * import of the concrete class) so unit tests can inject a fake room without building a
@@ -68,7 +74,15 @@ import { type Ack, type Command, cmdTopic, statusTopic, makeAck, parseCommand } 
 export interface WorldRoomLike {
   moveAgentTo(agentId: string, target: string | { x: number; z: number }): boolean;
   state: {
-    agents: { get(id: string): { state?: string } | undefined };
+    agents: {
+      /** `x`/`z`/`route` are optional in this structural type (a fake test double may
+       * omit them -- see resolveIfAlreadyArrived()'s doc comment: it treats their absence
+       * as "can't determine, fall back to polling" rather than "resolved to nowhere").
+       * The real WorldRoom's `Agent` schema (WorldState.ts) always has all four. */
+      get(
+        id: string,
+      ): { state?: string; x?: number; z?: number; route?: ArrayLike<number> } | undefined;
+    };
   };
 }
 
@@ -103,6 +117,21 @@ export function extractRobotId(topic: string): string | null {
 const DEFAULT_NAV_TIMEOUT_MS = 60_000;
 const DEFAULT_POLL_INTERVAL_MS = 200;
 const DEDUPE_MAXLEN = 2048;
+
+/** Fast-path arrival tolerance in meters (code-review fix for Task 2.3: see
+ * resolveIfAlreadyArrived()). If, at the moment a `navigate` goal is accepted, the agent
+ * is already this close to the resolved target, the Crowd will never cross
+ * WorldRoom.ts's IDLE_SPEED_THRESHOLD_MPS on the way there -- so the moving->idle EDGE
+ * pollPending() waits for literally never fires, and the request would otherwise hang
+ * until navTimeoutMs and wrongly ack failed/nav_timeout for a request that actually
+ * succeeded instantly (e.g. Moses re-issuing the same room target the agent is already
+ * standing in).
+ *
+ * Reuses AGENT_RADIUS_M (../nav/agentProfile.js) -- the same footprint radius the navmesh
+ * is eroded by and the crowd agent is sized with -- instead of inventing a new tolerance
+ * concept: anything closer than the agent's own footprint isn't a meaningful navigation,
+ * it's re-snapping to (about) the same point. */
+const ARRIVAL_TOLERANCE_M = AGENT_RADIUS_M;
 
 interface PendingNav {
   robotId: string;
@@ -247,6 +276,53 @@ export class IotBridge {
 
     this.publishAck(robotId, makeAck({ cmd_id: cmd.cmd_id, state: "running", simulated: true }));
     this.trackArrival(robotId, cmd.cmd_id);
+    this.resolveIfAlreadyArrived(robotId, cmd.cmd_id, target, room);
+  }
+
+  /**
+   * Code-review fix for Task 2.3: closes the "already at/near target" hang described on
+   * ARRIVAL_TOLERANCE_M. Called synchronously right after trackArrival() registers the
+   * pending nav -- still inside the same synchronous handleCommand call moveAgentTo
+   * returned into, so the agent's `x`/`z`/`route` are guaranteed fresh for THIS request
+   * (WorldRoom.moveAgentTo's own doc: it rewrites `route` synchronously, before
+   * returning, off the agent's position at request time -- never a stale tick's data).
+   *
+   * Resolves the target to compare against: a raw `{x, z}` command param is used as-is;
+   * a room-name target has no resolved point available to this bridge (moveAgentTo only
+   * returns a boolean, and this bridge deliberately does not depend on WorldRoom's
+   * internal `nav`/`findRoomTarget` -- see the class doc comment on keeping WorldRoomLike
+   * structural), so it's read back out of the agent's synced `route` polyline instead
+   * (the route WorldRoom just (re)computed ends at that same resolved target). If neither
+   * is available (e.g. computePath failed, or a test double that doesn't populate a
+   * route/position), this is a no-op and the existing poll-for-moving->idle / timeout
+   * path is the only way the command resolves -- unchanged from before this fix.
+   *
+   * DESIGN DECISION -- does NOT special-case "the agent was already idle before this
+   * request" vs. "the agent was moving toward a DIFFERENT target that happens to land
+   * near this new one": both produce the same physical outcome (the Crowd is already
+   * within its own footprint of the goal, so it settles effectively instantly regardless
+   * of what it was doing a moment ago), and distinguishing them would require tracking
+   * "was this agent moving before this call", which is strictly more fragile than just
+   * asking "is it there now". A genuinely far-off PRIOR pending nav for this robot was
+   * already resolved failed/"superseded" by trackArrival() above, so this check only ever
+   * evaluates proximity to the target of the command that is actually in flight.
+   */
+  private resolveIfAlreadyArrived(
+    robotId: string,
+    cmdId: string,
+    target: string | { x: number; z: number },
+    room: WorldRoomLike,
+  ): void {
+    const agent = room.state.agents.get(robotId);
+    if (!agent || typeof agent.x !== "number" || typeof agent.z !== "number") return;
+
+    const resolved = typeof target === "object" ? target : resolvedTargetFromRoute(agent.route);
+    if (!resolved) return;
+
+    const distance = Math.hypot(resolved.x - agent.x, resolved.z - agent.z);
+    if (distance <= ARRIVAL_TOLERANCE_M) {
+      this.resolvePending(cmdId, "done");
+    }
   }
 
   private trackArrival(robotId: string, cmdId: string): void {
@@ -314,6 +390,24 @@ function navigateTarget(cmd: Command): string | { x: number; z: number } {
   const params = cmd.params;
   if (typeof params.room === "string") return params.room;
   return { x: params.x as number, z: params.z as number };
+}
+
+/** Reads the resolved target point back out of an agent's synced `route` (flattened x,z
+ * pairs -- see WorldState.ts's `Agent.route` / WorldRoom.ts's `updateAgentRoute`, which
+ * always ends the route at the resolved nav-space target). Used by
+ * resolveIfAlreadyArrived() for a room-name `navigate` target, since this bridge has no
+ * other way to learn what point a room name resolved to. Returns `null` (not a throw) if
+ * there's nothing usable to read -- e.g. computePath failed and WorldRoom cleared the
+ * route, or a test double that never populated one -- callers must treat that as "can't
+ * determine the resolved target", not "resolved to nowhere". */
+function resolvedTargetFromRoute(route: ArrayLike<number> | undefined): { x: number; z: number } | null {
+  if (!route || route.length < 2) return null;
+  const x = route[route.length - 2];
+  const z = route[route.length - 1];
+  if (typeof x !== "number" || typeof z !== "number" || !Number.isFinite(x) || !Number.isFinite(z)) {
+    return null;
+  }
+  return { x, z };
 }
 
 export interface BuildMqttClientOptions {

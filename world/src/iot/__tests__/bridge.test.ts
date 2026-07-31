@@ -66,12 +66,21 @@ class FakeMqttClient implements MqttClientLike {
 class FakeWorldRoom implements WorldRoomLike {
   moveResult = true;
   moveCalls: { agentId: string; target: unknown }[] = [];
-  state = { agents: new Map<string, { state?: string }>() };
+  state = { agents: new Map<string, { state?: string; x?: number; z?: number; route?: number[] }>() };
+  /** Test hook: when set, a string (room-name) moveAgentTo target writes this flattened
+   * [x, z] pair as the agent's route -- mirrors the real WorldRoom.updateAgentRoute,
+   * which always ends the synced route at the resolved target, so bridge.ts's
+   * resolveIfAlreadyArrived() has something to read back for a room-name command. */
+  nextRoomTargetRoute: [number, number] | undefined;
 
   moveAgentTo(agentId: string, target: string | { x: number; z: number }): boolean {
     this.moveCalls.push({ agentId, target });
     if (this.moveResult && !this.state.agents.has(agentId)) {
       this.state.agents.set(agentId, { state: "idle" });
+    }
+    if (this.moveResult && typeof target === "string" && this.nextRoomTargetRoute) {
+      const agent = this.state.agents.get(agentId);
+      if (agent) agent.route = [...this.nextRoomTargetRoute];
     }
     return this.moveResult;
   }
@@ -235,7 +244,19 @@ async function main(): Promise<void> {
     console.log("PASS: duplicate cmd_id is ignored");
   }
 
-  // ---- arrival never observed -> failed/nav_timeout ----
+  // ---- genuine non-arrival (agent starts and stays "moving", never reaches idle) ->
+  // failed/nav_timeout ----
+  //
+  // NOTE: this test's setup used to leave the fake agent at its FakeWorldRoom-default
+  // {state: "idle"} with no position -- indistinguishable, per the Task 2.3 code-review
+  // finding, from the "already at/near target, no movement was ever needed" case this
+  // file now tests separately below. That old setup asserted nav_timeout, which is the
+  // WRONG outcome for an already-arrived agent; it only happened to pass because the old
+  // fake never modeled "already there" at all. Rewritten so the agent visibly starts
+  // moving (sawMoving becomes true) and then just never settles back to idle -- an
+  // unambiguous stuck/never-arrives case, the one nav_timeout is actually for. It also
+  // carries no x/z, so resolveIfAlreadyArrived() (which requires numeric x/z) is a no-op
+  // here regardless, same as before this fix.
   {
     const client = new FakeMqttClient();
     const room = new FakeWorldRoom();
@@ -249,14 +270,118 @@ async function main(): Promise<void> {
     bridge.start();
 
     bridge.handleMessage(cmdTopic("virtual/6"), JSON.stringify(navigateCmd("cmd-6")));
-    // Agent stays "idle" forever (never actually starts moving in this fake) -> should
-    // time out rather than hang.
+    room.state.agents.set("virtual/6", { state: "moving" });
+    // Agent keeps reporting "moving" forever (never settles to idle) -> should time out
+    // rather than hang.
     await sleep(120);
 
     assert.deepEqual(client.acksFor("cmd-6"), ["received", "running", "failed"]);
     assert.equal(client.published.find((p) => p.payload.state === "failed")!.payload.reason, "nav_timeout");
     bridge.stop();
-    console.log("PASS: arrival never observed -> failed/nav_timeout, does not hang forever");
+    console.log("PASS: agent stuck moving forever (never reaches idle) -> failed/nav_timeout, does not hang forever");
+  }
+
+  // ---- already at the target when navigate arrives (raw x/z target) -> immediate
+  // done, no moving->idle edge required, no wait for the timeout or even the poll loop ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    // Pre-seed the agent already sitting exactly on the coordinates the next command
+    // will target -- models an idempotent repeat-navigate to the robot's current spot.
+    room.state.agents.set("virtual/8", { state: "idle", x: 5, z: 3 });
+    const bridge = new IotBridge({
+      getRoom: () => room,
+      client,
+      pollIntervalMs: 5000,
+      navTimeoutMs: 5000,
+      log: { log() {}, warn() {}, error() {} },
+    });
+
+    const cmd: Command = {
+      cmd_id: "cmd-8",
+      type: "navigate",
+      name: "goto",
+      params: { x: 5, z: 3 },
+      ts: new Date().toISOString(),
+    };
+    bridge.handleMessage(cmdTopic("virtual/8"), JSON.stringify(cmd));
+
+    // No sleep, no poll tick (pollIntervalMs is huge and bridge.start() was never even
+    // called) -- resolveIfAlreadyArrived() must resolve this synchronously off the
+    // moveAgentTo call itself.
+    assert.deepEqual(
+      client.acksFor("cmd-8"),
+      ["received", "running", "done"],
+      "agent already at the exact target coords should ack done immediately, not time out",
+    );
+    console.log("PASS: already-at-target (raw x/z) navigate acks done immediately");
+  }
+
+  // ---- already at the target when navigate arrives (room-name target, resolved via the
+  // agent's synced route) -> immediate done ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    room.state.agents.set("virtual/9", { state: "idle", x: 10, z: -2 });
+    // Agent's own footprint (AGENT_RADIUS_M = 0.2m) puts this just inside tolerance --
+    // exercises the tolerance being a radius, not requiring exact-zero distance.
+    room.nextRoomTargetRoute = [10.1, -2.05];
+    const bridge = new IotBridge({
+      getRoom: () => room,
+      client,
+      pollIntervalMs: 5000,
+      navTimeoutMs: 5000,
+      log: { log() {}, warn() {}, error() {} },
+    });
+
+    bridge.handleMessage(cmdTopic("virtual/9"), JSON.stringify(navigateCmd("cmd-9", "Classroom 1425")));
+
+    assert.deepEqual(
+      client.acksFor("cmd-9"),
+      ["received", "running", "done"],
+      "room-name target resolved (via route) to within the agent's own footprint should ack done immediately",
+    );
+    console.log("PASS: already-at-target (room-name target, resolved via route) navigate acks done immediately");
+  }
+
+  // ---- near but outside tolerance -> falls back to normal moving->idle polling, not an
+  // immediate done ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    room.state.agents.set("virtual/10", { state: "idle", x: 0, z: 0 });
+    const bridge = new IotBridge({
+      getRoom: () => room,
+      client,
+      pollIntervalMs: 15,
+      navTimeoutMs: 5000,
+      log: { log() {}, warn() {}, error() {} },
+    });
+    bridge.start();
+
+    const cmd: Command = {
+      cmd_id: "cmd-10",
+      type: "navigate",
+      name: "goto",
+      params: { x: 3, z: 4 }, // 5m away, well outside ARRIVAL_TOLERANCE_M
+      ts: new Date().toISOString(),
+    };
+    bridge.handleMessage(cmdTopic("virtual/10"), JSON.stringify(cmd));
+
+    assert.deepEqual(
+      client.acksFor("cmd-10"),
+      ["received", "running"],
+      "far-off target must not be treated as already-arrived",
+    );
+
+    room.state.agents.set("virtual/10", { state: "moving" });
+    await sleep(30);
+    room.state.agents.set("virtual/10", { state: "idle" });
+    await sleep(30);
+    assert.deepEqual(client.acksFor("cmd-10"), ["received", "running", "done"]);
+
+    bridge.stop();
+    console.log("PASS: far-off target still resolves via the normal moving->idle poll, not the fast path");
   }
 
   // ---- a second navigate for the same robot supersedes the first in-flight one ----
