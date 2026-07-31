@@ -63,3 +63,18 @@ def test_bind_visitor_needs_no_lock_or_approval(ddb):
     sessions.bind_visitor(sid, "visitor-xyz")
     assert sessions.get_session_state(sid)["robot_id"] is None  # unaffected
     assert sessions.visitor_for_session(sid) == "visitor-xyz"
+
+
+# ---------------------------------------------------- Task 4.3: state poll ----
+def test_session_state_visitor_id_absent_before_binding(ddb):
+    sid = sessions.create_session("Ada", True)
+    assert sessions.get_session_state(sid)["visitor_id"] is None
+
+
+def test_session_state_carries_visitor_id_after_binding(ddb):
+    # The banner poll (/api/session/{id}/state, chat.js renderState) surfaces this
+    # field so the phone can show "you're the visitor on the big screen" without a
+    # separate join endpoint or a WS message-shape change.
+    sid = sessions.create_session("Ada", True)
+    sessions.bind_visitor(sid, "visitor-xyz")
+    assert sessions.get_session_state(sid)["visitor_id"] == "visitor-xyz"

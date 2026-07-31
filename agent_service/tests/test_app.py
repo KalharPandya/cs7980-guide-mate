@@ -59,6 +59,8 @@ def test_index_served(monkeypatch):
             'id="chat"', 'id="avatar"', 'id="companion-status"',
             'id="request-companion"', 'id="messages"', 'id="chat-form"',
             'id="message"', 'id="mic"', 'id="status-chip"',
+            # Task 4.3: the visitor-bound banner hook the state poll drives.
+            'id="visitor-banner"',
             '/chat.css', '/chat.js',
         ):
             assert hook in resp.text, f"missing {hook}"
@@ -86,6 +88,32 @@ def test_chat_static_assets_served(monkeypatch):
         assert css.status_code == 200
         assert "text/css" in css.headers["content-type"]
         assert "emote-happy" in css.text
+
+
+# ---------------------------------------- Task 4.3: join QR -------------------
+def test_join_qr_returns_svg_encoding_the_chat_page_url(monkeypatch):
+    """GET /api/join-qr -- for the big-screen/admin display, not the phone.
+    Real ``qrcode`` library encoding (no hand-rolled QR math): this test spies on
+    the library's own ``qrcode.make`` entry point to assert OUR code hands it
+    exactly this server's own root URL (the same page a phone lands on after
+    scanning) -- correctness of the QR encoding itself is the library's job."""
+    app = _no_connect(monkeypatch)
+    import guidemate_agent.app as appmod
+
+    captured = {}
+    real_make = appmod.qrcode.make
+
+    def spy_make(data, **kw):
+        captured["data"] = data
+        return real_make(data, **kw)
+
+    monkeypatch.setattr(appmod.qrcode, "make", spy_make)
+    with TestClient(app) as client:
+        resp = client.get("/api/join-qr")
+        assert resp.status_code == 200
+        assert "svg" in resp.headers["content-type"]
+        assert "<svg" in resp.text
+        assert captured["data"] == str(client.base_url) + "/"
 
 
 def test_fake_robot_registry_status_and_acks():

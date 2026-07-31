@@ -19,6 +19,9 @@ dependencies = [
     "python-multipart",
     "apscheduler",
     "guidemate-msgs",
+    # Task 4.3 join-QR endpoint (GET /api/join-qr): small, common QR encoder.
+    # SVG output only (qrcode.image.svg) -- no Pillow needed, unlike PNG mode.
+    "qrcode",
 ]
 
 [project.optional-dependencies]

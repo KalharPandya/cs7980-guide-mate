@@ -24,6 +24,7 @@
   const bannerText = $("companion-status");
   const requestBtn = $("request-companion");
   const virtualPetBadge = $("virtual-pet-badge");
+  const visitorBanner = $("visitor-banner");
   const stopBar = $("stop-bar");
   const stopBtn = $("stop-btn");
   const toast = $("toast");
@@ -586,6 +587,11 @@
     // The "Connected" request button reads as a green success chip when bound.
     requestBtn.classList.toggle("is-connected", physical);
 
+    // Task 4.3: this session got a virtual-fleet visitor_id (its first
+    // guide_to_room tool call succeeded) -- show it on the big-screen alongside
+    // the other connection chips. Independent of physical/virtual robot state.
+    if (visitorBanner) visitorBanner.classList.toggle("hidden", !s.visitor_id);
+
     banner.classList.remove("pending", "approved", "denied", "aborted");
     if (physical) {
       banner.classList.add("approved");
@@ -632,6 +638,7 @@
       chipMode.textContent = "virtual";
       if (stopBar) stopBar.classList.add("hidden");
       if (virtualPetBadge) virtualPetBadge.classList.add("hidden");
+      if (visitorBanner) visitorBanner.classList.add("hidden");
       requestBtn.classList.remove("is-connected");
     }
   }

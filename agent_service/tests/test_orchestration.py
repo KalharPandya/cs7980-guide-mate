@@ -28,7 +28,9 @@ def test_approve_binds_session_and_lock(ddb):
     assert sessions.robot_for_session(sid) == "turtlebot468"
     assert sessions.get_request(rid)["status"] == "approved"
     state = sessions.get_session_state(sid)
-    assert state == {"request_status": "approved", "robot_id": "turtlebot468"}
+    assert state == {
+        "request_status": "approved", "robot_id": "turtlebot468", "visitor_id": None,
+    }
 
 
 def test_approve_second_request_aborts_first(ddb):
@@ -40,7 +42,9 @@ def test_approve_second_request_aborts_first(ddb):
     out = sessions.approve_request(rb, "turtlebot468")
     assert out["aborted_session_id"] == a
     assert sessions.get_lock_holder("turtlebot468") == b
-    assert sessions.get_session_state(a) == {"request_status": "aborted", "robot_id": None}
+    assert sessions.get_session_state(a) == {
+        "request_status": "aborted", "robot_id": None, "visitor_id": None,
+    }
     assert sessions.robot_for_session(b) == "turtlebot468"
 
 
@@ -49,7 +53,9 @@ def test_deny_request(ddb):
     rid = sessions.create_request(sid)
     sessions.deny_request(rid)
     assert sessions.get_request(rid)["status"] == "denied"
-    assert sessions.get_session_state(sid) == {"request_status": "denied", "robot_id": None}
+    assert sessions.get_session_state(sid) == {
+        "request_status": "denied", "robot_id": None, "visitor_id": None,
+    }
 
 
 def test_abort_robot_frees_lock(ddb):
@@ -59,7 +65,9 @@ def test_abort_robot_frees_lock(ddb):
     freed = sessions.abort_robot("turtlebot468")
     assert freed == sid
     assert sessions.get_lock_holder("turtlebot468") is None
-    assert sessions.get_session_state(sid) == {"request_status": "aborted", "robot_id": None}
+    assert sessions.get_session_state(sid) == {
+        "request_status": "aborted", "robot_id": None, "visitor_id": None,
+    }
 
 
 def test_reassign_without_prior_request(ddb):
@@ -69,7 +77,9 @@ def test_reassign_without_prior_request(ddb):
     aborted = sessions.reassign_robot("turtlebot468", b)
     assert aborted == a
     assert sessions.robot_for_session(b) == "turtlebot468"
-    assert sessions.get_session_state(a) == {"request_status": "aborted", "robot_id": None}
+    assert sessions.get_session_state(a) == {
+        "request_status": "aborted", "robot_id": None, "visitor_id": None,
+    }
 
 
 # ------- assignment-triggered undock/dock (spec delta, commit 91d9bcb) -------

@@ -1,6 +1,7 @@
 """FastAPI app: chat API + static chat page + admin API/UI."""
 from __future__ import annotations
 
+import io
 import logging
 import os
 import time
@@ -9,8 +10,10 @@ from pathlib import Path
 from typing import Optional
 
 import boto3
+import qrcode
+import qrcode.image.svg
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -305,6 +308,22 @@ def session_arsenal(session_id: str) -> JSONResponse:
         },
         "safety": {"dry_run": safety_dry_run},
     })
+
+
+# Task 4.3: phone-join QR. This is for the BIG-SCREEN/admin display to show --
+# not for the phone itself. A visitor's phone scans it, which loads the same
+# anonymous `/` chat page any browser gets; that intake (POST /api/session on
+# "Start with Moses") already IS the join flow -- no separate join endpoint or
+# page exists or is needed (see docs/superpowers/plans/2026-07-26-virtual-world-
+# implementation-plan.md Task 4.3 discussion). SVG (qrcode.image.svg) is used
+# rather than PNG so no Pillow dependency is needed.
+@app.get("/api/join-qr")
+def join_qr(request: Request) -> Response:
+    target_url = str(request.base_url)
+    img = qrcode.make(target_url, image_factory=qrcode.image.svg.SvgPathImage)
+    buf = io.BytesIO()
+    img.save(buf)
+    return Response(content=buf.getvalue(), media_type="image/svg+xml")
 
 
 @app.get("/")

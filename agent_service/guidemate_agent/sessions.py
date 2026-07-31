@@ -253,6 +253,13 @@ def get_session_state(session_id: str) -> dict:
     return {
         "request_status": session.get("request_status", "none"),
         "robot_id": robot_for_session(session_id),
+        # Task 4.3: additive field -- None until the session's first guide_to_room
+        # tool call binds a virtual-fleet visitor_id (dog_agent._guide_impl ->
+        # sessions.bind_visitor). The existing 3s /api/session/{id}/state poll
+        # (chat.js renderState) already carries request_status/robot_id for the
+        # companion banner; visitor_id rides the same poll rather than adding a
+        # new endpoint or a WS message-shape change.
+        "visitor_id": session.get("visitor_id") or None,
     }
 
 

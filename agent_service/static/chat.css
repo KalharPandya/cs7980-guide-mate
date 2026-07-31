@@ -193,6 +193,14 @@ body:has(#chat:not([hidden])) { background: var(--bg); }
 /* Virtual-pet is an informational state, NOT danger/action — keep it neutral
    and muted so red stays reserved for Stop/primary. */
 .chip-virtual-pet { color: var(--muted); border-color: var(--border); background: var(--surface-soft); }
+/* Visitor-bound banner (Task 4.3) -- a positive "you're findable on the big
+   screen" signal, so it reads as the same success accent as a bound/approved
+   companion state rather than a neutral/muted informational chip. */
+.chip-visitor {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 40%, var(--border));
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+}
 /* Session sound toggle — a labelled chip button (aria-pressed). On = success
    green accent; off = muted. Icon is paired with a text label (brief rule). */
 .chip-sound { cursor: pointer; }

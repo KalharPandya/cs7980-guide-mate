@@ -76,6 +76,13 @@
         <span id="virtual-pet-badge" data-testid="virtual-pet-badge" class="chip chip-virtual-pet hidden">
           <span class="chip-dot" aria-hidden="true"></span>Virtual pet
         </span>
+        <!-- Task 4.3: shown once this session's first guide_to_room call binds a
+             virtual-fleet visitor_id (sessions.bind_visitor). Driven by the same
+             /api/session/{id}/state poll as the companion banner above -- no new
+             endpoint or WS message needed. Hidden by default. -->
+        <span id="visitor-banner" data-testid="visitor-banner" class="chip chip-visitor hidden">
+          <span class="chip-dot" aria-hidden="true"></span>You're the visitor on the big screen
+        </span>
         <!-- Session sound toggle: gates AUTOPLAY of spoken replies. -->
         <button id="sound-toggle" class="chip chip-sound" type="button" aria-pressed="true" title="Spoken replies">
           <svg class="chip-ico" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"
