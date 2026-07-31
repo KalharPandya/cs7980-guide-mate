@@ -420,9 +420,129 @@ Acceptance: e2e test passes (or is properly gated/documented if it can't run hea
 environment); QR endpoint returns a valid, scannable code pointing at the right URL.
 
 ### Phase 5 — Polish and demo hardening
-(Not detailed yet -- expand after Phase 4. Rough shape from the design spec: deploy world-server
-on the existing t3.large next to FastAPI, systemd unit, kiosk big-screen mode, admin kill-switch
-wiring, physical-robot emote mirroring, rehearsal, risk register.)
+
+Expanded 2026-07-31 (controller), after Phase 4 landed, grounded in the REAL deployment/admin
+infrastructure (not the design spec's rough sketch, which said "systemd" -- that's wrong, see
+below).
+
+Ground truth that shapes the tasks below:
+- **Deployment is Docker Compose, not systemd.** `agent_service/deploy/launch_ec2.sh` +
+  `user_data.sh` provision the t3.large and run `docker compose -f compose.yaml -f
+  compose.prod.yaml up -d --build` (app + Caddy for TLS/reverse-proxy). Already live at
+  `https://echo.kalhar.ca`. `agent_service/deploy/redeploy.sh` pushes updates via SSM
+  send-command (no SSH key). No CI/CD exists. The two `.service` files in the repo are unrelated
+  robot-side units (Pi bridge, camera watchdog) -- ignore those as a pattern for this.
+- **The admin kill-switch is real but per-robot only**: `POST /api/admin/kill-switch`
+  (`agent_service/guidemate_agent/admin.py`) hardcodes a safe shadow write
+  (`motion_enabled: false, dry_run: true`), one-way-to-safe, and per-robot reassign/abort exist.
+  Nothing today pauses "the whole virtual fleet" or the Node world-server.
+- **Emote mirroring is genuinely new wiring.** `_emote_impl` (`dog_agent.py`) hard-forks on
+  `physical`: virtual sessions never touch MQTT at all today. No existing "also do X" hook.
+- **Kiosk/camera mode in `world-client/` is greenfield** -- nothing exists yet.
+- **Observability already exists and should be extended, not rebuilt**: `scripts/
+  setup_observability.sh` creates CloudWatch log groups/alarms/dashboard (`guidemate-poc`),
+  including an EC2 CPU alarm (>85% over 10min) and a CloudWatch agent already reporting
+  mem/disk. No Node-process metric exists yet. The design spec's own open risk --
+  "t3.large running FastAPI + Node world-server + Bedrock calls is untested together" -- is
+  still unresolved and this phase's Task 5.1 must resolve it.
+- **No risk register exists anywhere in the repo.** The closest precedent for format/tone is
+  `docs/agent-poc/access-ground-truth.md`'s "Consolidated 24-hour risks (ranked)" table.
+- **Deploying to the real t3.large is Kalhar's action, not mine to run autonomously** (same
+  discipline as Task 2.2's AWS-mutating `--apply` gate): implementers build, containerize, and
+  validate everything locally/in CI-style checks; the actual `redeploy.sh`/SSM push to the live
+  production instance serving `echo.kalhar.ca` is a controller/Kalhar-reviewed manual step, not
+  something a subagent (or the controller) executes against the shared production account.
+
+**Task 5.1 — Containerize world-server, add as a third Compose service, extend observability**
+(independent of 5.2/5.3/5.4; touches `world/Dockerfile` [new], `agent_service/compose.yaml`
+and/or `compose.prod.yaml` [extend, don't rewrite the existing app/caddy services],
+`scripts/setup_observability.sh` [extend], `docs/agent-poc/access-ground-truth.md`)
+Requirements:
+- A multi-stage `world/Dockerfile` (build stage compiles TS via `npm run build`, runtime stage
+  runs `node dist/index.js`, matches the existing `agent_service` Dockerfile's style if one
+  exists there -- check first). Exposes the Colyseus WebSocket port (2567 by default).
+- Add `world-server` as a THIRD service in the existing Compose stack (same file(s) `agent_service/
+  compose.yaml`/`compose.prod.yaml` extend, not a separate parallel compose project -- confirm this
+  is the right scope by reading those files yourself first), reusing the `/etc/guidemate.env`
+  pattern for `GUIDEMATE_IOT_ENDPOINT`/`CERT`/`KEY` env vars (Task 2.3's bridge already reads
+  these), same restart policy as the existing services, routed through the existing Caddy reverse
+  proxy (`agent_service/Caddyfile`) so `world-client` can reach it over the existing TLS domain
+  rather than a bare exposed port (add a Caddy route, e.g. `/world/*` or a subdomain -- decide and
+  document, matching the Caddyfile's existing style).
+- Extend `scripts/setup_observability.sh` (idempotent, matching its existing style) to add a
+  Node-process CPU/memory metric under the same `GuideMate/EC2` namespace the CloudWatch agent
+  already reports to (don't stand up a parallel monitoring stack).
+- Load-check: run `agent_service` + the new `world-server` container + Task 1.3's 95-agent
+  load-test concurrently on a machine sized like the t3.large (or document why that's not
+  feasible in this environment and what the closest proxy measurement is), report REAL measured
+  combined CPU/memory, compared against the existing 85% alarm threshold.
+- Document the new resource in `access-ground-truth.md` (matching its existing style), and
+  write out (don't run) the exact `redeploy.sh`/deploy steps Kalhar would run to actually ship
+  this to the live instance.
+Acceptance: `docker compose config` validates the extended file; a local `docker compose up
+--build` (against a throwaway/local env, NOT the real production `.env`) starts all three
+services and the world-server responds on its Caddy-routed path; real measured combined-load
+numbers reported, not assumed; nothing is deployed to the actual `echo.kalhar.ca` instance by the
+implementer or controller -- that step is written up for Kalhar to run himself.
+
+**Task 5.2 — Fleet-wide kill switch (admin panel + world-server pause)**
+(independent of 5.1/5.3/5.4; touches `agent_service/guidemate_agent/admin.py` [extend],
+`world/src/iot/bridge.ts` [extend], `world/src/rooms/WorldRoom.ts` [extend, one-line-ish])
+Requirements:
+- Reuse the EXISTING wire format rather than inventing a new command: a fleet-scoped `stop`
+  Command (already valid per the schema -- `type="stop"`, `name="stop"`) published to
+  `fleet_cmd_topic()` (Task 4.2's topic) means "freeze the whole virtual world," distinct from a
+  per-robot `stop`. Add a `WorldRoom.pause()`/`resume()` pair (pause: stop advancing the
+  `Crowd`/simulation tick or zero every agent's `maxSpeed`, your call, document it; resume:
+  restore normal ticking) and wire the bridge's fleet-topic handler to call it on a fleet `stop`
+  (and pick a corresponding resume signal -- e.g. a second fleet command name, or reuse pause/
+  un-pause semantics some other way; decide and document).
+- New admin endpoint (`agent_service/guidemate_agent/admin.py`, matching the existing
+  `kill-switch`/`abort`/`reassign` route style and auth) that publishes this fleet-scoped stop
+  (and its resume counterpart), one-way-to-safe by default the same way the existing kill-switch
+  is (pausing is always safe to call; resuming should require an explicit separate action, not be
+  bundled automatically).
+Test: an integration test that a fleet `stop` command halts agent position advancement in
+`WorldRoom` state (positions stop changing across ticks) and a resume signal restores it.
+Acceptance: tests pass; admin endpoint documented; does not touch/regress the existing per-robot
+kill-switch.
+
+**Task 5.3 — Physical robot mirrors virtual fleet emotes**
+(independent of 5.1/5.2/5.4; touches `agent_service/guidemate_agent/dog_agent.py` [extend
+`_emote_impl`], config/env)
+Requirements: a new env var (e.g. `GUIDEMATE_EMOTE_MIRROR_ROBOT_ID`, unset by default = feature
+off, matching this codebase's existing env-gated-feature convention) naming ONE physical robot id
+to mirror onto. When set AND the current session is virtual (`physical=False`, i.e. exactly the
+branch that today does nothing but return a canned string), `_emote_impl` ALSO best-effort
+publishes the same emote `Command` to that physical robot id via the registry's existing
+`send_command` -- best-effort and non-blocking: a publish failure must NOT change the turn's
+reply text or raise, since the virtual visitor's own experience must not degrade if the physical
+mirror robot is offline. Do not change ANY behavior for the `physical=True` branch or when the
+env var is unset (regression-test this explicitly).
+Test: unit tests -- mirror var unset: virtual emote behaves exactly as today (no registry call).
+Mirror var set: virtual emote ALSO calls `send_command` on the configured robot id; a registry
+exception from that call is swallowed and doesn't affect the returned string.
+Acceptance: tests pass; no change to existing physical-session or unset-env-var behavior.
+
+**Task 5.4 — Kiosk/big-screen mode + scripted camera moments**
+(independent of 5.1/5.2/5.3; touches `world-client/src/App.tsx` [extend] or a new
+`world-client/src/KioskMode.tsx`)
+Requirements: a `?kiosk=1` URL param that (a) calls the Fullscreen API on first user gesture
+(browsers require a gesture to grant fullscreen -- handle the "denied without a click" case
+gracefully, don't crash), (b) hides any dev-only UI chrome, (c) adds a slow automatic camera
+orbit/pan when idle (a "scripted camera moment," simplest correct version: gently animate the
+`MapControls` target/azimuth over time when no user input has occurred for N seconds, resuming
+manual control immediately on the next user interaction). Do NOT disable `MapControls`
+entirely -- rehearsal/manual override must still work.
+Acceptance: this session's Browser pane has a known compositing limitation (documented earlier in
+this project) that blocks literal screenshots -- verify via `tsc`/build/console/network instead,
+and write exact manual verification steps for Kalhar to confirm visually on his own machine.
+
+Tasks 5.5 (risk register) and 5.6 (rehearsal) are NOT delegated to implementer subagents --
+5.5 is a synthesis document requiring whole-project context (controller-authored directly,
+after 5.1-5.4 land, cross-referencing `access-ground-truth.md`'s risk-table style); 5.6 requires
+Kalhar and the physical space/robot, out of scope for autonomous execution -- the controller will
+instead produce a rehearsal checklist as part of 5.5.
 
 ## Parallelization notes for the controller
 - Phase 0: Tasks 0.1, 0.2, 0.4 touch disjoint file sets -- dispatch together in parallel.
