@@ -351,6 +351,71 @@ def test_ws_kb_grounded_reply_frame_includes_sources(monkeypatch, ddb):
     assert reply["turn_id"]
 
 
+# ======================================= guide_to_room on the REAL WS chat path ==
+class _FakeStrandsGuide:
+    """strands.Agent stand-in that exercises guide_to_room (Task 4.2) through the
+    REAL WS chat path. This is the exact reproduction for the bug found live during
+    Task 4.3's e2e testing: the WS-path DogAgent is backed by CaptureRegistry (see
+    ws_chat.py), which had no send_fleet_command -- so guide_to_room raised
+    AttributeError inside _guide_impl, swallowed by _run_pipeline's top-level
+    except, and every real "take me to room X" request silently got the generic
+    "sorry, I got a little confused" apology instead of a guide confirmation.
+    Task 4.2's own tests never caught this because they used a purpose-built
+    FleetRegistry fake (test_dog_agent.py), never CaptureRegistry."""
+
+    last = None
+
+    def __init__(self, model=None, system_prompt=None, tools=None):
+        self.system_prompt = system_prompt
+        self.tools = list(tools or [])
+        self.tool_names = [t.tool_name for t in self.tools]
+        type(self).last = self
+
+    def __call__(self, message):
+        self.message = message
+        guide_reply = None
+        for t in self.tools:
+            if t.tool_name == "guide_to_room":
+                guide_reply = t("Kitchen")
+        for t in self.tools:
+            if t.tool_name == "send_emote":
+                t("happy")
+        return f"woof! {guide_reply}"
+
+
+def test_ws_virtual_turn_guide_to_room_does_not_raise_and_dispatches_real_fleet_command(
+    monkeypatch, ddb
+):
+    """Regression for the CaptureRegistry.send_fleet_command gap on the REAL WS chat
+    path (app.state.ws_agent, not a Task-4.2 fake registry). A virtual (no-robot)
+    session asking to be guided must NOT crash the turn -- no AttributeError, no
+    generic apology -- and the fleet "assign" command must actually reach the real
+    registry backing app.state.registry (FakeRobotRegistry under
+    GUIDEMATE_FAKE_ROBOT=1), not just a fake ack that sounds right but dispatches
+    nothing."""
+    monkeypatch.setattr(dog_agent, "Agent", _FakeStrandsGuide)
+    monkeypatch.setattr(dog_agent, "BedrockModel", lambda **kw: None)
+    with _fake_client(monkeypatch) as client:
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        with client.websocket_connect(f"/ws/chat/{sid}") as ws:
+            ws.send_json({"type": "text", "message": "can you guide me to the kitchen?"})
+            reply = ws.receive_json()
+            ws.receive_json()  # audio
+    # The turn completed normally -- did NOT hit the pipeline-exception apology.
+    assert reply["type"] == "reply"
+    assert reply["text"] != "sorry, I got a little confused"
+    assert "heading" in reply["text"].lower()
+    assert "virtual/demo-1" in reply["text"]
+    # guide_to_room was offered (virtual session -- no bound robot).
+    assert "guide_to_room" in _FakeStrandsGuide.last.tool_names
+    # The fleet assign command reached the REAL registry (delegated through
+    # CaptureRegistry(fleet_registry=...) in app.py), proving this is a real
+    # dispatch, not an isolated fake ack.
+    assert ("(fleet)", "assign", "assign") in client.app.state.registry.sent
+
+
 def test_ws_non_kb_reply_frame_has_no_sources(monkeypatch, ddb):
     """A turn that did NOT ground on the KB ships an empty ``sources`` list."""
     _fake_bedrock(monkeypatch)  # _FakeStrands: only calls send_emote, never retrieve_kb

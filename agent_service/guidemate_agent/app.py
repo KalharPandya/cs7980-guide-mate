@@ -100,9 +100,15 @@ async def lifespan(app: FastAPI):
     # when the session both binds that robot AND holds its lock, else None (virtual)
     # — so a free/no-robot session never publishes and is never told a robot id.
     # Phase 4 may override the seam.
+    #
+    # fleet_registry=registry: guide_to_room's fleet "assign" command (Task 4.2) has
+    # no separate real-publish step the way emote/motion do, so CaptureRegistry's
+    # send_fleet_command delegates straight to the real registry here instead of
+    # faking the ack — otherwise guide_to_room on the WS chat path would report a
+    # plausible-sounding robot assignment without ever dispatching a real one.
     app.state.observability = Observability()
     app.state.ws_agent = DogAgent(
-        registry=CaptureRegistry(),
+        registry=CaptureRegistry(fleet_registry=registry),
         model_id=cfg.model_id,
         robot_ids=cfg.robot_ids,
         region=cfg.region,

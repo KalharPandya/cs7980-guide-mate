@@ -52,7 +52,10 @@ class FakeRobotRegistry:
             "last_heartbeat": {"battery": 0.87, "docked": True},
         }
 
-    def send_command(self, robot_id: str, cmd: Command, timeout_s: float = 5.0) -> list:
+    def send_command(
+        self, robot_id: str, cmd: Command, timeout_s: float = 5.0,
+        collect_all: bool = False,
+    ) -> list:
         self.sent.append((robot_id, cmd.type, cmd.name))
         if cmd.type == "motion" and cmd.name in ("dock", "undock"):
             # Robot 468 is motion-locked: docking is refused, not executed.
@@ -66,11 +69,20 @@ class FakeRobotRegistry:
             for state in ("received", "running", "done")
         ]
 
-    def send_fleet_command(self, cmd: Command, timeout_s: float = 5.0) -> list:
+    def send_fleet_command(
+        self, cmd: Command, timeout_s: float = 5.0, collect_all: bool = False,
+    ) -> list:
         """Fake mirror of RobotRegistry.send_fleet_command (Task 4.2's guide_to_room
         tool calls this in GUIDEMATE_FAKE_ROBOT=1 demo mode too -- there is no real
         virtual-world bridge to assign a robot, so this always simulates success with
-        a made-up robot id rather than crashing the tool for lack of the method)."""
+        a made-up robot id rather than crashing the tool for lack of the method).
+
+        collect_all accepted (and ignored, like timeout_s) for signature parity with
+        RobotRegistry.send_fleet_command -- CaptureRegistry.send_fleet_command (ws_chat.py)
+        always forwards collect_all when it delegates to whichever real registry backs
+        app.state.registry, and a signature mismatch here raised a TypeError deep inside
+        the WS chat pipeline under GUIDEMATE_FAKE_ROBOT=1 (caught by _run_pipeline's
+        top-level except, so it looked like just another silent failure, not a crash)."""
         self.sent.append(("(fleet)", cmd.type, cmd.name))
         if cmd.type != "assign":
             return [Ack(cmd_id=cmd.cmd_id, state="failed", simulated=True,

@@ -48,7 +48,22 @@ class CaptureRegistry:
     The WS-path DogAgent uses this so its send_emote tool reports success (keeping the
     generated reply text clean) without doing the physical publish — the WS layer owns
     the real publish + the release gate.
+
+    send_fleet_command is different: it backs the guide_to_room tool (Task 4.2),
+    which is virtual-fleet-only and has NO separate real-publish step anywhere in
+    ws_chat.py the way emote/motion do (there is no post-turn "release gate" for a
+    fleet assign). The ack it returns is what tells the visitor which virtual robot
+    is coming and is quoted straight into the reply text, so faking it here would
+    silently stop the WS chat path from ever dispatching a real virtual robot while
+    still sounding like it worked. So this delegates to the real registry (whichever
+    one backs app.state.registry — RobotRegistry over real MQTT, or FakeRobotRegistry
+    under GUIDEMATE_FAKE_ROBOT=1) when one is wired in via `fleet_registry`, and only
+    falls back to a virtual ack (matching send_command's simulated-ack style) when
+    none is available, e.g. CaptureRegistry() used bare in a test.
     """
+
+    def __init__(self, fleet_registry=None) -> None:
+        self._fleet_registry = fleet_registry
 
     def send_command(self, robot_id, cmd, timeout_s: float = 5.0, collect_all: bool = False):
         from guidemate_msgs.messages import Ack
@@ -57,6 +72,19 @@ class CaptureRegistry:
 
     def get_status(self, robot_id) -> dict:
         return {"robot_id": robot_id, "presence": "unknown"}
+
+    def send_fleet_command(self, cmd, timeout_s: float = 5.0, collect_all: bool = False):
+        if self._fleet_registry is not None:
+            return self._fleet_registry.send_fleet_command(
+                cmd, timeout_s=timeout_s, collect_all=collect_all
+            )
+        from guidemate_msgs.messages import Ack
+
+        return [
+            Ack(cmd_id=cmd.cmd_id, state="received", simulated=True),
+            Ack(cmd_id=cmd.cmd_id, state="done", simulated=True,
+                assigned_robot_id="virtual/capture-fallback"),
+        ]
 
 
 def _physical_target(app: FastAPI, session_id: str) -> Optional[str]:
