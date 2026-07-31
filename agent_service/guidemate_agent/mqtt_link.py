@@ -158,6 +158,43 @@ class RobotRegistry:
         if data.get("state") in ("done", "failed"):
             event.set()
 
+    def _send_and_collect(
+        self,
+        topic: str,
+        cmd: Command,
+        timeout_s: float,
+        collect_all: bool,
+    ) -> list[Ack]:
+        """Publish `cmd` to `topic`, register a waiter keyed on `cmd.cmd_id`, and
+        collect its acks as `_on_status` fills them in. Shared by `send_command`
+        and `send_fleet_command`, which differ only in the topic published to and
+        in whether a `robot_id` is known to address; both callers are responsible
+        for the `self._conn is None` guard before calling this.
+
+        collect_all=False: return as soon as a terminal (done/failed) ack lands,
+        or at timeout. collect_all=True: wait the FULL timeout and return every
+        ack collected — AWS IoT QoS1 acks can arrive out of order ('done' before
+        'running'), so early return can drop trailing acks (Phase-5 groundwork).
+        """
+        event = threading.Event()
+        acks: list[Ack] = []
+        with self._lock:
+            self._waiters[cmd.cmd_id] = (event, acks)
+        try:
+            self._conn.publish(
+                topic=topic,
+                payload=cmd.model_dump_json().encode("utf-8"),
+                qos=mqtt.QoS.AT_LEAST_ONCE,
+            )
+            if collect_all:
+                time.sleep(timeout_s)
+            else:
+                event.wait(timeout_s)
+        finally:
+            with self._lock:
+                self._waiters.pop(cmd.cmd_id, None)
+        return list(acks)
+
     def send_command(
         self,
         robot_id: str,
@@ -175,24 +212,7 @@ class RobotRegistry:
         if self._conn is None:
             log.warning("send_command(%s) with no MQTT connection — robot unreachable", robot_id)
             return []
-        event = threading.Event()
-        acks: list[Ack] = []
-        with self._lock:
-            self._waiters[cmd.cmd_id] = (event, acks)
-        try:
-            self._conn.publish(
-                topic=cmd_topic(robot_id),
-                payload=cmd.model_dump_json().encode("utf-8"),
-                qos=mqtt.QoS.AT_LEAST_ONCE,
-            )
-            if collect_all:
-                time.sleep(timeout_s)
-            else:
-                event.wait(timeout_s)
-        finally:
-            with self._lock:
-                self._waiters.pop(cmd.cmd_id, None)
-        return list(acks)
+        return self._send_and_collect(cmd_topic(robot_id), cmd, timeout_s, collect_all)
 
     def send_fleet_command(
         self,
@@ -211,24 +231,7 @@ class RobotRegistry:
         if self._conn is None:
             log.warning("send_fleet_command(%s) with no MQTT connection", cmd.type)
             return []
-        event = threading.Event()
-        acks: list[Ack] = []
-        with self._lock:
-            self._waiters[cmd.cmd_id] = (event, acks)
-        try:
-            self._conn.publish(
-                topic=fleet_cmd_topic(),
-                payload=cmd.model_dump_json().encode("utf-8"),
-                qos=mqtt.QoS.AT_LEAST_ONCE,
-            )
-            if collect_all:
-                time.sleep(timeout_s)
-            else:
-                event.wait(timeout_s)
-        finally:
-            with self._lock:
-                self._waiters.pop(cmd.cmd_id, None)
-        return list(acks)
+        return self._send_and_collect(fleet_cmd_topic(), cmd, timeout_s, collect_all)
 
     def get_status(self, robot_id: str) -> dict:
         with self._lock:
