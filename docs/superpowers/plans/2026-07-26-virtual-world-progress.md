@@ -87,8 +87,30 @@ during Task 3.2/3.3 cleanup. Kept here only as historical context; nothing to re
   578ed12 fix agent used a bare `git stash`/`git stash pop` on this shared worktree mid-task
   (against the project's own git-discipline rule for shared worktrees) to get a clean diff view;
   it reports a clean round-trip with no data loss, verified by the controller afterward (repo
-  history sane, other agents' concurrent uncommitted work intact) — flagging here as a reminder
+  history sane, other agents' concurrent uncommitted work intact); flagging here as a reminder
   this keeps recurring under time pressure, not because it caused damage this time. Also noted:
   running many agents' full test suites concurrently in this one worktree causes real memory
-  contention (one agent got OOM-killed mid-run) — worth throttling parallel full-suite runs in
+  contention (one agent got OOM-killed mid-run); worth throttling parallel full-suite runs in
   future dispatches rather than always running everything in parallel.
+- 2026-07-31 (continued): Phase 5 completed in full. 5.1 (containerize world-server, commits
+  `e9ef883`+`d179522`): safe, no real AWS/infra touched; found+fixed a real `.dockerignore` bug
+  that would have silently excluded `world/src` from every Docker build context. 5.2 (fleet
+  kill-switch, commits `f6b79f2`+`40f19c7`+`cd9aef0`): found+fixed a real pause/nav_timeout
+  wall-clock interaction bug, then found the FIX's own regression test didn't actually
+  distinguish the bug it claimed to catch, so strengthened it and verified via real mutation
+  testing (sabotaged the fix twice, confirmed the test catches both failure modes, reverted
+  cleanly). 5.3 (emote mirroring, `b3919b9`) and 5.4 (kiosk mode, `52d9138`): both approved
+  clean on first review. 5.5 (risk register + rehearsal checklist, controller-authored):
+  `docs/superpowers/specs/2026-07-31-virtual-world-risk-register.md`, the definitive place to
+  look for what still needs Kalhar's own action (real AWS mutation, real deploy, physical
+  presence for robot 468 safety, actually looking at the rendered scene). Also cleaned up two
+  non-blocking code-quality items deferred from earlier reviews: deduped `mqtt_link.py`'s
+  `send_command`/`send_fleet_command` (commit `5ebcbd2`) and split `visitors.ts` into
+  `escortManager.ts`+`simulatedVisitorSpawner.ts` (commit `cb86902`), both pure refactors,
+  independently re-verified as zero behavior change. Full repo health check at this point: `world/`
+  build+test:all clean, `world-client/` build clean, `shared/guidemate_msgs` 45/45 pass,
+  `agent_service` 247 passed/9 skipped/1 pre-existing unrelated failure (stale "Robert" branding
+  assertion, not this project's responsibility). **Every task in the implementation plan
+  (Phases 0 through 5) is now implemented and reviewed.** What remains is entirely Kalhar's own
+  action per the risk register: apply the virtual-fleet IoT identity, deploy world-server, and
+  rehearse end to end with a human watching robot 468 if the emote mirror is enabled.
