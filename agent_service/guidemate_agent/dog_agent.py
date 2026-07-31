@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 from typing import Optional
@@ -70,6 +71,21 @@ def _emote_mirror_robot_id() -> Optional[str]:
     return os.environ.get("GUIDEMATE_EMOTE_MIRROR_ROBOT_ID") or None
 
 
+# Minimum seconds between mirror publishes to the same physical robot id
+# (adversarial-review finding, closed 2026-07-31: nothing stopped multiple
+# concurrent virtual sessions from all mirroring onto the one physical robot at
+# once -- unlike physical sessions, which are lock-gated one-per-robot).
+#
+# Emote mirroring is opt-in (env var unset by default), motion-free, and for a
+# single session already naturally throttled by per-turn LLM latency (seconds
+# per reply). 2.0s keeps that same "one demo robot getting at most a couple
+# emotes a second" cadence even when several virtual sessions target it at
+# once, without making the mirror feel laggy for the small class-demo
+# audience it's built for. Not meant to be a general-purpose rate limiter --
+# just cheap insurance against a burst.
+_EMOTE_MIRROR_MIN_INTERVAL_S = 2.0
+
+
 def _usage_from_result(result) -> Optional[tuple[int, int]]:
     """Pull (input_tokens, output_tokens) out of a Strands AgentResult, or None.
 
@@ -101,6 +117,15 @@ class DogAgent:
         self._robot_ids = robot_ids
         self._region = region
         self._store = store
+        # Per-robot-id "last mirrored at" clock for the emote-mirror rate limit
+        # (see _EMOTE_MIRROR_MIN_INTERVAL_S / _mirror_rate_limit_ok below).
+        # Process-local and keyed per robot id, not global, so a future
+        # multi-target mirror setup wouldn't throttle distinct robots against
+        # each other. Guarded by a lock because sync FastAPI routes and
+        # ws_chat's run_in_executor calls can invoke chat() from different
+        # worker threads concurrently.
+        self._emote_mirror_last_sent: dict[str, float] = {}
+        self._emote_mirror_lock = threading.Lock()
 
     # --- flag / prompt helpers -------------------------------------------
     def _flags(self) -> dict:
@@ -203,6 +228,26 @@ class DogAgent:
             return "delivered (simulated — dry-run, the robot stayed still)"
         return "delivered"
 
+    def _mirror_rate_limit_ok(self, robot_id: str) -> bool:
+        """True (and reserves this instant) if enough time has passed since the
+        last mirror publish to robot_id; False if a mirror publish to that same
+        robot id is still within _EMOTE_MIRROR_MIN_INTERVAL_S.
+
+        The check-and-reserve happens under a lock so two concurrent virtual
+        sessions racing to mirror onto the same robot id can't both slip
+        through (see the lock/dict comment in __init__). The reservation is
+        made whether or not the caller's subsequent publish actually succeeds
+        -- a failed publish still counts against the window, so a struggling
+        mirror robot doesn't get hammered by retries either.
+        """
+        now = time.monotonic()
+        with self._emote_mirror_lock:
+            last = self._emote_mirror_last_sent.get(robot_id, 0.0)
+            if now - last < _EMOTE_MIRROR_MIN_INTERVAL_S:
+                return False
+            self._emote_mirror_last_sent[robot_id] = now
+            return True
+
     def _emote_impl(self, name: str, target: Optional[str], captured: dict,
                     physical: bool = True) -> str:
         """Body of the send_emote tool, factored out so it's testable without Strands.
@@ -219,16 +264,33 @@ class DogAgent:
         raised and never allowed to change the returned reply string, so the
         virtual visitor's own turn never degrades because a mirror robot is
         offline.
+
+        The mirror publish is also rate-limited per robot id
+        (_mirror_rate_limit_ok / _EMOTE_MIRROR_MIN_INTERVAL_S): unlike physical
+        sessions, which are lock-gated one-per-robot, any number of virtual
+        sessions can target the same mirror robot id concurrently, so without
+        this the mirror robot could be spammed far faster than a human-paced
+        conversation would ever drive it. A rate-limited attempt is silently
+        skipped (logged at debug, not warn -- it isn't an error) and, exactly
+        like a swallowed publish exception, never changes this virtual
+        session's own reply text or behaviour.
         """
         captured["emote"] = name
         if not physical:
             mirror_id = _emote_mirror_robot_id()
             if mirror_id:
-                try:
-                    self._registry.send_command(mirror_id, Command(type="emote", name=name))
-                except Exception:
-                    log.warning(
-                        "emote mirror publish to %s failed", mirror_id, exc_info=True
+                if self._mirror_rate_limit_ok(mirror_id):
+                    try:
+                        self._registry.send_command(mirror_id, Command(type="emote", name=name))
+                    except Exception:
+                        log.warning(
+                            "emote mirror publish to %s failed", mirror_id, exc_info=True
+                        )
+                else:
+                    log.debug(
+                        "emote mirror publish to %s skipped -- rate-limited "
+                        "(min %.1fs between mirrors)",
+                        mirror_id, _EMOTE_MIRROR_MIN_INTERVAL_S,
                     )
             return "virtual emote played (avatar only — not connected to a robot)"
         if target is None:

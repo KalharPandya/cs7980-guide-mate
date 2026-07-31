@@ -244,6 +244,54 @@ def test_physical_emote_unaffected_by_mirror_var(monkeypatch):
     assert "simulated" in out.lower() or "delivered" in out.lower()
 
 
+# --- adversarial-review fix: mirror publishes are rate-limited per robot id so
+# a burst of emotes from multiple concurrent virtual sessions can't spam the
+# one physical mirror robot faster than _EMOTE_MIRROR_MIN_INTERVAL_S. The
+# virtual session's own reply must always succeed regardless of throttling.
+def test_virtual_emote_mirror_rate_limit_skips_second_publish_in_window(monkeypatch):
+    monkeypatch.setenv("GUIDEMATE_EMOTE_MIRROR_ROBOT_ID", "turtlebot468")
+    reg = RecordingRegistry()
+    agent = _agent(reg)
+    fake_now = [100.0]
+    monkeypatch.setattr(dog_agent.time, "monotonic", lambda: fake_now[0])
+
+    out1 = agent._emote_impl("happy", target="turtlebot468",
+                             captured={"emote": None, "acks": []}, physical=False)
+    assert reg.sent == [("turtlebot468", "emote", "happy")]
+    assert "virtual" in out1.lower()
+
+    # 1s later -- still inside the 2.0s window, so the mirror must be skipped,
+    # but the virtual session's own reply must be unaffected.
+    fake_now[0] += 1.0
+    captured2 = {"emote": None, "acks": []}
+    out2 = agent._emote_impl("yes", target="turtlebot468", captured=captured2,
+                             physical=False)
+    assert reg.sent == [("turtlebot468", "emote", "happy")]  # registry not called again
+    assert captured2["emote"] == "yes"
+    assert captured2["acks"] == []
+    assert "virtual" in out2.lower()
+
+
+def test_virtual_emote_mirror_publishes_again_after_window_elapses(monkeypatch):
+    monkeypatch.setenv("GUIDEMATE_EMOTE_MIRROR_ROBOT_ID", "turtlebot468")
+    reg = RecordingRegistry()
+    agent = _agent(reg)
+    fake_now = [200.0]
+    monkeypatch.setattr(dog_agent.time, "monotonic", lambda: fake_now[0])
+
+    agent._emote_impl("happy", target="turtlebot468",
+                      captured={"emote": None, "acks": []}, physical=False)
+    assert reg.sent == [("turtlebot468", "emote", "happy")]
+
+    fake_now[0] += 2.1  # past _EMOTE_MIRROR_MIN_INTERVAL_S
+    agent._emote_impl("no", target="turtlebot468",
+                      captured={"emote": None, "acks": []}, physical=False)
+    assert reg.sent == [
+        ("turtlebot468", "emote", "happy"),
+        ("turtlebot468", "emote", "no"),
+    ]
+
+
 # --- system prompt: user name + last-10-message recap ---
 def test_system_prompt_includes_name_and_history():
     agent = _agent(RecordingRegistry())
