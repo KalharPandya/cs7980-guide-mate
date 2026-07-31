@@ -65,6 +65,9 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   private visitors!: VisitorManager;
   private disposed = false;
 
+  /** Task 5.2: fleet-wide kill switch state -- see pause()/resume() below. */
+  private paused = false;
+
   /**
    * `options.disableSimulatedVisitors` exists purely for test isolation (Task 4.1's
    * requestGuide/no-double-assignment tests want to bind specific known robots without the
@@ -171,6 +174,50 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   }
 
   /**
+   * Task 5.2: fleet-wide kill switch. Freezes the whole simulated world by making
+   * update() skip both the Crowd tick and VisitorManager.tick() every simulation frame
+   * (see update()'s early return below), rather than zeroing every agent's `maxSpeed`.
+   * Skipping the tick is the simpler of the two options this task's brief called out:
+   * zeroing/restoring `maxSpeed` needs per-agent bookkeeping that a newly-spawned agent
+   * DURING a pause could easily miss (it would start unpaused by omission), whereas an
+   * early-return tick freezes every current AND future agent uniformly with zero
+   * per-agent state. It also freezes the simulated-visitor spawner/lifecycle for free
+   * (dwell timers, escort trailing) instead of leaving it running while agents don't
+   * move -- a half-frozen world -- which is why VisitorManager.tick() is called from
+   * inside the same guarded update(), not separately.
+   *
+   * Triggered by a fleet-scoped `stop` Command (type="stop", name="stop") arriving on
+   * the fleet MQTT topic -- see world/src/iot/bridge.ts's `handleFleetStop` for the wire
+   * format and world design decision, and agent_service/guidemate_agent/admin.py's
+   * `POST /api/admin/world/stop` for the admin entry point.
+   *
+   * Idempotent: pausing an already-paused room is a no-op, not an error -- a retried
+   * admin call or a duplicate at-least-once MQTT delivery must never throw.
+   */
+  pause(): void {
+    this.paused = true;
+  }
+
+  /**
+   * The resume counterpart to pause() -- see pause()'s doc comment for why this is an
+   * early-return flag flip rather than restoring per-agent speeds, and
+   * world/src/iot/bridge.ts's `handleFleetStop` for the wire-level trigger: the SAME
+   * `type="stop"`/`name="stop"` Command, distinguished by `params.resume === true`,
+   * rather than a new Command type/name (Task 5.2 design decision; see that file for
+   * the full reasoning and agent_service/guidemate_agent/admin.py's
+   * `POST /api/admin/world/resume` for the admin entry point). Also idempotent.
+   */
+  resume(): void {
+    this.paused = false;
+  }
+
+  /** Read-only for tests/the bridge -- lets a caller confirm the world is actually
+   * frozen without reaching into the private `paused` field. */
+  get isPaused(): boolean {
+    return this.paused;
+  }
+
+  /**
    * Resolves `roomNameOrCoords` (a room name/alias via Task 1.1's `findRoomTarget`, or a
    * literal nav-space `{x, z}` point) and requests the crowd agent `agentId` move there.
    * Returns `false` (and logs why) if the agent id is unknown or the target can't be
@@ -257,8 +304,15 @@ export class WorldRoom extends Room<{ state: WorldState }> {
    * Public (not just wired via setSimulationInterval) so tests can drive deterministic,
    * wall-clock-free simulated time by calling this directly with a synthetic deltaMs
    * instead of waiting on Colyseus's real interval timer.
+   *
+   * Task 5.2: while paused, this is a complete no-op -- no Crowd tick, no schema sync,
+   * no VisitorManager.tick() -- so every agent's position/state/route and every
+   * spawner/escort timer is frozen exactly where it was. See pause()'s doc comment for
+   * why an early return (vs. zeroing per-agent speed) was chosen.
    */
   update(deltaMs: number): void {
+    if (this.paused) return;
+
     const dtSeconds = Math.min(deltaMs / 1000, MAX_TICK_SECONDS);
     const snapshots = this.crowd.tick(dtSeconds);
 

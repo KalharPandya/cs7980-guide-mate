@@ -87,6 +87,11 @@ class FakeWorldRoom implements WorldRoomLike {
   addAgentCalls: { id: string; kind: "robot" | "visitor"; spawn: { x: number; z: number } }[] = [];
   entrancePoint = { x: 0, z: 0 };
 
+  // ---- Task 5.2 test hooks: fleet-wide pause/resume ----
+  pauseCalls = 0;
+  resumeCalls = 0;
+  paused = false;
+
   moveAgentTo(agentId: string, target: string | { x: number; z: number }): boolean {
     this.moveCalls.push({ agentId, target });
     if (this.moveResult && !this.state.agents.has(agentId)) {
@@ -112,6 +117,16 @@ class FakeWorldRoom implements WorldRoomLike {
   getEntrancePoint(): { x: number; z: number } {
     return this.entrancePoint;
   }
+
+  pause(): void {
+    this.pauseCalls++;
+    this.paused = true;
+  }
+
+  resume(): void {
+    this.resumeCalls++;
+    this.paused = false;
+  }
 }
 
 function navigateCmd(cmdId: string, room = "Classroom 1425"): Command {
@@ -130,6 +145,16 @@ function assignCmd(cmdId: string, visitorId: string, room = "Classroom 1425"): C
     type: "assign",
     name: "assign",
     params: { visitor_id: visitorId, room },
+    ts: new Date().toISOString(),
+  };
+}
+
+function fleetStopCmd(cmdId: string, params: Record<string, unknown> = {}): Command {
+  return {
+    cmd_id: cmdId,
+    type: "stop",
+    name: "stop",
+    params,
     ts: new Date().toISOString(),
   };
 }
@@ -590,6 +615,84 @@ async function main(): Promise<void> {
     assert.deepEqual(room.requestGuideCalls, [{ visitorId: "visitor-7", target: "Classroom 1425" }]);
     assert.deepEqual(client.acksFor("cmd-a7"), ["received", "done"]);
     console.log("PASS: the fleet topic is never misrouted through the per-robot extractRobotId path");
+  }
+
+  // ==================================================================================
+  // Task 5.2: fleet-scoped `stop` command = pause/resume the whole world
+  // ==================================================================================
+
+  // ---- a bare `stop` on the fleet topic (no params) pauses the room, acks done ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(fleetStopCmd("cmd-s1")));
+
+    assert.equal(room.pauseCalls, 1, "a bare fleet stop must call room.pause() exactly once");
+    assert.equal(room.resumeCalls, 0, "a bare fleet stop must never call room.resume()");
+    assert.deepEqual(client.acksFor("cmd-s1"), ["received", "done"]);
+    for (const { topic } of client.published) {
+      assert.equal(topic, fleetStatusTopic(), "fleet stop acks must publish on the fleet status topic");
+    }
+    console.log("PASS: a bare fleet stop (no params) pauses the room and acks received -> done");
+  }
+
+  // ---- a `stop` on the fleet topic with params.resume === true resumes the room ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(fleetStopCmd("cmd-s2", { resume: true })));
+
+    assert.equal(room.resumeCalls, 1, "stop with params.resume=true must call room.resume() exactly once");
+    assert.equal(room.pauseCalls, 0, "stop with params.resume=true must never call room.pause()");
+    assert.deepEqual(client.acksFor("cmd-s2"), ["received", "done"]);
+    console.log("PASS: fleet stop with params.resume=true resumes the room and acks received -> done");
+  }
+
+  // ---- a truthy-but-not-strictly-true resume param is treated as pause (strict ===
+  // true check, not just truthiness) ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(fleetStopCmd("cmd-s3", { resume: "true" })));
+
+    assert.equal(room.pauseCalls, 1, "a non-boolean-true resume param must fall back to pause");
+    assert.equal(room.resumeCalls, 0);
+    console.log("PASS: fleet stop with a non-strict-true resume param falls back to pause");
+  }
+
+  // ---- no live WorldRoom on a fleet stop -> failed/world_not_ready ----
+  {
+    const client = new FakeMqttClient();
+    const bridge = new IotBridge({ getRoom: () => undefined, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(fleetStopCmd("cmd-s4")));
+
+    assert.deepEqual(client.acksFor("cmd-s4"), ["received", "failed"]);
+    assert.equal(client.published.find((p) => p.payload.state === "failed")!.payload.reason, "world_not_ready");
+    console.log("PASS: no active WorldRoom on a fleet stop acks failed/world_not_ready");
+  }
+
+  // ---- the existing PER-ROBOT `stop` handling must be completely unaffected: it still
+  // always acks failed/unsupported_command_type and never touches pause/resume ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    const perRobotStop: Command = { cmd_id: "cmd-s5", type: "stop", name: "stop", params: {}, ts: "x" };
+    bridge.handleMessage(cmdTopic("virtual/11"), JSON.stringify(perRobotStop));
+
+    assert.deepEqual(client.acksFor("cmd-s5"), ["received", "failed"]);
+    assert.equal(client.published.find((p) => p.payload.state === "failed")!.payload.reason, "unsupported_command_type");
+    assert.equal(room.pauseCalls, 0, "a per-robot stop must never pause the room");
+    assert.equal(room.resumeCalls, 0, "a per-robot stop must never resume the room");
+    console.log("PASS: the existing per-robot `stop` (unsupported_command_type) is unaffected by the fleet-stop feature");
   }
 
   console.log("\nALL PASS: bridge.test.ts");

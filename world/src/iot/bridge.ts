@@ -49,7 +49,15 @@
  * A command type other than `navigate` acks `failed`/"unsupported_command_type" --
  * emote/motion/stop have no meaning for a virtual agent with no physical motor (per the
  * design spec's "virtual fleet has no physical motor" note); wiring those up is future
- * work, not silently dropped.
+ * work, not silently dropped. This is per-robot-topic only: a `stop` on the FLEET topic
+ * means something else entirely -- see Task 5.2's note below.
+ *
+ * ---- Task 5.2: fleet-wide `stop` = pause/resume the whole world ----
+ * A `stop` arriving on the fleet topic (not a per-robot topic) is a DIFFERENT thing: it
+ * freezes/un-freezes the whole simulated world (`WorldRoom.pause`/`resume`), not "stop
+ * this one virtual agent" (which per-robot `stop` still doesn't support, unchanged).
+ * See `handleFleetStop` for the full wire format, including how a `params.resume: true`
+ * overload of the same `stop` command distinguishes resume from pause.
  *
  * ---- multi-robot, one connection ----
  * Unlike the Python bridge (one process = one robot id = one MQTT client identity), this
@@ -95,6 +103,15 @@ export interface WorldRoomLike {
   /** Nav-space entrance point to spawn a fresh real visitor at -- see
    * `WorldRoom.getEntrancePoint`. */
   getEntrancePoint(): { x: number; z: number };
+  /**
+   * Task 5.2: freezes/un-freezes the whole simulated world (the Crowd tick AND the
+   * simulated-visitor spawner/lifecycle -- see `WorldRoom.pause`'s doc comment for why
+   * both are frozen together). Wired to a fleet-scoped `stop` command; see
+   * `handleFleetStop` below for the wire format this bridge overloads to distinguish
+   * pause from resume.
+   */
+  pause(): void;
+  resume(): void;
   state: {
     agents: {
       /** `x`/`z`/`route` are optional in this structural type (a fake test double may
@@ -290,14 +307,20 @@ export class IotBridge {
   }
 
   /**
-   * Task 4.2: handles a command received on the fleet-scoped topic (currently only
-   * `assign` is meaningful there -- see messages.ts's parseCommand). Synchronous, unlike
-   * `navigate`'s received -> running -> (poll) done lifecycle: `requestGuide` picks a
-   * robot and kicks off its move in one call, so this goes straight from `received` to
+   * Task 4.2/5.2: handles a command received on the fleet-scoped topic. Two command
+   * types are meaningful there today: `assign` (Task 4.2) and `stop` (Task 5.2, see
+   * `handleFleetStop` below). Both are synchronous, unlike `navigate`'s
+   * received -> running -> (poll) done lifecycle on the per-robot topic: there is no
+   * async Crowd movement to wait on for either, so both go straight from `received` to
    * a terminal `done`/`failed`, no polling needed.
    */
   private handleFleetCommand(cmd: Command): void {
     this.publishFleetAck(makeAck({ cmd_id: cmd.cmd_id, state: "received", simulated: true }));
+
+    if (cmd.type === "stop") {
+      this.handleFleetStop(cmd);
+      return;
+    }
 
     if (cmd.type !== "assign") {
       this.publishFleetAck(
@@ -348,6 +371,50 @@ export class IotBridge {
         assigned_robot_id: result.robotId,
       }),
     );
+  }
+
+  /**
+   * Task 5.2: fleet-wide kill switch. Reuses the EXISTING `stop` Command
+   * (type="stop", name="stop" -- already valid per messages.ts's parseCommand /
+   * messages.py's pydantic model, no schema change needed) arriving on the FLEET topic
+   * to mean "freeze the whole virtual world" -- completely distinct from a `stop`
+   * arriving on a PER-ROBOT topic (handleCommand() below), which still always acks
+   * failed/"unsupported_command_type" exactly as before this task: a per-robot stop is
+   * unrelated to this fleet-wide pause and is left untouched (see handleCommand's
+   * existing doc comment -- emote/motion/stop have no meaning for a single virtual
+   * agent with no physical motor).
+   *
+   * ---- resume-signal design decision ----
+   * There is no existing generic "resume"/"go" Command type or name in the shared wire
+   * schema (shared/guidemate_msgs/guidemate_msgs/messages.py + this file's messages.ts),
+   * and adding one would mean extending both Literal unions in lockstep for a single
+   * boolean bit of information. Instead this overloads the SAME `type="stop"`/
+   * `name="stop"` command's already-free-form `params` dict (`Command.params: dict` on
+   * the Python side, `Record<string, unknown>` here -- both already accept arbitrary
+   * keys, so no schema change is needed either way):
+   *   - `stop` with no `params.resume` (or any falsy value)  -> PAUSE  (room.pause()).
+   *   - `stop` with `params.resume === true`                 -> RESUME (room.resume()).
+   * This is a slightly unusual overload of "stop" (a command literally named "stop"
+   * un-freezing the world), which is why it's documented here AND at the admin route
+   * that publishes it (agent_service/guidemate_agent/admin.py's `/api/admin/world/stop`
+   * and `/api/admin/world/resume`) rather than left to be inferred from the wire alone.
+   */
+  private handleFleetStop(cmd: Command): void {
+    const room = this.getRoom();
+    if (!room) {
+      this.publishFleetAck(
+        makeAck({ cmd_id: cmd.cmd_id, state: "failed", reason: "world_not_ready", simulated: true }),
+      );
+      return;
+    }
+
+    if (cmd.params.resume === true) {
+      room.resume();
+    } else {
+      room.pause();
+    }
+
+    this.publishFleetAck(makeAck({ cmd_id: cmd.cmd_id, state: "done", simulated: true }));
   }
 
   private publishFleetAck(ack: Ack): void {

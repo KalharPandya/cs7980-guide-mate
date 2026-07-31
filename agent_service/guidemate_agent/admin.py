@@ -205,6 +205,49 @@ def kill_switch(body: KillBody, request: Request, _: bool = Depends(admin_requir
     return {"ok": True, "thing": thing, "desired": desired}
 
 
+# --- virtual-world fleet-wide kill switch (Task 5.2) ----------------------
+# Distinct from the per-robot kill switch above (a PHYSICAL robot's IoT device
+# shadow desired-state) and from /robot/{robot_id}/command's per-robot `stop`
+# (unsupported for a virtual agent -- see world/src/iot/bridge.ts's
+# handleCommand, unchanged by this task): this pair freezes/un-freezes the
+# WHOLE simulated virtual world (every virtual robot AND the simulated-visitor
+# spawner) at once.
+#
+# Reuses the EXISTING `stop` Command (type="stop", name="stop" -- already
+# valid per guidemate_msgs.messages.Command, no schema change) published to
+# the FLEET topic via RobotRegistry.send_fleet_command (Task 4.2's fleet
+# publish path -- already directly reusable, no plumbing added here). The
+# Node world-server's IoT bridge (world/src/iot/bridge.ts's handleFleetStop)
+# is what actually calls WorldRoom.pause()/resume() on receipt.
+#
+# Resume-signal design decision: there is no separate generic "resume"/"go"
+# Command type in the shared wire schema (shared/guidemate_msgs), and adding
+# one just for this single boolean bit would mean extending the Literal
+# unions on both the Python and TypeScript sides. Instead this overloads the
+# SAME `type="stop"`/`name="stop"` command's already-free-form `params` dict:
+# no `resume` key (see /world/stop) = PAUSE; `params={"resume": True}` (see
+# /world/resume) = RESUME. See bridge.ts's handleFleetStop for the receiving
+# side of this decision.
+#
+# One-way-to-safe like /kill-switch: pausing is the default/always-safe
+# action any caller can fire; resuming is a SEPARATE explicit route that is
+# never triggered as a side effect of any other call.
+@router.post("/world/stop")
+def world_stop(request: Request, _: bool = Depends(admin_required)) -> dict:
+    cmd = Command(type="stop", name="stop")
+    acks = request.app.state.registry.send_fleet_command(cmd)
+    log.warning("virtual-world fleet stop (pause) fired")
+    return {"ok": True, "acks": [a.model_dump() for a in acks]}
+
+
+@router.post("/world/resume")
+def world_resume(request: Request, _: bool = Depends(admin_required)) -> dict:
+    cmd = Command(type="stop", name="stop", params={"resume": True})
+    acks = request.app.state.registry.send_fleet_command(cmd)
+    log.warning("virtual-world fleet resume fired")
+    return {"ok": True, "acks": [a.model_dump() for a in acks]}
+
+
 _UNSAFE_KEY_CHARS = re.compile(r"[^A-Za-z0-9._-]")
 
 

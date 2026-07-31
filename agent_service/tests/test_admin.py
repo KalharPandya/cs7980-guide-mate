@@ -6,6 +6,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from itsdangerous import TimestampSigner
 
+from guidemate_msgs.messages import Ack
+
 from guidemate_agent import admin
 from guidemate_agent.store import DEFAULT_FLAGS
 
@@ -31,8 +33,18 @@ class FakeStore:
 
 
 class FakeRegistry:
+    def __init__(self):
+        self.fleet_sent = []  # list of (type, name, params) for Task 5.2's world/stop|resume
+
     def get_status(self, robot_id):
         return {"robot_id": robot_id, "presence": "online", "battery": 0.9}
+
+    def send_fleet_command(self, cmd, timeout_s=5.0):
+        self.fleet_sent.append((cmd.type, cmd.name, dict(cmd.params)))
+        return [
+            Ack(cmd_id=cmd.cmd_id, state="received", simulated=True),
+            Ack(cmd_id=cmd.cmd_id, state="done", simulated=True),
+        ]
 
 
 class FakeKB:
@@ -242,6 +254,40 @@ def test_kill_switch_refuses_to_enable_motion_even_when_authed(monkeypatch):
         assert r2.status_code == 400
         # Nothing was ever written to the shadow.
         assert FakeIotData.last_payload is None
+
+
+def test_world_stop_publishes_fleet_stop_with_no_params(monkeypatch):
+    app = _make_app(monkeypatch)
+    with TestClient(app) as client:
+        resp = client.post("/api/admin/world/stop", headers=_auth_header())
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        assert len(app.state.registry.fleet_sent) == 1
+        cmd_type, cmd_name, params = app.state.registry.fleet_sent[0]
+        assert cmd_type == "stop"
+        assert cmd_name == "stop"
+        assert params == {}, "a bare world/stop must not send a resume param"
+
+
+def test_world_resume_publishes_fleet_stop_with_resume_true(monkeypatch):
+    app = _make_app(monkeypatch)
+    with TestClient(app) as client:
+        resp = client.post("/api/admin/world/resume", headers=_auth_header())
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        assert len(app.state.registry.fleet_sent) == 1
+        cmd_type, cmd_name, params = app.state.registry.fleet_sent[0]
+        assert cmd_type == "stop"
+        assert cmd_name == "stop"
+        assert params == {"resume": True}, "world/resume must overload stop with params.resume=True"
+
+
+def test_world_stop_requires_auth(monkeypatch):
+    app = _make_app(monkeypatch)
+    with TestClient(app) as client:
+        assert client.post("/api/admin/world/stop").status_code == 401
+        assert client.post("/api/admin/world/resume").status_code == 401
+        assert app.state.registry.fleet_sent == [], "unauthenticated calls must not publish anything"
 
 
 def test_kb_upload_list_sync(monkeypatch):

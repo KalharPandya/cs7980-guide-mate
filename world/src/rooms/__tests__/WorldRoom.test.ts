@@ -148,6 +148,65 @@ async function main(): Promise<void> {
   assert.equal(badResult, false, "moveAgentTo should return false for an unresolvable target");
   console.log("PASS: moveAgentTo returns false for an unknown room name");
 
+  // --- Task 5.2: fleet-wide pause/resume -- a paused room's agent positions must stop
+  // advancing across ticks (update() becomes a no-op), and resume() must restore
+  // normal ticking. ---
+  {
+    assert.equal(room.isPaused, false, "room should start unpaused");
+
+    // Send the agent back toward the entrance -- a point distinctly far from where it
+    // settled (the Classroom 1425 door above), so pausing/resuming has real distance to
+    // prove movement stopped/resumed against (re-targeting the same spot it already
+    // converged to would barely move it either way, a weak test).
+    const entranceTarget = { x: plan.entrance.point[0], z: plan.entrance.point[1] };
+    const moveOk = room.moveAgentTo(TEST_AGENT_ID, entranceTarget);
+    assert.ok(moveOk, "moveAgentTo(entrance) before the pause test should succeed");
+
+    room.pause();
+    assert.equal(room.isPaused, true, "pause() should set isPaused true");
+
+    const pausedAgentBefore = state.agents.get(TEST_AGENT_ID)!;
+    const frozenX = pausedAgentBefore.x;
+    const frozenZ = pausedAgentBefore.z;
+    const frozenState = pausedAgentBefore.state;
+    const frozenRouteLen = pausedAgentBefore.route.length;
+
+    // Many ticks -- if update() were not actually skipping the crowd/visitor tick while
+    // paused, a real agent with a live move request would visibly walk during this.
+    for (let i = 0; i < 60; i++) {
+      room.update(TICK_MS);
+    }
+
+    const pausedAgentAfter = state.agents.get(TEST_AGENT_ID)!;
+    assert.equal(pausedAgentAfter.x, frozenX, "agent x must not change while paused");
+    assert.equal(pausedAgentAfter.z, frozenZ, "agent z must not change while paused");
+    assert.equal(pausedAgentAfter.state, frozenState, "agent state must not change while paused");
+    assert.equal(
+      pausedAgentAfter.route.length,
+      frozenRouteLen,
+      "agent route must not change while paused",
+    );
+    console.log("PASS: pause() halts agent position/state/route advancement across many ticks");
+
+    room.resume();
+    assert.equal(room.isPaused, false, "resume() should set isPaused false");
+
+    // After resume, ticking should be able to move the agent again -- walk it a bounded
+    // number of ticks and confirm SOME movement happens (proves update() is no longer
+    // a no-op, without re-testing full convergence, which the earlier block already did).
+    let moved = false;
+    for (let i = 0; i < 60; i++) {
+      room.update(TICK_MS);
+      const agent = state.agents.get(TEST_AGENT_ID)!;
+      if (agent.x !== frozenX || agent.z !== frozenZ) {
+        moved = true;
+        break;
+      }
+    }
+    assert.ok(moved, "resume() should restore normal ticking (agent should move again)");
+    console.log("PASS: resume() restores normal tick advancement after a pause");
+  }
+
   // --- onDispose: must free the WASM-backed crowd/navmesh/query without throwing, and be
   // safe to call more than once (Colyseus disposing a room twice would otherwise be a
   // native double-free, not a soft failure). ---

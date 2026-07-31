@@ -82,6 +82,13 @@ class FakeWorldRoom implements WorldRoomLike {
     return { x: 0, z: 0 };
   }
 
+  // Task 5.2's fleet-stop path is exercised by bridge.test.ts's in-process fakes; this
+  // real-broker round trip only needs `navigate`, so these are minimal stand-ins to
+  // satisfy WorldRoomLike.
+  pause(): void {}
+
+  resume(): void {}
+
   /** Simulates the Crowd actually moving the agent over a couple of ticks, for a test
    * that doesn't want to pull in a real navmesh -- see the file header. */
   async simulateArrival(agentId: string): Promise<void> {
