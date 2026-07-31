@@ -282,11 +282,142 @@ Acceptance: browser preview showing agents move smoothly (not choppy/snapping) w
 moves Task 1.2's test agent, with a visible glowing route line during motion.
 
 ### Phase 4 — Moses control, simulated visitors, phone controller
-(Not detailed task-by-task yet -- expand this section once Phases 0-3 are committed and
-reviewed, since Phase 4 design may shift based on what's actually built. Rough shape from the
-design spec: server-side simulated-visitor spawner in `WorldRoom`; a Moses agent tool that calls
-the same command path as Task 2.3's bridge; reuse of the existing Moses chat frontend for the
-phone controller with a QR join flow.)
+
+Expanded 2026-07-31 (controller), after verifying Phases 0-3 are done and reviewed, and after
+researching the actual existing Moses agent-tool and chat-frontend architecture (not just the
+design spec's rough sketch). Ground truth that shapes the tasks below:
+- Moses tools are built per-turn as Strands `@tool` closures in `DogAgent._build_tools()`
+  (`agent_service/guidemate_agent/dog_agent.py`), each backed by a plain `_impl` method that
+  calls `RobotRegistry.send_command(robot_id, Command)`. A new tool follows this exact pattern.
+- Visitor/phone sessions are already anonymous and cookie-free: `POST /api/session` mints a
+  `session_id`, stored in the `guidemate-sessions` DynamoDB table and in the browser's
+  `localStorage`; the chat frontend (`agent_service/static/`, plain JS, no framework) opens
+  `wss://.../ws/chat/{session_id}`. This is the identity a virtual-visitor binding hooks into --
+  no new auth surface needed.
+- Real-robot assignment today is admin-approved (`sessions.py`'s `acquire_robot_lock`/
+  `approve_request`), one robot per session. The virtual fleet has NO such scarcity (up to ~50
+  robots, no safety risk), so virtual assignment does NOT need an admin approval step -- it can
+  be immediate, Moses-initiated.
+- **New wire-protocol decision (locking this in so 4.2's implementer doesn't have to invent it):**
+  robot-addressed commands (`goto` under `type="navigate"`, emotes, motion, stop) stay exactly as
+  they are -- symmetric with the real robot, one topic per robot id. But "assign an idle robot to
+  a visitor" is NOT robot-addressed (nobody knows which robot yet) and has no real-robot
+  equivalent (the design spec is explicit: the physical robot stays emotes-only, it never receives
+  visitor-escort commands) -- so this does NOT go through per-robot topics or a `navigate`-family
+  name. Add a new top-level `Command.type` value `"assign"` (name always `"assign"`, mirroring how
+  `stop`'s name is always `"stop"`; `params` = `{"visitor_id": str, "room": str}`), published to a
+  new FLEET-scoped topic (not per-robot): `guidemate/virtual/fleet/cmd`, status acked on
+  `guidemate/virtual/fleet/status`. Add `fleet_cmd_topic()`/`fleet_status_topic()` helpers next to
+  the existing `cmd_topic()`/`status_topic()` in `shared/guidemate_msgs/guidemate_msgs/messages.py`
+  (don't overload the per-robot ones with a fake robot id like `"fleet"` -- that would silently
+  satisfy Task 2.2's `guidemate/virtual/*` IAM scope by accident, which is fine, but a named helper
+  is clearer than a magic string). Task 2.3's bridge subscribes to this fleet topic in addition to
+  its existing per-robot wildcard.
+
+**Task 4.1 -- Server-side simulated visitor spawner + guide-assignment in WorldRoom**
+(depends on 1.2, done; independent of 2.3/4.2/4.3; touches `world/src/rooms/WorldRoom.ts` and a
+new `world/src/rooms/visitors.ts`)
+Files: `world/src/rooms/visitors.ts` (spawner + assignment bookkeeping), `WorldRoom.ts` (extend,
+don't rewrite -- add the public method below and wire the spawner into `onCreate`/`update`).
+Requirements:
+- A `requestGuide(visitorId: string, roomNameOrCoords: string | RoomTarget): { robotId: string } | null`
+  method on `WorldRoom`: picks the nearest currently-idle `kind: "robot"` agent (idle = not
+  already escorting anyone; reuse the existing idle/moving `state` concept from Task 1.2, plus a
+  new escort-binding map, don't infer idleness from speed alone since a robot could be
+  momentarily stationary mid-route), binds that robot to the visitor (a `Map<visitorId, robotId>`
+  and reverse map so a robot can't be double-assigned), calls `moveAgentTo(robotId, target)` for
+  the robot, and makes the visitor's own Crowd agent follow: simplest correct approach is the
+  visitor's Crowd target is periodically (e.g. every tick or every N ticks) re-set to a point a
+  fixed trailing distance behind the robot's current position along its heading -- don't attempt
+  literal path-following/queueing, a trailing offset reads fine at demo distance. Returns `null`
+  if no robot is idle (caller decides what that means -- for 4.2 that's a `failed` ack).
+- Un-bind on arrival (robot reaches the room door) or timeout: robot returns to idle, visitor
+  either despawns (simulated) or stays put (real, waiting for the next Moses instruction) --
+  distinguish simulated vs real visitors with a boolean/enum on the visitor record, not a second
+  parallel data structure.
+- Simulated-visitor spawner: maintain ~45 concurrent simulated visitors. On spawn: create a
+  visitor agent at the entrance (reuse `addAgent`), pick a random room, call `requestGuide`
+  internally (same code path a real Moses-driven assign would use -- don't duplicate the
+  assignment logic for the simulated case). On arrival at the room: wait a short randomized dwell
+  time, then walk back to the entrance and despawn (remove from `state.agents` and the crowd),
+  freeing a spawn slot for a fresh visitor. Stagger initial spawns (don't spawn all 45 in the same
+  tick).
+- This task does NOT touch IoT/MQTT at all -- `requestGuide` is a plain TypeScript method Task
+  4.2's bridge will call; test it directly, no network involved.
+Test: integration test that (a) spawns N simulated visitors and asserts the concurrent count
+converges to and stays near the ~45 target over simulated time without ever exceeding available
+idle robots (spawn 50 test robots first), (b) calls `requestGuide` directly with a known visitor
+and room, advances simulated ticks, and asserts the assigned robot's position converges toward
+the room door AND the visitor's position trails behind it (not identical, not stationary), (c)
+asserts `requestGuide` returns `null` and does not crash when every robot is already escorting.
+Acceptance: tests pass; report the measured steady-state visitor count and confirm no
+double-assignment (a robot escorting two visitors, or a visitor with no robot after a successful
+`requestGuide` call) across a sustained run.
+
+**Task 4.2 -- Moses guide-visitor tool + fleet `assign` command + bridge routing**
+(depends on 4.1 and Task 2.3 both done; touches `shared/guidemate_msgs/guidemate_msgs/messages.py`
+[SHARED FILE -- do not parallelize with anything else touching it], `world/src/iot/bridge.ts`
+[extend, don't rewrite], `agent_service/guidemate_agent/dog_agent.py`)
+Files as above.
+Requirements:
+- `messages.py`: add `"assign"` to `Command.type`'s `Literal`, validated the same way `stop` is
+  (name must be exactly `"assign"`; `params` must contain `visitor_id: str` and `room: str`,
+  reusing `_is_number`/string-check helpers as appropriate). Add `fleet_cmd_topic()` ->
+  `"guidemate/virtual/fleet/cmd"` and `fleet_status_topic()` -> `"guidemate/virtual/fleet/status"`
+  next to the existing topic helpers. Prove `emote`/`motion`/`stop`/`navigate` still validate
+  exactly as before (copy/adapt existing tests) plus new `assign` cases (valid, missing
+  visitor_id, missing room, wrong types).
+- `world/src/iot/bridge.ts`: subscribe to the new fleet topic in addition to the existing
+  per-robot wildcard from Task 2.3. On a valid `assign` command, call `WorldRoom.requestGuide`
+  (Task 4.1), ack `received` then `done` (include the assigned `robot_id` in the ack -- `Ack` has
+  no such field today, so add an optional field to the shared `Ack` schema the same way `battery`/
+  `gates` are optional, e.g. `assigned_robot_id: Optional[str]`, mirrored in the TS ack type) or
+  `failed` (`reason="no_idle_robot"`) if `requestGuide` returned `null`.
+- `dog_agent.py`: a new tool, following the exact `_build_tools`/`_impl` pattern of `run_motion`/
+  `send_emote` -- e.g. `guide_to_room(room: str) -> str`. Unlike existing tools, this is NOT
+  robot-id-targeted (no `target` closure variable) -- it needs the CALLER's own visitor identity.
+  Add a `visitor_id` concept to sessions mirroring how `robot_id` binding already works in
+  `sessions.py` (a session either has no visitor binding yet -- first `guide_to_room` call creates
+  one, calling `WorldRoom`'s spawn-a-real-visitor path via the fleet `assign` command with a
+  fresh `visitor_id`, no admin approval needed per the ground-truth note above -- or reuses its
+  existing binding on subsequent calls). Gate this tool into `_enabled_tool_names()`/system-prompt
+  instructions the same way other tools are gated; decide (and document your reasoning) whether it
+  should be offered to `physical=True` sessions (already have a real robot) as well as virtual
+  ones, or virtual-only -- the design spec's "physical robot stays emotes-only" suggests
+  virtual-only, but confirm by re-reading `_enabled_tool_names`'s existing gating logic before
+  deciding, don't guess.
+Test: unit tests for the new `messages.py` validation cases; unit tests for the bridge's fleet-
+topic handling (mocked MQTT, same pattern as Task 2.3's tests); a `dog_agent` test that the new
+tool builds the right `Command` and calls the registry with it (mirroring how existing tool tests
+in `agent_service/tests` check `run_motion`/`send_emote`).
+Acceptance: `pytest shared/guidemate_msgs/tests` and `pytest agent_service/tests` green including
+new cases; a manual or gated round-trip (chat message asking to be guided somewhere -> `assign`
+command observed on the fleet topic -> a robot visibly moves in `WorldRoom` state) documented in
+your report.
+
+**Task 4.3 -- Phone controller: QR join + visitor avatar binding**
+(depends on 4.2's session/visitor_id concept; independent of the 3D rendering side, so the
+front-end plumbing can start once 4.2's `visitor_id`-on-session shape is settled, even before 4.2
+fully lands -- coordinate with the controller if picking this up before 4.2 is committed)
+Files: `agent_service/app.py` (new route), a new lightweight QR endpoint, `agent_service/static/`
+(extend `chat.js`/`index.html`/`chat.css`, don't rewrite).
+Requirements:
+- A `GET /api/join-qr` (or similar) endpoint that returns a QR code image (SVG or PNG -- pick a
+  small, already-common Python QR library, don't hand-roll QR encoding) encoding the existing
+  chat page's URL. This is for the big-screen/admin display to show, not the phone.
+- Chat frontend: no new page needed -- the EXISTING `/` chat page already does anonymous
+  `POST /api/session` on load (per the research above). The only new behavior: once a session's
+  first `guide_to_room` tool call succeeds (server-side, via 4.2), the visitor now has a
+  `visitor_id` bound to their `session_id`; surface this back to the phone UI (e.g. in the chat
+  response metadata, or a small `GET /api/session/{id}` status poll) as a short "you're visitor on
+  the big screen" banner. Don't build a separate join flow if the existing anonymous session
+  already IS the join flow -- verify this assumption is right before building extra plumbing, and
+  report if it's not (e.g. if the WS message shape can't carry this without a breaking change).
+Test: a Playwright e2e (repo already has an `e2e` pytest marker gated on `GUIDEMATE_E2E=1`, per
+`conftest.py` -- follow that existing pattern) that loads the chat page, sends a "take me to room
+X" style message, and asserts the visitor-bound banner appears. Keep this ONE test.
+Acceptance: e2e test passes (or is properly gated/documented if it can't run headless in this
+environment); QR endpoint returns a valid, scannable code pointing at the right URL.
 
 ### Phase 5 — Polish and demo hardening
 (Not detailed yet -- expand after Phase 4. Rough shape from the design spec: deploy world-server
@@ -303,3 +434,9 @@ wiring, physical-robot emote mirroring, rehearsal, risk register.)
 - Never parallelize two tasks that both touch `shared/guidemate_msgs/guidemate_msgs/messages.py`,
   `world/src/rooms/WorldRoom.ts`, or `world/data/floor-14.json` -- these are the shared-state
   files in this plan.
+- Phase 4: 4.1 touches `WorldRoom.ts` -- do not run it in parallel with anything else touching
+  that file (including any leftover review-only temp edits; confirm `git status` is clean on it
+  first). 4.2 depends on 4.1 AND 2.3, and touches `messages.py` again -- sequential, not parallel,
+  with anything else touching that file. 4.3 depends on 4.2's `visitor_id` shape but its frontend
+  files are disjoint from 4.1/4.2's, so it can start once that shape is settled even if 4.2's
+  bridge/tool code is still being reviewed.
