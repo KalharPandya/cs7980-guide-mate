@@ -74,3 +74,21 @@ during Task 3.2/3.3 cleanup. Kept here only as historical context; nothing to re
   conflicting rows. Dispatched research into the existing Moses agent-tool and chat-frontend
   architecture to ground Phase 4's detailed task breakdown. Dispatching Task 2.3 (MQTT bridge)
   implementer since it's unblocked and doesn't need #9 applied to be built and gate-tested.
+- 2026-07-31 (continued): Phase 4 completed (4.1, 4.2, 4.3 all done and reviewed, commits
+  `1876b95`/`ae3b2e0`/`a871b05`). Task 4.3's own e2e testing surfaced a real production bug Task
+  4.2 introduced: the WS chat production path's `CaptureRegistry` never got a `send_fleet_command`
+  method, so every real "take me to room X" chat request silently failed (`AttributeError`,
+  swallowed, generic apology reply) — `guide_to_room` never actually dispatched a robot in
+  production despite passing all of Task 4.2's own tests (which used a purpose-built fake, never
+  `CaptureRegistry`). Fixed in commit `578ed12`, which also found and fixed a second real bug
+  (`FakeRobotRegistry` missing a `collect_all` kwarg, breaking the `GUIDEMATE_FAKE_ROBOT=1` demo
+  path specifically). Phase 5 detailed and started: 5.4 (kiosk mode) done+reviewed, commit
+  `52d9138`. 5.2 (fleet kill-switch) and 5.3 (emote mirroring) in flight. **Process note**: the
+  578ed12 fix agent used a bare `git stash`/`git stash pop` on this shared worktree mid-task
+  (against the project's own git-discipline rule for shared worktrees) to get a clean diff view;
+  it reports a clean round-trip with no data loss, verified by the controller afterward (repo
+  history sane, other agents' concurrent uncommitted work intact) — flagging here as a reminder
+  this keeps recurring under time pressure, not because it caused damage this time. Also noted:
+  running many agents' full test suites concurrently in this one worktree causes real memory
+  contention (one agent got OOM-killed mid-run) — worth throttling parallel full-suite runs in
+  future dispatches rather than always running everything in parallel.
