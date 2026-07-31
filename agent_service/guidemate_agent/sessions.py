@@ -68,6 +68,7 @@ def create_session(name: str, comfortable: bool) -> str:
             "status": "active",
             "request_status": "none",
             "robot_id": None,
+            "visitor_id": None,
         }
     )
     return session_id
@@ -91,6 +92,7 @@ def ensure_session(session_id: str, name: str) -> None:
                 "status": "active",
                 "request_status": "none",
                 "robot_id": None,
+                "visitor_id": None,
             },
             ConditionExpression="attribute_not_exists(session_id)",
         )
@@ -224,6 +226,22 @@ def robot_for_session(session_id: str) -> Optional[str]:
     if get_lock_holder(robot_id) == session_id:
         return robot_id
     return None
+
+
+# ------------------------------------------------------------- visitor id ----
+# Task 4.2: the virtual-fleet counterpart of the robot_id/robot-lock binding above, but
+# deliberately much simpler -- the virtual fleet has no scarcity to arbitrate (up to
+# ~50 robots, no physical safety risk), so a visitor_id needs neither an approval
+# workflow nor a per-robot lock table, just a plain attribute on the session row.
+def bind_visitor(session_id: str, visitor_id: str) -> None:
+    _update_session(session_id, visitor_id=visitor_id)
+
+
+def visitor_for_session(session_id: str) -> Optional[str]:
+    session = get_session(session_id)
+    if not session:
+        return None
+    return session.get("visitor_id") or None
 
 
 # ------------------------------------------------------------ orchestration ----

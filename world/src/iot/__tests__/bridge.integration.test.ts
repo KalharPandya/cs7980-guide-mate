@@ -69,6 +69,19 @@ class FakeWorldRoom implements WorldRoomLike {
     return true;
   }
 
+  // Task 4.2's assign path is exercised by bridge.test.ts's in-process fakes; this
+  // real-broker round trip only needs `navigate`, so these are minimal stand-ins to
+  // satisfy WorldRoomLike.
+  requestGuide(): { robotId: string } | null {
+    return null;
+  }
+
+  addAgent(): void {}
+
+  getEntrancePoint(): { x: number; z: number } {
+    return { x: 0, z: 0 };
+  }
+
   /** Simulates the Crowd actually moving the agent over a couple of ticks, for a test
    * that doesn't want to pull in a real navmesh -- see the file header. */
   async simulateArrival(agentId: string): Promise<void> {

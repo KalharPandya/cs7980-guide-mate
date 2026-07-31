@@ -103,6 +103,20 @@ def test_fake_robot_registry_status_and_acks():
     assert acks[-1].simulated is True
 
 
+def test_fake_robot_registry_send_fleet_command_simulates_assign():
+    from guidemate_agent.fakes import FakeRobotRegistry
+    from guidemate_msgs.messages import Command
+
+    reg = FakeRobotRegistry(["turtlebot468"])
+    cmd = Command(type="assign", name="assign", params={"visitor_id": "v", "room": "Kitchen"})
+
+    acks = reg.send_fleet_command(cmd)
+
+    assert [a.state for a in acks] == ["received", "done"]
+    assert acks[-1].assigned_robot_id
+    assert ("(fleet)", "assign", "assign") in reg.sent
+
+
 def test_admin_ui_served_and_router_mounted(monkeypatch):
     monkeypatch.setenv("GUIDEMATE_FAKE_ROBOT", "1")
     monkeypatch.setenv("GUIDEMATE_ADMIN_PASSWORD", "secret")

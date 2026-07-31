@@ -8,6 +8,8 @@ from guidemate_msgs.messages import (
     Command,
     Heartbeat,
     cmd_topic,
+    fleet_cmd_topic,
+    fleet_status_topic,
     new_cmd_id,
     status_topic,
 )
@@ -135,6 +137,58 @@ def test_motion_accepts_dock_and_undock_roundtrip():
         assert restored == cmd
         assert restored.type == "motion"
         assert restored.name == name
+
+
+def test_command_accepts_valid_assign():
+    cmd = Command(type="assign", name="assign", params={"visitor_id": "visitor-1", "room": "Classroom 1425"})
+    assert cmd.type == "assign"
+    assert cmd.name == "assign"
+    assert cmd.params == {"visitor_id": "visitor-1", "room": "Classroom 1425"}
+    restored = Command.model_validate_json(cmd.model_dump_json())
+    assert restored == cmd
+
+
+def test_command_assign_rejects_bad_name():
+    with pytest.raises(ValidationError):
+        Command(type="assign", name="dispatch", params={"visitor_id": "v", "room": "r"})
+
+
+def test_command_assign_requires_visitor_id():
+    with pytest.raises(ValidationError):
+        Command(type="assign", name="assign", params={"room": "Classroom 1425"})
+
+
+def test_command_assign_requires_room():
+    with pytest.raises(ValidationError):
+        Command(type="assign", name="assign", params={"visitor_id": "visitor-1"})
+
+
+def test_command_assign_rejects_non_string_visitor_id():
+    with pytest.raises(ValidationError):
+        Command(type="assign", name="assign", params={"visitor_id": 123, "room": "Classroom 1425"})
+
+
+def test_command_assign_rejects_non_string_room():
+    with pytest.raises(ValidationError):
+        Command(type="assign", name="assign", params={"visitor_id": "visitor-1", "room": 1425})
+
+
+def test_command_assign_rejects_empty_params():
+    with pytest.raises(ValidationError):
+        Command(type="assign", name="assign", params={})
+
+
+def test_fleet_topic_helpers():
+    assert fleet_cmd_topic() == "guidemate/virtual/fleet/cmd"
+    assert fleet_status_topic() == "guidemate/virtual/fleet/status"
+
+
+def test_ack_assigned_robot_id_default_none_and_roundtrip():
+    ack = Ack(cmd_id="a", state="done")
+    assert ack.assigned_robot_id is None
+    ack2 = Ack(cmd_id="a", state="done", assigned_robot_id="virtual/3")
+    restored = Ack.model_validate_json(ack2.model_dump_json())
+    assert restored.assigned_robot_id == "virtual/3"
 
 
 def test_heartbeat_defaults_and_roundtrip():

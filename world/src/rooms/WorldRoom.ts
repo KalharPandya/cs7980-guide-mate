@@ -148,6 +148,21 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     return this.visitors.requestGuide(visitorId, roomNameOrCoords);
   }
 
+  /**
+   * Task 4.2: nav-space entrance point, for a caller (the IoT bridge's fleet `assign`
+   * handler) that needs to spawn a brand-new "real" visitor agent via `addAgent` before
+   * calling `requestGuide` -- `requestGuide` itself requires `visitorId` to already be a
+   * tracked agent (see `VisitorManager.requestGuide`'s doc comment: it only lazily
+   * creates the bookkeeping record, not the Crowd/schema agent), so a caller assigning a
+   * visitor the room has never seen before must add it first. Returns the same point
+   * `onCreate`'s seed robot and the simulated-visitor spawner (`visitors.ts`) already
+   * spawn at, so a freshly-assigned real visitor starts in the same place a simulated
+   * one would.
+   */
+  getEntrancePoint(): { x: number; z: number } {
+    return { x: this.plan.entrance.point[0], z: this.plan.entrance.point[1] };
+  }
+
   /** Read-only escort/spawner counters for tests and ops visibility -- see
    * `VisitorDebugStats`'s doc comments for what each field means and the invariants it's
    * meant to let a caller check (e.g. `escortedVisitors === robotBindings`). */

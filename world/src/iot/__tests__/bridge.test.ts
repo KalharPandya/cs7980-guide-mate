@@ -17,7 +17,15 @@ import {
   type WorldRoomLike,
   type MqttClientLike,
 } from "../bridge.js";
-import { cmdTopic, statusTopic, parseCommand, type Ack, type Command } from "../messages.js";
+import {
+  cmdTopic,
+  statusTopic,
+  fleetCmdTopic,
+  fleetStatusTopic,
+  parseCommand,
+  type Ack,
+  type Command,
+} from "../messages.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -73,6 +81,12 @@ class FakeWorldRoom implements WorldRoomLike {
    * resolveIfAlreadyArrived() has something to read back for a room-name command. */
   nextRoomTargetRoute: [number, number] | undefined;
 
+  // ---- Task 4.2 test hooks: requestGuide/addAgent/getEntrancePoint ----
+  requestGuideResult: { robotId: string } | null = { robotId: "virtual/1" };
+  requestGuideCalls: { visitorId: string; target: unknown }[] = [];
+  addAgentCalls: { id: string; kind: "robot" | "visitor"; spawn: { x: number; z: number } }[] = [];
+  entrancePoint = { x: 0, z: 0 };
+
   moveAgentTo(agentId: string, target: string | { x: number; z: number }): boolean {
     this.moveCalls.push({ agentId, target });
     if (this.moveResult && !this.state.agents.has(agentId)) {
@@ -84,6 +98,20 @@ class FakeWorldRoom implements WorldRoomLike {
     }
     return this.moveResult;
   }
+
+  requestGuide(visitorId: string, target: string | { x: number; z: number }): { robotId: string } | null {
+    this.requestGuideCalls.push({ visitorId, target });
+    return this.requestGuideResult;
+  }
+
+  addAgent(id: string, kind: "robot" | "visitor", spawn: { x: number; z: number }): void {
+    this.addAgentCalls.push({ id, kind, spawn });
+    this.state.agents.set(id, { state: "idle", x: spawn.x, z: spawn.z });
+  }
+
+  getEntrancePoint(): { x: number; z: number } {
+    return this.entrancePoint;
+  }
 }
 
 function navigateCmd(cmdId: string, room = "Classroom 1425"): Command {
@@ -92,6 +120,16 @@ function navigateCmd(cmdId: string, room = "Classroom 1425"): Command {
     type: "navigate",
     name: "goto",
     params: { room },
+    ts: new Date().toISOString(),
+  };
+}
+
+function assignCmd(cmdId: string, visitorId: string, room = "Classroom 1425"): Command {
+  return {
+    cmd_id: cmdId,
+    type: "assign",
+    name: "assign",
+    params: { visitor_id: visitorId, room },
     ts: new Date().toISOString(),
   };
 }
@@ -418,6 +456,140 @@ async function main(): Promise<void> {
 
     bridge.stop();
     console.log("PASS: a new navigate for the same robot supersedes an in-flight one");
+  }
+
+  // ==================================================================================
+  // Task 4.2: fleet-scoped `assign` command handling
+  // ==================================================================================
+
+  // ---- fleet topic constants + start() subscribes to both filters ----
+  {
+    assert.equal(fleetCmdTopic(), "guidemate/virtual/fleet/cmd");
+    assert.equal(fleetStatusTopic(), "guidemate/virtual/fleet/status");
+
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+    bridge.start();
+    client.emitEvent("connect");
+
+    assert.ok(client.subscriptions.includes("guidemate/virtual/+/cmd"), "must keep the existing per-robot wildcard subscription");
+    assert.ok(client.subscriptions.includes(fleetCmdTopic()), "must additionally subscribe to the fleet topic");
+    bridge.stop();
+    console.log("PASS: fleet topic helpers + start() subscribes to both the per-robot wildcard and the fleet topic");
+  }
+
+  // ---- valid assign for a brand-new visitor: spawns the visitor, calls requestGuide,
+  // acks received -> done on the FLEET status topic, with assigned_robot_id ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    room.requestGuideResult = { robotId: "virtual/7" };
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(assignCmd("cmd-a1", "visitor-1", "Kitchen")));
+
+    assert.deepEqual(room.addAgentCalls, [{ id: "visitor-1", kind: "visitor", spawn: room.entrancePoint }],
+      "a brand-new visitor_id must be spawned at the entrance before requestGuide");
+    assert.deepEqual(room.requestGuideCalls, [{ visitorId: "visitor-1", target: "Kitchen" }]);
+    assert.deepEqual(client.acksFor("cmd-a1"), ["received", "done"]);
+    for (const { topic, payload } of client.published) {
+      assert.equal(topic, fleetStatusTopic(), "assign acks must publish on the fleet status topic, not a per-robot one");
+      if (payload.cmd_id === "cmd-a1" && payload.state === "done") {
+        assert.equal(payload.assigned_robot_id, "virtual/7");
+      }
+    }
+    console.log("PASS: valid assign for a new visitor spawns it, calls requestGuide, acks received -> done with assigned_robot_id");
+  }
+
+  // ---- assign for a visitor that already exists: addAgent must NOT be called again ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    room.state.agents.set("visitor-2", { state: "idle", x: 1, z: 2 });
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(assignCmd("cmd-a2", "visitor-2")));
+
+    assert.equal(room.addAgentCalls.length, 0, "an already-tracked visitor must not be re-spawned");
+    assert.deepEqual(room.requestGuideCalls, [{ visitorId: "visitor-2", target: "Classroom 1425" }]);
+    assert.deepEqual(client.acksFor("cmd-a2"), ["received", "done"]);
+    console.log("PASS: assign for an already-tracked visitor does not re-spawn it");
+  }
+
+  // ---- requestGuide returns null (no idle robot) -> failed/no_idle_robot ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    room.requestGuideResult = null;
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(assignCmd("cmd-a3", "visitor-3")));
+
+    assert.deepEqual(client.acksFor("cmd-a3"), ["received", "failed"]);
+    const failedAck = client.published.find((p) => p.payload.cmd_id === "cmd-a3" && p.payload.state === "failed")!.payload;
+    assert.equal(failedAck.reason, "no_idle_robot");
+    assert.equal(failedAck.assigned_robot_id, null);
+    console.log("PASS: requestGuide returning null acks failed/no_idle_robot");
+  }
+
+  // ---- no live WorldRoom -> failed/world_not_ready, visitor never spawned ----
+  {
+    const client = new FakeMqttClient();
+    const bridge = new IotBridge({ getRoom: () => undefined, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(assignCmd("cmd-a4", "visitor-4")));
+
+    assert.deepEqual(client.acksFor("cmd-a4"), ["received", "failed"]);
+    assert.equal(client.published.find((p) => p.payload.state === "failed")!.payload.reason, "world_not_ready");
+    console.log("PASS: no active WorldRoom on the fleet topic acks failed/world_not_ready");
+  }
+
+  // ---- a non-assign command type on the fleet topic -> failed/unsupported_command_type ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    const emote: Command = { cmd_id: "cmd-a5", type: "emote", name: "happy", params: {}, ts: "x" };
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(emote));
+
+    assert.deepEqual(client.acksFor("cmd-a5"), ["received", "failed"]);
+    assert.equal(client.published.find((p) => p.payload.state === "failed")!.payload.reason, "unsupported_command_type");
+    assert.equal(room.requestGuideCalls.length, 0);
+    assert.equal(room.addAgentCalls.length, 0);
+    console.log("PASS: non-assign command types on the fleet topic ack failed/unsupported_command_type");
+  }
+
+  // ---- invalid assign payload (missing visitor_id) on the fleet topic: dropped
+  // silently, exactly like an invalid per-robot command ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify({ cmd_id: "cmd-a6", type: "assign", name: "assign", params: { room: "Kitchen" } }));
+
+    assert.equal(client.published.length, 0, "no ack should be published for an invalid assign payload");
+    assert.equal(room.requestGuideCalls.length, 0);
+    assert.equal(room.addAgentCalls.length, 0);
+    console.log("PASS: invalid assign payload (missing visitor_id) on the fleet topic is dropped silently");
+  }
+
+  // ---- the fleet topic structurally matches the per-robot wildcard's regex (one path
+  // segment after "virtual/"), but handleMessage must route it to the fleet handler, NOT
+  // misinterpret it as a per-robot command for a robot named "virtual/fleet" ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(assignCmd("cmd-a7", "visitor-7")));
+
+    assert.equal(room.moveCalls.length, 0, "must never call moveAgentTo for a fleet-topic message");
+    assert.deepEqual(room.requestGuideCalls, [{ visitorId: "visitor-7", target: "Classroom 1425" }]);
+    assert.deepEqual(client.acksFor("cmd-a7"), ["received", "done"]);
+    console.log("PASS: the fleet topic is never misrouted through the per-robot extractRobotId path");
   }
 
   console.log("\nALL PASS: bridge.test.ts");

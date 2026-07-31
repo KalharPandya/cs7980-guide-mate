@@ -1,7 +1,7 @@
 import json
 import threading
 
-from guidemate_msgs.messages import Ack, Command, cmd_topic, status_topic
+from guidemate_msgs.messages import Ack, Command, cmd_topic, fleet_cmd_topic, fleet_status_topic, status_topic
 
 from guidemate_agent.mqtt_link import RobotRegistry
 
@@ -14,12 +14,14 @@ class FakeFuture:
 class FakeConnection:
     def __init__(self):
         self.published = []
+        self.subscriptions = []
         self.status_cb = None
 
     def connect(self):
         return FakeFuture()
 
     def subscribe(self, topic, qos, callback):
+        self.subscriptions.append(topic)
         self.status_cb = callback
         return FakeFuture(), 1
 
@@ -31,6 +33,15 @@ class FakeConnection:
     def feed_status(self, robot_id, ack: Ack):
         self.status_cb(
             topic=status_topic(robot_id),
+            payload=ack.model_dump_json().encode("utf-8"),
+            dup=False,
+            qos=1,
+            retain=False,
+        )
+
+    def feed_fleet_status(self, ack: Ack):
+        self.status_cb(
+            topic=fleet_status_topic(),
             payload=ack.model_dump_json().encode("utf-8"),
             dup=False,
             qos=1,
@@ -162,6 +173,46 @@ def test_on_event_callback_receives_parsed_status():
         retain=False,
     )
     assert seen == [{"robot_id": "turtlebot468", "data": {"battery": 0.12, "docked": True}}]
+
+
+def test_connect_subscribes_to_both_status_wildcards():
+    reg, fake = _registry()
+    assert "guidemate/+/status" in fake.subscriptions
+    assert "guidemate/virtual/+/status" in fake.subscriptions
+
+
+def test_send_fleet_command_collects_acks_until_done():
+    reg, fake = _registry()
+    cmd = Command(type="assign", name="assign", params={"visitor_id": "visitor-1", "room": "Kitchen"})
+    acks_out = {}
+
+    def worker():
+        acks_out["acks"] = reg.send_fleet_command(cmd, timeout_s=2.0)
+
+    t = threading.Thread(target=worker)
+    t.start()
+    for state in ("received", "done"):
+        fake.feed_fleet_status(Ack(cmd_id=cmd.cmd_id, state=state, simulated=True,
+                                    assigned_robot_id="virtual/3" if state == "done" else None))
+    t.join(timeout=3.0)
+
+    acks = acks_out["acks"]
+    assert [a.state for a in acks] == ["received", "done"]
+    assert acks[-1].assigned_robot_id == "virtual/3"
+    assert (fleet_cmd_topic(), cmd.model_dump_json()) in fake.published
+
+
+def test_send_fleet_command_timeout_returns_empty():
+    reg, _ = _registry()
+    cmd = Command(type="assign", name="assign", params={"visitor_id": "v", "room": "r"})
+    acks = reg.send_fleet_command(cmd, timeout_s=0.2)
+    assert acks == []
+
+
+def test_send_fleet_command_returns_empty_when_never_connected():
+    reg = RobotRegistry(endpoint="x", region="us-west-2", robot_ids=["turtlebot468"])
+    cmd = Command(type="assign", name="assign", params={"visitor_id": "v", "room": "r"})
+    assert reg.send_fleet_command(cmd, timeout_s=0.1) == []
 
 
 def test_on_event_callback_error_is_swallowed():

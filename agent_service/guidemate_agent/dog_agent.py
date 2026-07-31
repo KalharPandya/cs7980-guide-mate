@@ -38,6 +38,11 @@ MOTION_INSTRUCTION = (
     "If the robot reports being docked or motion-locked (motion_enabled false), "
     "always mention that in your reply."
 )
+GUIDE_INSTRUCTION = (
+    "You also have a guide_to_room(room) tool: if the visitor asks to be shown to a "
+    "room or location in the building, call it with that room's name so a virtual "
+    "guide robot is dispatched to escort them there."
+)
 KB_INSTRUCTION = (
     "For factual questions about the project or about yourself, call the "
     "retrieve_kb tool and ground your answer in what it returns."
@@ -110,9 +115,18 @@ class DogAgent:
             names.append("get_status")
         if flags.get("kb_enabled", True):
             names.append("retrieve_kb")
+        # guide_to_room is virtual-fleet-only -- the inverse gate of run_motion/stop.
+        # The design spec is explicit the physical robot "stays emotes-only": a
+        # session that already holds a real TurtleBot has its actual guide right
+        # there and must not also gain the virtual-fleet assign path. A virtual/
+        # unbound session (physical=False) is exactly the case with no real robot to
+        # fall back on, so that's who gets offered a virtual one. No separate flag
+        # -- gated on the same physical/virtual classification everything else uses.
+        if not physical:
+            names.append("guide_to_room")
         return names
 
-    def _system_prompt(self, flags: dict) -> str:
+    def _system_prompt(self, flags: dict, physical: bool = True) -> str:
         admin_prompt = self._store.get_prompt() if self._store is not None else None
         if admin_prompt:
             base = admin_prompt
@@ -125,6 +139,11 @@ class DogAgent:
             parts.append(EMOTE_INSTRUCTION)
         if flags.get("motion_tools_enabled", True):
             parts.append(MOTION_INSTRUCTION)
+        # Only mentioned for a virtual session -- see _enabled_tool_names: a
+        # physical session never has the guide_to_room tool, so it must never be
+        # told about it either.
+        if not physical:
+            parts.append(GUIDE_INSTRUCTION)
         # Only instruct the model to use retrieve_kb when the tool is actually
         # offered this turn (flag on AND the KB surface present) — no rule for a
         # tool that isn't in the list.
@@ -133,14 +152,15 @@ class DogAgent:
         return " ".join(parts)
 
     def _build_system_prompt(
-        self, user_name: Optional[str], history, flags: Optional[dict] = None
+        self, user_name: Optional[str], history, flags: Optional[dict] = None,
+        physical: bool = True,
     ) -> str:
         """Persona/flag prompt + optional 'talking with <name>' line + last-10
         message recap. Layers session awareness on top of the flag-driven
         persona so an admin persona/mute flip still steers the base prompt."""
         if flags is None:
             flags = self._flags()
-        parts = [self._system_prompt(flags)]
+        parts = [self._system_prompt(flags, physical)]
         if user_name:
             parts.append(
                 f"You are talking with {user_name}. Greet them warmly by name "
@@ -231,6 +251,45 @@ class DogAgent:
             return json.dumps({"presence": "unknown"})
         return json.dumps(self._registry.get_status(target), default=str)
 
+    def _guide_impl(self, room: str, session_id: Optional[str], captured: dict) -> str:
+        """Body of the guide_to_room tool -- virtual-fleet-only (see
+        _enabled_tool_names). Unlike the robot-targeted tools above, this has no
+        `target` robot id closure var: it needs the CALLER's own visitor identity
+        instead. The first call for a session mints a fresh visitor_id and binds
+        it to the session (sessions.bind_visitor -- no lock/approval step, the
+        virtual fleet has no scarcity to arbitrate); later calls reuse it. Then
+        publishes a fleet-scoped "assign" command (not robot-addressed -- no
+        robot is known yet, requestGuide on the world-server picks one) and
+        reports the outcome.
+        """
+        if session_id is None:
+            return "I can't guide you anywhere without a session — try reloading the page"
+
+        from guidemate_agent import sessions
+
+        visitor_id = sessions.visitor_for_session(session_id)
+        if visitor_id is None:
+            visitor_id = f"visitor-{uuid.uuid4().hex[:12]}"
+            sessions.bind_visitor(session_id, visitor_id)
+
+        cmd = Command(
+            type="assign", name="assign",
+            params={"visitor_id": visitor_id, "room": room},
+        )
+        acks = self._registry.send_fleet_command(cmd)
+        captured["acks"].extend(a.model_dump() for a in acks)
+        if not acks:
+            return _OFFLINE
+        last = acks[-1]
+        if last.state == "failed":
+            if last.reason == "no_idle_robot":
+                return "every guide robot is busy right now — try again in a moment"
+            return f"couldn't start your guide: {last.reason}"
+        robot_id = getattr(last, "assigned_robot_id", None)
+        if robot_id:
+            return f"{robot_id} is heading over to guide you to {room}"
+        return "a guide robot is on its way"
+
     @staticmethod
     def _load_retrieve_passages():
         """Lazily import the KB retrieval callable, or None if absent.
@@ -275,7 +334,7 @@ class DogAgent:
 
     # --- tool construction (per-turn registry mechanism) -----------------
     def _build_tools(self, names: list, target: Optional[str], captured: dict,
-                     physical: bool = True) -> list:
+                     physical: bool = True, session_id: Optional[str] = None) -> list:
         tools: list = []
         if "send_emote" in names:
 
@@ -317,6 +376,15 @@ class DogAgent:
                 return self._kb_impl(query, captured)
 
             tools.append(retrieve_kb)
+        if "guide_to_room" in names:
+
+            @tool
+            def guide_to_room(room: str) -> str:
+                """Dispatch a virtual guide robot to escort the visitor to a room.
+                room is a room name, e.g. 'Classroom 1425' or 'Kitchen'."""
+                return self._guide_impl(room, session_id, captured)
+
+            tools.append(guide_to_room)
         return tools
 
     @classmethod
@@ -402,8 +470,8 @@ class DogAgent:
         names = self._enabled_tool_names(flags, physical)
         if not allow_motion:
             names = [n for n in names if n not in ("run_motion", "stop")]
-        tools = self._build_tools(names, target, captured, physical)
-        system_prompt = self._build_system_prompt(user_name, history, flags)
+        tools = self._build_tools(names, target, captured, physical, session_id)
+        system_prompt = self._build_system_prompt(user_name, history, flags, physical)
         if system_event is not None:
             system_prompt += (
                 "\n\nThis turn was triggered by a system event, not a user message — "

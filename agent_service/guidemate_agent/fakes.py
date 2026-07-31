@@ -65,3 +65,18 @@ class FakeRobotRegistry:
             Ack(cmd_id=cmd.cmd_id, state=state, simulated=True)
             for state in ("received", "running", "done")
         ]
+
+    def send_fleet_command(self, cmd: Command, timeout_s: float = 5.0) -> list:
+        """Fake mirror of RobotRegistry.send_fleet_command (Task 4.2's guide_to_room
+        tool calls this in GUIDEMATE_FAKE_ROBOT=1 demo mode too -- there is no real
+        virtual-world bridge to assign a robot, so this always simulates success with
+        a made-up robot id rather than crashing the tool for lack of the method)."""
+        self.sent.append(("(fleet)", cmd.type, cmd.name))
+        if cmd.type != "assign":
+            return [Ack(cmd_id=cmd.cmd_id, state="failed", simulated=True,
+                        reason="unsupported_command_type")]
+        return [
+            Ack(cmd_id=cmd.cmd_id, state="received", simulated=True),
+            Ack(cmd_id=cmd.cmd_id, state="done", simulated=True,
+                assigned_robot_id="virtual/demo-1"),
+        ]

@@ -63,7 +63,16 @@ import { randomUUID } from "node:crypto";
 import mqtt from "mqtt";
 import type { MqttClient, IClientOptions } from "mqtt";
 
-import { type Ack, type Command, cmdTopic, statusTopic, makeAck, parseCommand } from "./messages.js";
+import {
+  type Ack,
+  type Command,
+  cmdTopic,
+  statusTopic,
+  fleetCmdTopic,
+  fleetStatusTopic,
+  makeAck,
+  parseCommand,
+} from "./messages.js";
 import { AGENT_RADIUS_M } from "../nav/agentProfile.js";
 
 /** Minimal surface of `WorldRoom` this bridge depends on -- kept structural (not an
@@ -73,6 +82,19 @@ import { AGENT_RADIUS_M } from "../nav/agentProfile.js";
  * Colyseus rooms expose `state` publicly with a MapSchema (Map-compatible `.get`). */
 export interface WorldRoomLike {
   moveAgentTo(agentId: string, target: string | { x: number; z: number }): boolean;
+  /**
+   * Task 4.2: picks the nearest idle robot, binds it to `visitorId`, and sends it to
+   * `roomNameOrCoords` -- see `WorldRoom.requestGuide` (Task 4.1). Requires `visitorId`
+   * to already be a tracked agent (this bridge's `addAgent` call ensures that for a
+   * brand-new real visitor before calling this). Returns `null` if no robot is idle.
+   */
+  requestGuide(visitorId: string, roomNameOrCoords: string | { x: number; z: number }): { robotId: string } | null;
+  /** Adds a new tracked agent (Crowd + synced schema) -- see `WorldRoom.addAgent`. Used
+   * here to spawn a brand-new "real" visitor at the entrance before its first `assign`. */
+  addAgent(id: string, kind: "robot" | "visitor", spawn: { x: number; z: number }): void;
+  /** Nav-space entrance point to spawn a fresh real visitor at -- see
+   * `WorldRoom.getEntrancePoint`. */
+  getEntrancePoint(): { x: number; z: number };
   state: {
     agents: {
       /** `x`/`z`/`route` are optional in this structural type (a fake test double may
@@ -108,6 +130,13 @@ const CMD_TOPIC_FILTER = "guidemate/virtual/+/cmd";
 // the design decision above) -- deliberately requires exactly one path segment after
 // "virtual/" so it never accidentally matches a deeper/foreign topic shape.
 const CMD_TOPIC_RE = /^guidemate\/(virtual\/[^/]+)\/cmd$/;
+
+// Task 4.2's fleet-scoped topic ("guidemate/virtual/fleet/cmd") happens to also
+// structurally match CMD_TOPIC_RE above (one path segment after "virtual/") -- it would
+// be misread as a per-robot command for a robot literally named "virtual/fleet". This
+// exact topic is therefore checked FIRST in handleMessage(), before extractRobotId ever
+// runs, so it is always routed to the fleet handler instead.
+const FLEET_CMD_TOPIC = fleetCmdTopic();
 
 export function extractRobotId(topic: string): string | null {
   const match = CMD_TOPIC_RE.exec(topic);
@@ -181,6 +210,18 @@ export class IotBridge {
           this.log.log(`[iot-bridge] subscribed to ${CMD_TOPIC_FILTER}`);
         }
       });
+      // Task 4.2: the fleet-scoped `assign` topic, in addition to the per-robot
+      // wildcard above. Already structurally covered by CMD_TOPIC_FILTER's wildcard,
+      // but subscribed explicitly per the design decision (a broker MAY deliver one
+      // copy per matching subscription; handleMessage()'s existing cmd_id dedupe
+      // already tolerates that, same as any other duplicate delivery).
+      this.client.subscribe(FLEET_CMD_TOPIC, { qos: 1 }, (err) => {
+        if (err) {
+          this.log.error(`[iot-bridge] subscribe to ${FLEET_CMD_TOPIC} failed: ${err.message}`);
+        } else {
+          this.log.log(`[iot-bridge] subscribed to ${FLEET_CMD_TOPIC}`);
+        }
+      });
     });
     this.client.on("message", (topic, payload) => this.handleMessage(topic, payload));
     this.client.on("error", (err) => this.log.error("[iot-bridge] mqtt error:", err));
@@ -198,36 +239,122 @@ export class IotBridge {
   }
 
   /** Core message-handling logic, exposed directly so unit tests can drive it without a
-   * real mqtt 'message' event. topic must be the FULL received topic (not the filter). */
+   * real mqtt 'message' event. topic must be the FULL received topic (not the filter).
+   *
+   * The fleet topic is checked FIRST, by exact string equality, before extractRobotId
+   * ever runs -- see FLEET_CMD_TOPIC's doc comment for why (it would otherwise parse as
+   * a per-robot command for a robot literally named "virtual/fleet"). */
   handleMessage(topic: string, payload: Buffer | string): void {
+    if (topic === FLEET_CMD_TOPIC) {
+      const cmd = this.parseAndDedupe(topic, payload);
+      if (cmd) this.handleFleetCommand(cmd);
+      return;
+    }
+
     const robotId = extractRobotId(topic);
     if (!robotId) {
       this.log.warn(`[iot-bridge] ignoring message on unexpected topic: ${topic}`);
       return;
     }
 
+    const cmd = this.parseAndDedupe(topic, payload);
+    if (cmd) this.handleCommand(robotId, cmd);
+  }
+
+  /** Shared JSON-parse + schema-validate + cmd_id-dedupe pipeline for both the per-robot
+   * and fleet message paths (factored out of handleMessage() when the fleet path was
+   * added -- behavior is unchanged from before for the per-robot path). Returns `null`
+   * (having already logged why) for anything that should be dropped silently. */
+  private parseAndDedupe(topic: string, payload: Buffer | string): Command | null {
     let raw: unknown;
     try {
       const text = typeof payload === "string" ? payload : payload.toString("utf-8");
       raw = JSON.parse(text);
     } catch (err) {
       this.log.warn(`[iot-bridge] ignoring non-JSON payload on ${topic}: ${(err as Error).message}`);
-      return;
+      return null;
     }
 
     const cmd = parseCommand(raw);
     if (!cmd) {
       this.log.warn(`[iot-bridge] ignoring invalid command on ${topic}`);
-      return;
+      return null;
     }
 
     if (this.seenSet.has(cmd.cmd_id)) {
       this.log.log(`[iot-bridge] duplicate cmd_id ignored: ${cmd.cmd_id}`);
-      return;
+      return null;
     }
     this.recordSeen(cmd.cmd_id);
+    return cmd;
+  }
 
-    this.handleCommand(robotId, cmd);
+  /**
+   * Task 4.2: handles a command received on the fleet-scoped topic (currently only
+   * `assign` is meaningful there -- see messages.ts's parseCommand). Synchronous, unlike
+   * `navigate`'s received -> running -> (poll) done lifecycle: `requestGuide` picks a
+   * robot and kicks off its move in one call, so this goes straight from `received` to
+   * a terminal `done`/`failed`, no polling needed.
+   */
+  private handleFleetCommand(cmd: Command): void {
+    this.publishFleetAck(makeAck({ cmd_id: cmd.cmd_id, state: "received", simulated: true }));
+
+    if (cmd.type !== "assign") {
+      this.publishFleetAck(
+        makeAck({
+          cmd_id: cmd.cmd_id,
+          state: "failed",
+          reason: "unsupported_command_type",
+          simulated: true,
+        }),
+      );
+      return;
+    }
+
+    const room = this.getRoom();
+    if (!room) {
+      this.publishFleetAck(
+        makeAck({ cmd_id: cmd.cmd_id, state: "failed", reason: "world_not_ready", simulated: true }),
+      );
+      return;
+    }
+
+    // parseCommand already guarantees these are strings for a valid "assign" command.
+    const visitorId = cmd.params.visitor_id as string;
+    const roomName = cmd.params.room as string;
+
+    // requestGuide requires visitorId to already be a tracked agent (it only lazily
+    // creates its own bookkeeping record, not the Crowd/schema agent -- see
+    // VisitorManager.requestGuide's doc comment) -- spawn a brand-new real visitor at
+    // the entrance the first time this bridge sees this visitor_id. A visitor that
+    // already exists (e.g. a retried/second assign for the same session) is left as-is.
+    if (!room.state.agents.get(visitorId)) {
+      room.addAgent(visitorId, "visitor", room.getEntrancePoint());
+    }
+
+    const result = room.requestGuide(visitorId, roomName);
+    if (!result) {
+      this.publishFleetAck(
+        makeAck({ cmd_id: cmd.cmd_id, state: "failed", reason: "no_idle_robot", simulated: true }),
+      );
+      return;
+    }
+
+    this.publishFleetAck(
+      makeAck({
+        cmd_id: cmd.cmd_id,
+        state: "done",
+        simulated: true,
+        assigned_robot_id: result.robotId,
+      }),
+    );
+  }
+
+  private publishFleetAck(ack: Ack): void {
+    const topic = fleetStatusTopic();
+    this.client.publish(topic, JSON.stringify(ack), { qos: 1 }, (err) => {
+      if (err) this.log.warn(`[iot-bridge] publish to ${topic} failed: ${err.message}`);
+    });
   }
 
   private recordSeen(cmdId: string): void {

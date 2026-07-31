@@ -10,12 +10,13 @@
  */
 import { randomUUID } from "node:crypto";
 
-export type CommandType = "emote" | "motion" | "stop" | "navigate";
+export type CommandType = "emote" | "motion" | "stop" | "navigate" | "assign";
 export type AckState = "received" | "running" | "done" | "failed";
 
 const EMOTE_NAMES = ["happy", "yes", "no"] as const;
 const MOTION_NAMES = ["circle", "spin", "dock", "undock", "forward"] as const;
 const NAVIGATE_NAMES = ["goto"] as const;
+const ASSIGN_NAME = "assign";
 
 export interface Command {
   cmd_id: string;
@@ -32,6 +33,10 @@ export interface Ack {
   simulated: boolean;
   battery?: number | null;
   gates?: Record<string, unknown> | null;
+  /** The robot picked for an "assign" command (e.g. "virtual/3"). Only ever set on
+   * the `done` ack of an assign; null for every other command/outcome. Mirrors
+   * messages.py's Ack.assigned_robot_id -- see that field's doc comment. */
+  assigned_robot_id?: string | null;
   ts: string;
 }
 
@@ -51,6 +56,7 @@ export function makeAck(partial: {
   simulated?: boolean;
   battery?: number | null;
   gates?: Record<string, unknown> | null;
+  assigned_robot_id?: string | null;
 }): Ack {
   return {
     cmd_id: partial.cmd_id,
@@ -59,6 +65,7 @@ export function makeAck(partial: {
     simulated: partial.simulated ?? false,
     battery: partial.battery ?? null,
     gates: partial.gates ?? null,
+    assigned_robot_id: partial.assigned_robot_id ?? null,
     ts: utcNowIso(),
   };
 }
@@ -69,6 +76,17 @@ export function cmdTopic(robotId: string): string {
 
 export function statusTopic(robotId: string): string {
   return `guidemate/${robotId}/status`;
+}
+
+// Fleet-scoped topics (not per-robot): "assign" a visitor to a robot before any robot
+// id is known. Mirrors messages.py's fleet_cmd_topic()/fleet_status_topic() -- kept as
+// named helpers rather than a magic "fleet" robot id through cmd_topic/status_topic.
+export function fleetCmdTopic(): string {
+  return "guidemate/virtual/fleet/cmd";
+}
+
+export function fleetStatusTopic(): string {
+  return "guidemate/virtual/fleet/status";
 }
 
 function isNumber(value: unknown): value is number {
@@ -110,6 +128,14 @@ export function parseCommand(raw: unknown): Command | null {
       const hasRoom = typeof params.room === "string";
       const hasXz = isNumber(params.x) && isNumber(params.z);
       if (!hasRoom && !hasXz) return null;
+      break;
+    }
+    case "assign": {
+      // Fleet-scoped: no robot id anywhere on this command (see fleetCmdTopic's doc
+      // comment) -- the payload instead carries WHO to assign (visitor_id) and WHERE
+      // to guide them (room). `name` is a stable constant, exactly like `stop`.
+      if (obj.name !== ASSIGN_NAME) return null;
+      if (typeof params.visitor_id !== "string" || typeof params.room !== "string") return null;
       break;
     }
     default:

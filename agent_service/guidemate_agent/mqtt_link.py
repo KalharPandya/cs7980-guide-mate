@@ -13,7 +13,7 @@ import boto3
 from awscrt import auth, mqtt
 from awsiot import mqtt_connection_builder
 
-from guidemate_msgs.messages import Ack, Command, cmd_topic
+from guidemate_msgs.messages import Ack, Command, cmd_topic, fleet_cmd_topic
 
 log = logging.getLogger(__name__)
 
@@ -105,6 +105,18 @@ class RobotRegistry:
             callback=self._on_status,
         )
         future.result()
+        # Virtual-fleet robot ids are namespaced "virtual/<n>" (two path segments), so
+        # "guidemate/+/status" (a single-level wildcard) never matches them --
+        # "guidemate/virtual/<n>/status" is a 4-segment topic. This second subscription
+        # covers both per-virtual-robot status AND the fleet-scoped pseudo-robot status
+        # (guidemate/virtual/fleet/status, Task 4.2's "assign" acks), routed through the
+        # same _on_status handler (see its updated robot_id parsing below).
+        future2, _ = self._conn.subscribe(
+            topic="guidemate/virtual/+/status",
+            qos=mqtt.QoS.AT_LEAST_ONCE,
+            callback=self._on_status,
+        )
+        future2.result()
 
     def _on_status(self, topic, payload, dup, qos, retain, **kwargs):
         try:
@@ -113,7 +125,12 @@ class RobotRegistry:
             log.warning("undecodable status payload on %s", topic)
             return
         parts = topic.split("/")
-        robot_id = parts[1] if len(parts) >= 2 else "?"
+        # robot_id is everything between the leading "guidemate" segment and the
+        # trailing "status" segment: a single segment for a physical robot
+        # ("turtlebot468"), two for a virtual one ("virtual/1") or the fleet
+        # pseudo-robot ("virtual/fleet"). Joining (not indexing parts[1]) is what makes
+        # this correct for both without a virtual-specific special case.
+        robot_id = "/".join(parts[1:-1]) if len(parts) >= 3 else "?"
         self._dispatch_event({"robot_id": robot_id, "data": data})
         with self._lock:
             state = self._robots.setdefault(robot_id, RobotState(robot_id=robot_id))
@@ -165,6 +182,42 @@ class RobotRegistry:
         try:
             self._conn.publish(
                 topic=cmd_topic(robot_id),
+                payload=cmd.model_dump_json().encode("utf-8"),
+                qos=mqtt.QoS.AT_LEAST_ONCE,
+            )
+            if collect_all:
+                time.sleep(timeout_s)
+            else:
+                event.wait(timeout_s)
+        finally:
+            with self._lock:
+                self._waiters.pop(cmd.cmd_id, None)
+        return list(acks)
+
+    def send_fleet_command(
+        self,
+        cmd: Command,
+        timeout_s: float = 5.0,
+        collect_all: bool = False,
+    ) -> list[Ack]:
+        """Publish a fleet-scoped command (e.g. "assign") to `fleet_cmd_topic()` and
+        collect its acks from `fleet_status_topic()` -- the fleet-command mirror of
+        `send_command`, sharing the same connection, `_waiters` dict, and `_on_status`
+        callback (registered on `guidemate/virtual/+/status` in `connect()`, which
+        covers the fleet pseudo-robot "virtual/fleet") instead of duplicating any of
+        that MQTT plumbing. Unlike a per-robot command, there is no `robot_id` to
+        address -- nobody knows which robot will be picked until the ack comes back.
+        """
+        if self._conn is None:
+            log.warning("send_fleet_command(%s) with no MQTT connection", cmd.type)
+            return []
+        event = threading.Event()
+        acks: list[Ack] = []
+        with self._lock:
+            self._waiters[cmd.cmd_id] = (event, acks)
+        try:
+            self._conn.publish(
+                topic=fleet_cmd_topic(),
                 payload=cmd.model_dump_json().encode("utf-8"),
                 qos=mqtt.QoS.AT_LEAST_ONCE,
             )

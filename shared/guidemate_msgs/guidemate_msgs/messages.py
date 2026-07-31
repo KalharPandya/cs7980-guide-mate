@@ -30,13 +30,17 @@ def _is_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+def _is_string(value: object) -> bool:
+    return isinstance(value, str)
+
+
 def new_cmd_id() -> str:
     return str(uuid.uuid4())
 
 
 class Command(BaseModel):
     cmd_id: str = Field(default_factory=new_cmd_id)
-    type: Literal["emote", "motion", "stop", "navigate"]
+    type: Literal["emote", "motion", "stop", "navigate", "assign"]
     name: str
     params: dict = Field(default_factory=dict)
     ts: str = Field(default_factory=_utc_now_iso)
@@ -59,6 +63,22 @@ class Command(BaseModel):
                     "navigate params must contain a 'room' string or both 'x' and 'z' "
                     f"numeric keys, got {self.params!r}"
                 )
+        if self.type == "assign":
+            # "assign" is fleet-scoped (not robot-addressed -- see fleet_cmd_topic()):
+            # nobody knows which robot will be picked yet, so unlike navigate/motion/
+            # emote there is no target robot id anywhere on this command. `name` is a
+            # stable constant exactly like `stop`'s name is always "stop"; the payload
+            # instead carries WHO to assign (visitor_id) and WHERE to guide them (room).
+            if self.name != "assign":
+                raise ValueError(f"assign command name must be 'assign', got {self.name!r}")
+            if not _is_string(self.params.get("visitor_id")):
+                raise ValueError(
+                    f"assign params must contain a 'visitor_id' string key, got {self.params!r}"
+                )
+            if not _is_string(self.params.get("room")):
+                raise ValueError(
+                    f"assign params must contain a 'room' string key, got {self.params!r}"
+                )
         return self
 
 
@@ -71,6 +91,12 @@ class Ack(BaseModel):
     # Gate snapshot at ack time, e.g. {"docked": true, "motion_enabled": false,
     # "dry_run": true}. None on acks from pre-Phase-2 bridges.
     gates: Optional[dict] = None
+    # The robot picked for an "assign" command (e.g. "virtual/3"). Only ever set on
+    # the `done` ack of an assign; None for every other command type and for a
+    # `failed` assign (no robot was picked). Optional the same way battery/gates
+    # are optional, so pre-Phase-4 acks (and physical-robot acks, which never
+    # assign) round-trip unchanged.
+    assigned_robot_id: Optional[str] = None
     ts: str = Field(default_factory=_utc_now_iso)
 
 
@@ -92,3 +118,15 @@ def cmd_topic(robot_id: str) -> str:
 
 def status_topic(robot_id: str) -> str:
     return f"guidemate/{robot_id}/status"
+
+
+# Fleet-scoped topics (not per-robot): "assign" a visitor to a robot before any robot
+# id is known. Deliberately NOT built from cmd_topic/status_topic with a fake robot id
+# like "fleet" -- a named helper is clearer than a magic string that happens to also
+# satisfy the virtual fleet's `guidemate/virtual/*` IAM scope.
+def fleet_cmd_topic() -> str:
+    return "guidemate/virtual/fleet/cmd"
+
+
+def fleet_status_topic() -> str:
+    return "guidemate/virtual/fleet/status"

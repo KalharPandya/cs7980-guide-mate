@@ -39,3 +39,27 @@ def test_get_messages_last_n(ddb):
         sessions.append_message(sid, "user", f"m{i}")
     last2 = sessions.get_messages(sid, limit=2)
     assert [m["text"] for m in last2] == ["m3", "m4"]
+
+
+def test_new_session_has_no_visitor_binding(ddb):
+    sid = sessions.create_session("Ada", True)
+    assert sessions.visitor_for_session(sid) is None
+
+
+def test_bind_visitor_then_visitor_for_session(ddb):
+    sid = sessions.create_session("Ada", True)
+    sessions.bind_visitor(sid, "visitor-abc")
+    assert sessions.visitor_for_session(sid) == "visitor-abc"
+
+
+def test_visitor_for_session_missing_session_returns_none(ddb):
+    assert sessions.visitor_for_session("nope") is None
+
+
+def test_bind_visitor_needs_no_lock_or_approval(ddb):
+    # Unlike robot_for_session (which requires a matching robot lock holder), a bound
+    # visitor_id is trusted on its own -- the virtual fleet has no scarcity to arbitrate.
+    sid = sessions.create_session("Ada", True)
+    sessions.bind_visitor(sid, "visitor-xyz")
+    assert sessions.get_session_state(sid)["robot_id"] is None  # unaffected
+    assert sessions.visitor_for_session(sid) == "visitor-xyz"

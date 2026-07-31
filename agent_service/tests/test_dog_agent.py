@@ -298,6 +298,110 @@ def test_chat_physical_session_publishes_and_offers_motion(ddb, monkeypatch):
     assert out["session_id"] == sid
 
 
+# =====================================================================
+# Task 4.2: guide_to_room tool (virtual-fleet-only) + fleet-command routing
+# =====================================================================
+
+
+class FleetRegistry:
+    """Registry stand-in for the fleet-command path: records fleet commands,
+    returns a scripted ack list. send_command is never expected to be hit by
+    guide_to_room (it has no robot target at all), but is defined so this
+    class stays usable anywhere ScriptedRegistry/RecordingRegistry are."""
+
+    def __init__(self, acks=None):
+        self._acks = acks if acks is not None else []
+        self.fleet_sent = []
+        self.sent = []
+
+    def send_command(self, robot_id, cmd, timeout_s=5.0, collect_all=False):
+        self.sent.append((robot_id, cmd))
+        return []
+
+    def send_fleet_command(self, cmd, timeout_s=5.0, collect_all=False):
+        self.fleet_sent.append(cmd)
+        return list(self._acks)
+
+    def get_status(self, robot_id):
+        return {"robot_id": robot_id, "presence": "unknown"}
+
+
+def test_guide_impl_requires_a_session():
+    reg = FleetRegistry()
+    result = _agent(reg)._guide_impl("Kitchen", None, _captured())
+    assert "session" in result.lower()
+    assert reg.fleet_sent == []
+
+
+def test_guide_impl_builds_assign_command_and_binds_visitor(ddb):
+    sid = sessions.create_session("Ada", True)
+    acks = [
+        Ack(cmd_id="c", state="received", simulated=True),
+        Ack(cmd_id="c", state="done", simulated=True, assigned_robot_id="virtual/3"),
+    ]
+    reg = FleetRegistry(acks=acks)
+
+    result = _agent(reg)._guide_impl("Classroom 1425", sid, _captured())
+
+    assert len(reg.fleet_sent) == 1
+    cmd = reg.fleet_sent[0]
+    assert cmd.type == "assign"
+    assert cmd.name == "assign"
+    assert cmd.params["room"] == "Classroom 1425"
+    visitor_id = cmd.params["visitor_id"]
+    assert visitor_id
+    assert sessions.visitor_for_session(sid) == visitor_id
+    assert "virtual/3" in result
+
+
+def test_guide_impl_reuses_existing_visitor_binding(ddb):
+    sid = sessions.create_session("Ada", True)
+    sessions.bind_visitor(sid, "visitor-existing")
+    reg = FleetRegistry(acks=[Ack(cmd_id="c", state="done", simulated=True,
+                                  assigned_robot_id="virtual/1")])
+
+    _agent(reg)._guide_impl("Kitchen", sid, _captured())
+
+    assert len(reg.fleet_sent) == 1
+    assert reg.fleet_sent[0].params["visitor_id"] == "visitor-existing"
+
+
+def test_guide_impl_no_idle_robot(ddb):
+    sid = sessions.create_session("Ada", True)
+    reg = FleetRegistry(acks=[Ack(cmd_id="c", state="failed", reason="no_idle_robot",
+                                  simulated=True)])
+    result = _agent(reg)._guide_impl("Kitchen", sid, _captured())
+    assert "busy" in result.lower()
+
+
+def test_guide_impl_offline_when_no_acks(ddb):
+    sid = sessions.create_session("Ada", True)
+    reg = FleetRegistry(acks=[])
+    result = _agent(reg)._guide_impl("Kitchen", sid, _captured())
+    assert result == dog_agent._OFFLINE
+
+
+# --- tool gating: guide_to_room is virtual-only (inverse of run_motion/stop) ---
+def test_enabled_tool_names_virtual_offers_guide_to_room():
+    names = _agent(RecordingRegistry())._enabled_tool_names(
+        dict(DEFAULT_FLAGS), physical=False)
+    assert "guide_to_room" in names
+
+
+def test_enabled_tool_names_physical_withholds_guide_to_room():
+    names = _agent(RecordingRegistry())._enabled_tool_names(
+        dict(DEFAULT_FLAGS), physical=True)
+    assert "guide_to_room" not in names
+
+
+def test_system_prompt_mentions_guide_only_when_virtual():
+    agent = _agent(RecordingRegistry())
+    virtual_prompt = agent._system_prompt(dict(DEFAULT_FLAGS), physical=False)
+    physical_prompt = agent._system_prompt(dict(DEFAULT_FLAGS), physical=True)
+    assert "guide_to_room" in virtual_prompt
+    assert "guide_to_room" not in physical_prompt
+
+
 def test_chat_legacy_no_session_id_unchanged(monkeypatch):
     _fake_bedrock(monkeypatch)
     reg = RecordingRegistry()
