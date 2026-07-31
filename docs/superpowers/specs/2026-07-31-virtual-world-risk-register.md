@@ -67,6 +67,14 @@ ever missing again. Also: `redeploy.sh` defaults to branch `kalhar/dog-agent-poc
 so the guided script always passes `GUIDEMATE_BRANCH=feat/kalhar-virtual-world` explicitly, don't
 run `redeploy.sh` bare for this project.
 
+**Reviewed (2026-07-31):** `scripts/virtual_world_go_live.sh` was the one file this session that
+skipped the normal implementer/spec-review/quality-review cycle (controller-authored directly).
+Given a proper first review afterward: approved, empirically tested both the safe-default-decline
+path (piped from `/dev/null`, halts before any mutation) and the full walkthrough (every gate
+declined, all 5 steps complete cleanly, zero mutating AWS calls). One pre-existing, non-blocking
+note: `redeploy.sh` itself doesn't propagate a failed remote deploy as a non-zero exit code (only
+the printed `Status` JSON shows it), so read that output, don't just watch for the script to crash.
+
 **Checked and confirmed a non-issue (2026-07-31):** `world-client` has no explicit deployment
 step anywhere, by design: it's a browser client meant to run locally on whichever machine drives
 the big screen, pointed at the deployed `world-server` via `VITE_WORLD_SERVER_URL`, not something
