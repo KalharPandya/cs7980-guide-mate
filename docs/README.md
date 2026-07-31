@@ -34,6 +34,12 @@ Working documentation for the cs7980 TurtleBot 4 project.
 - [Echo TurtleBot Pal UI mockups](agent-poc/echo-turtlebot-pal-ui-mockups.html) - cleaner full-screen mockups using the selected TurtleBot Pal direction
 - [GuideMate Echo design package](agent-poc/design-package/README.md) - logos, mascot assets, light/dark themes, tokens, and design-doc-ready brief
 
+### Virtual world guide fleet (2026-07-26 to 2026-07-31, Phases 0-5 done)
+- [Progress tracker](superpowers/plans/2026-07-26-virtual-world-progress.md) - living status doc: task-by-task state, every real bug found and fixed, how to resume
+- [Risk register + rehearsal checklist](superpowers/specs/2026-07-31-virtual-world-risk-register.md) - what's code-verified vs. still needing a human to deploy it or look at it
+- [Design spec](superpowers/specs/2026-07-26-virtual-world-guide-fleet-design.md) and [implementation plan](superpowers/plans/2026-07-26-virtual-world-implementation-plan.md) - the original architecture and the full task breakdown
+- Code: [`world/`](../world/README.md) (Colyseus room server: navmesh/Detour Crowd navigation, ~45 simulated visitors, an optional MQTT/IoT bridge letting Moses dispatch virtual robots the same way it dispatches the real one) and [`world-client/`](../world-client/README.md) (Three.js/React-Three-Fiber big-screen renderer)
+
 ### Security workstream (WP A/B/C)
 - [Security workstream index](security/README.md) — design docs for WP A (ROS2/DDS LAN), WP B (cloud channel + broker), WP C (LLM safety guardrails); doc-language notes
 - [Guardrail design v2 + threat model (2026-07-03)](security/guardrail-design-2026-07-03.md) — current WP C design against the landed phone-chat/dispatch architecture *(Chinese)*
