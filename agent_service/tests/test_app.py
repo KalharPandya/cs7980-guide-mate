@@ -50,7 +50,7 @@ def test_index_served(monkeypatch):
     with TestClient(app) as client:
         resp = client.get("/")
         assert resp.status_code == 200
-        assert "Robert" in resp.text
+        assert "Moses" in resp.text
         # Task 5 polished chat UI: intake gate + chat shell DOM hooks that
         # both chat.js and the gated Playwright e2e (test_companion_flow.py)
         # depend on by id.
@@ -61,7 +61,7 @@ def test_index_served(monkeypatch):
             'id="message"', 'id="mic"', 'id="status-chip"',
             # Task 4.3: the visitor-bound banner hook the state poll drives.
             'id="visitor-banner"',
-            '/chat.css', '/chat.js',
+            'chat.css', 'chat.js',
         ):
             assert hook in resp.text, f"missing {hook}"
 
