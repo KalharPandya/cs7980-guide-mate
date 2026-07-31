@@ -358,3 +358,112 @@ neither is touched by this script.
   `desired = {motion_enabled: false, max_speed: 0.15, dry_run: true}`. The virtual fleet has no
   physical motor, so these fields don't gate real hardware here; they exist so a future
   fleet-wide kill switch can reconcile one schema across real/sim/virtual identities.
+
+## world-server containerized as a third Compose service — BUILT, NOT YET DEPLOYED (2026-07-31, Phase 5 Task 5.1)
+`world/Dockerfile` (multi-stage: `node:20-slim` build stage runs `npm ci` + `npm run build`
+(tsc); runtime stage runs `npm ci --omit=dev --ignore-scripts` + `node dist/index.js`) added as
+a **third** service `world-server` in the existing `agent_service/compose.yaml` (same file the
+`app`/`caddy` services live in, not a parallel compose project), `agent_service/compose.prod.yaml`
+(adds the `awslogs` driver → `/guidemate/world-server`), and routed through the existing
+`agent_service/Caddyfile` at `/world/*` (`handle_path` strips the prefix so the Colyseus client's
+own root-relative `/matchmake/...` and room-WS paths still resolve — verified against
+`@colyseus/sdk`'s `Client.mjs`, which folds a base-URL `pathname` into both the HTTP matchmake
+call and the WS room endpoint). Point `world-client`'s `VITE_WORLD_SERVER_URL` at
+`wss://echo.kalhar.ca/world` when the client is deployed. Reuses the same `/etc/guidemate.env`
+pattern as the `app` service for `GUIDEMATE_IOT_ENDPOINT`/`GUIDEMATE_CERT`/`GUIDEMATE_KEY` (all
+empty by default — the Virtual-Fleet IoT identity above is still provisioning-pending, so the
+bridge stays gracefully disabled, same as `app`'s `GUIDEMATE_IOT_ENDPOINT` unset case).
+
+**NOT deployed to the live `echo.kalhar.ca` instance.** Everything below was built and validated
+locally only, on the controller's Windows dev box, per this task's safety constraint (no
+`redeploy.sh`, no `ssm send-command`, no EC2-mutating call against the real instance). Kalhar
+runs the actual deploy himself (steps below).
+
+**What was verified locally, and how:**
+| Check | Result |
+|---|---|
+| `docker compose -f agent_service/compose.yaml -f agent_service/compose.prod.yaml config` | Renders cleanly — all three services (`app`, `world-server`, `caddy`), `world-server`'s build context/dockerfile, env vars, `awslogs` logging, and `caddy`'s `depends_on: [app, world-server]` all resolve as expected. |
+| `docker build -f world/Dockerfile .` / full `docker compose up --build` | **Could not run** — Docker Desktop's daemon (`com.docker.service`) is installed but stopped on this box, and starting it is denied in this sandboxed session (`Cannot open com.docker.service service`). The CLI/compose binaries exist and answer `--version`, but nothing that needs the daemon (build, up, stats) is reachable here. |
+| TypeScript build (the Dockerfile's build-stage command) | `npm run build` (`tsc -p tsconfig.json`) run directly in `world/` — compiles clean, no errors. |
+| Runtime CMD (the Dockerfile's `CMD ["node","dist/index.js"]`) | Run directly (not containerized, since the daemon is unreachable): `node dist/index.js` starts, logs `World-server listening on ws://localhost:2599`, and `GET /healthz` → `200 {"ok":true}` — the same check the Dockerfile's `HEALTHCHECK` runs internally. This is the closest available proxy for "the container starts and serves" without a daemon. |
+| `agent_service` startup (fake-robot mode) | `agent_service/.venv` created in this worktree, installed per the documented local-run recipe (`pip install -e shared/guidemate_msgs`, `pip install -e agent_service`, `pip install --no-deps amazon-transcribe`), run with `GUIDEMATE_FAKE_ROBOT=1 GUIDEMATE_ADMIN_PASSWORD=test GUIDEMATE_IOT_ENDPOINT=dummy.example.com` → `GET /healthz` → `200 {"ok":true}`. |
+
+**Combined load-check — real measured numbers, not assumed** (proxy: Docker daemon unreachable,
+so `agent_service` + `world-server` ran as native local processes, not containers, alongside
+Task 1.3's actual 95-agent load test, `node --import tsx scripts/loadtest.ts` in `world/`):
+- **This machine's specs** (the caveat that matters): AMD Ryzen 7 5800HS, 8 cores / 16 threads,
+  ~24 GB RAM — **much larger than the real t3.large** (2 vCPU, 8 GB RAM) the production instance
+  runs on. These numbers are not a like-for-like substitute for an actual t3.large run; they're
+  the closest proxy available without provisioning one.
+- Sampled `TotalProcessorTime`/`WorkingSet64` every 300ms (Windows `Get-Process`) for all three
+  processes across the full ~4.9s, 7500-tick (95 agents × 5 runs × 1500 measured ticks) load-test
+  run:
+  - `agent_service` (idle, fake-robot mode, no active chat turns): CPU time **flat at 1.812s**
+    for the entire run (0% marginal CPU while idle) — RSS **99.75 MB**.
+  - `world-server` (idle, no connected Colyseus clients): CPU time **flat at 1.062s→1.109s** for
+    the entire run (~0% marginal CPU while idle) — RSS **66.45 MB**.
+  - `loadtest` process itself (the actual 95-agent crowd-sim CPU cost, run unpaced/back-to-back —
+    a deliberate worst-case stress figure, not the real 60Hz-paced load): CPU time rose from
+    0.19s→5.20s over 4.86s wall time, i.e. **~100% of one core saturated** when hammered with no
+    pacing between ticks.
+  - Per-tick cost from the load test's own output (unchanged by this task, Task 1.3's numbers):
+    avg **0.567–0.587ms/tick**, max **1.40ms/tick**, **0/7500 ticks over the 16.6ms 60Hz budget**.
+    At real 60Hz pacing (16.6ms between ticks, not back-to-back), that's roughly
+    **0.58/16.6 ≈ 3.5% of one core**, sustained, for the crowd-sim work alone — the 100%-of-one-core
+    figure above is the unpaced-benchmark ceiling, not what production pacing would show.
+  - **Combined idle RSS** (`agent_service` + `world-server`, excluding Caddy/OS): **~166 MB** —
+    a small fraction of the t3.large's 8 GB, comfortable headroom on memory.
+- **Compared against the existing 85% CPU alarm threshold** (`guidemate-poc-ec2-cpu`,
+  `AWS/EC2` `CPUUtilization`): on *this* machine, idle `agent_service`/`world-server` show ~0%
+  marginal CPU and the crowd-sim's own 60Hz-paced cost is a well-bounded ~3.5% of one core —
+  nowhere near 85%. **Caveat, stated plainly:** a t3.large's 2 vCPUs are a much smaller, and
+  burstable-credit, budget than this 8-core box; the 0/7500-over-budget tick result doesn't
+  linearly translate to a t3.large's weaker/burst-limited vCPUs, and Bedrock-turn CPU cost
+  (JSON/HTTP handling during real chat, not exercised here) is not part of either idle figure.
+  **This should be re-verified with real `docker stats`/CloudWatch data once Kalhar deploys and
+  the 95-visitor load test is pointed at the live instance** — the number reported here is the
+  best available local proxy, not a substitute for that on-instance measurement.
+
+### Manual deploy steps (Kalhar runs these himself — NOT executed by the implementer/controller)
+1. Review the diff: `world/Dockerfile` (new), `agent_service/compose.yaml`,
+   `agent_service/compose.prod.yaml`, `agent_service/Caddyfile`, `scripts/setup_observability.sh`,
+   `agent_service/deploy/user_data.sh` (procstat block — only affects a *future* `launch_ec2.sh`
+   run, not the live instance).
+2. Optional but recommended first: reproduce the local validation above yourself with Docker
+   Desktop actually running — `docker compose -f agent_service/compose.yaml -f
+   agent_service/compose.prod.yaml config`, then a throwaway `docker compose up --build` against
+   a local `.env` (NOT the real `/etc/guidemate.env`) and confirm `curl localhost/world/healthz`
+   (via Caddy) or `curl localhost:2567/healthz` (direct) returns `200`.
+3. Redeploy the live instance (same one-command path as every prior phase — this rebuilds all
+   three services, `world-server` included, since it's now in the same `compose.yaml`):
+   ```bash
+   agent_service/deploy/redeploy.sh
+   ```
+   This SSHes nothing; it's one `aws ssm send-command` that does `git fetch/checkout/reset --hard`
+   to the latest `kalhar/dog-agent-poc`-equivalent branch tip on `/opt/guidemate`, then
+   `docker compose --env-file /etc/guidemate.env -f compose.yaml -f compose.prod.yaml up -d
+   --build` on the instance. No new env vars are *required* in `/etc/guidemate.env` for
+   `world-server` to come up (its `GUIDEMATE_IOT_ENDPOINT`/`CERT`/`KEY` default to empty, same
+   graceful-degrade as today) — nothing to add there unless the Virtual-Fleet cert/key are ready.
+4. Push the new CloudWatch agent config (Node-process CPU/mem metric) onto the *already-running*
+   instance — `launch_ec2.sh` only renders `user_data.sh` at first boot, so an existing instance
+   needs this pushed explicitly:
+   ```bash
+   scripts/setup_observability.sh
+   ```
+   (idempotent — safe to re-run after every redeploy; this is the same script that already
+   manages the dashboard/alarms/log groups, now also reconciling the `procstat` block onto the
+   instance's `amazon-cloudwatch-agent` config and adding the `guidemate-poc-world-cpu` alarm +
+   two new dashboard widgets, all still under the `GuideMate/EC2` namespace).
+5. Verify for real (this is the part the implementer could not do — no real instance, no real
+   creds, per this task's safety constraint):
+   - `curl -s https://echo.kalhar.ca/world/healthz` → expect `{"ok":true}`.
+   - Point a `world-client` build's `VITE_WORLD_SERVER_URL` at `wss://echo.kalhar.ca/world` and
+     confirm a real Colyseus `joinOrCreate("world")` round-trip.
+   - `docker stats` on the instance (via `aws ssm start-session --target <iid>`) while running
+     Task 1.3's load test against it, to get the *real* t3.large combined-CPU number this doc's
+     local-proxy section above could not produce.
+   - CloudWatch dashboard `guidemate-poc` → confirm the two new "world-server process" widgets
+     populate within ~5 minutes of the `setup_observability.sh` push.
+   - Retire this section's "NOT YET DEPLOYED" heading once confirmed live, and replace the
+     local-proxy load numbers above with the real on-instance ones.

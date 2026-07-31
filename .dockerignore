@@ -15,7 +15,12 @@ tests/
 ssh_keys/
 docs/
 .superpowers/
-src/
+# Anchored to the context root: the top-level ROS2 colcon workspace src/ (guide_mate_explorer,
+# guide_mate_perception) -- NOT a bare "src/", which (gitignore-style unanchored matching) would
+# also match world/src and world-client/src and silently break Docker builds that COPY those
+# (found during Task 5.1's world/Dockerfile work: `COPY world/src` failed against this context
+# until this was anchored).
+/src/
 .git/
 claude-conversations/
 Research/

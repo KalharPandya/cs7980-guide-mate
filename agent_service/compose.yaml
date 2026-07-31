@@ -17,11 +17,32 @@ services:
       # onto that physical robot -- see dog_agent._emote_mirror_robot_id.
       - GUIDEMATE_EMOTE_MIRROR_ROBOT_ID=${GUIDEMATE_EMOTE_MIRROR_ROBOT_ID:-}
 
+  world-server:
+    build:
+      context: ..
+      dockerfile: world/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "2567"
+    environment:
+      - PORT=2567
+      # Task 2.3's IoT bridge (world/src/iot/bridge.ts): reuses the same
+      # /etc/guidemate.env pattern as the "app" service's GUIDEMATE_IOT_ENDPOINT above.
+      # All three empty by default -- world/src/index.ts's startIotBridgeFromEnv logs and
+      # continues without the bridge when they're not all set (e.g. local/no-cert runs);
+      # the Virtual-Fleet IoT identity these would point at is not provisioned yet (see
+      # docs/agent-poc/access-ground-truth.md).
+      - GUIDEMATE_IOT_ENDPOINT=${GUIDEMATE_IOT_ENDPOINT:-}
+      - GUIDEMATE_CERT=${GUIDEMATE_CERT:-}
+      - GUIDEMATE_KEY=${GUIDEMATE_KEY:-}
+      - GUIDEMATE_CA=${GUIDEMATE_CA:-}
+
   caddy:
     image: caddy:2
     restart: unless-stopped
     depends_on:
       - app
+      - world-server
     ports:
       - "80:80"
       - "443:443"

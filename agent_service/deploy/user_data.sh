@@ -20,7 +20,12 @@ curl -SL "https://github.com/docker/compose/releases/download/v2.29.7/docker-com
   -o /usr/local/lib/docker/cli-plugins/docker-compose
 chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
-# --- CloudWatch agent: memory + disk (system metrics; containers log via awslogs) ---
+# --- CloudWatch agent: memory + disk + world-server process (system metrics; containers
+# log via awslogs). procstat pattern-matches "dist/index.js" against the HOST's process
+# list -- a Docker container's process is still an ordinary process in the host's root PID
+# namespace (containers are namespaces/cgroups, not separate kernels), so the cwagent
+# (which runs directly on the host, not containerized) sees straight through into the
+# world-server container without needing --pid=host or any compose change. Task 5.1.
 dnf install -y amazon-cloudwatch-agent
 cat > /opt/aws/amazon-cloudwatch-agent/etc/guidemate-cwagent.json <<'CWCFG'
 {
@@ -30,7 +35,16 @@ cat > /opt/aws/amazon-cloudwatch-agent/etc/guidemate-cwagent.json <<'CWCFG'
     "append_dimensions": {"InstanceId": "${aws:InstanceId}"},
     "metrics_collected": {
       "mem": {"measurement": [{"name": "mem_used_percent", "rename": "MemUsedPercent"}]},
-      "disk": {"measurement": [{"name": "used_percent", "rename": "DiskUsedPercent"}], "resources": ["/"]}
+      "disk": {"measurement": [{"name": "used_percent", "rename": "DiskUsedPercent"}], "resources": ["/"]},
+      "procstat": [
+        {
+          "pattern": "dist/index.js",
+          "measurement": [
+            {"name": "cpu_usage", "rename": "WorldServerCPUUsage", "unit": "Percent"},
+            {"name": "memory_rss", "rename": "WorldServerMemoryRSS", "unit": "Bytes"}
+          ]
+        }
+      ]
     }
   }
 }

@@ -1,3 +1,13 @@
 {$GUIDEMATE_DOMAIN} {
+	# Task 5.1: world-server (Colyseus) routed under /world/* on the same TLS domain,
+	# instead of a bare exposed port. handle_path strips the /world prefix before
+	# proxying, so the Colyseus client's own root-relative paths (/matchmake/..., and
+	# the room WS endpoint /{processId}/{roomId}) still resolve correctly against
+	# world-server:2567 -- point the world-client's VITE_WORLD_SERVER_URL at
+	# wss://{$GUIDEMATE_DOMAIN}/world (see world-client/src/net/useWorldRoom.ts).
+	# reverse_proxy upgrades WebSocket connections automatically; no extra config needed.
+	handle_path /world/* {
+		reverse_proxy world-server:2567
+	}
 	reverse_proxy app:8000
 }
