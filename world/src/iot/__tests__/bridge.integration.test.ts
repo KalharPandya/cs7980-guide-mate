@@ -89,6 +89,12 @@ class FakeWorldRoom implements WorldRoomLike {
 
   resume(): void {}
 
+  /** Bug fix's `isPaused` addition to WorldRoomLike -- this round trip never pauses, so a
+   * constant `false` is a sufficient stand-in. */
+  get isPaused(): boolean {
+    return false;
+  }
+
   /** Simulates the Crowd actually moving the agent over a couple of ticks, for a test
    * that doesn't want to pull in a real navmesh -- see the file header. */
   async simulateArrival(agentId: string): Promise<void> {

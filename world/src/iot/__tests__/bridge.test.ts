@@ -127,6 +127,12 @@ class FakeWorldRoom implements WorldRoomLike {
     this.resumeCalls++;
     this.paused = false;
   }
+
+  /** Mirrors the real WorldRoom.isPaused getter -- see WorldRoomLike's doc comment on
+   * this bug fix's use of it in pollPending(). */
+  get isPaused(): boolean {
+    return this.paused;
+  }
 }
 
 function navigateCmd(cmdId: string, room = "Classroom 1425"): Command {
@@ -693,6 +699,102 @@ async function main(): Promise<void> {
     assert.equal(room.pauseCalls, 0, "a per-robot stop must never pause the room");
     assert.equal(room.resumeCalls, 0, "a per-robot stop must never resume the room");
     console.log("PASS: the existing per-robot `stop` (unsupported_command_type) is unaffected by the fleet-stop feature");
+  }
+
+  // ==================================================================================
+  // Bug fix (code review of Task 5.2's commit f6b79f2): pollPending()'s nav_timeout must
+  // not advance while the world is paused, else pausing for a demo narration beat longer
+  // than the remaining timeout window would spuriously fail a navigate that was never
+  // actually stuck. Semantics under test: paused wall-clock time does NOT count against
+  // navTimeoutMs at all -- the timeout clock effectively pauses and resumes with the
+  // world (see pollPending()'s doc comment for the full reasoning).
+  // ==================================================================================
+
+  // ---- an in-flight navigate survives a pause far longer than navTimeoutMs, then still
+  // times out (does not hang forever) once resumed if the agent never arrives ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({
+      getRoom: () => room,
+      client,
+      pollIntervalMs: 20,
+      navTimeoutMs: 100,
+      log: { log() {}, warn() {}, error() {} },
+    });
+    bridge.start();
+
+    bridge.handleMessage(cmdTopic("virtual/20"), JSON.stringify(navigateCmd("cmd-20")));
+    assert.deepEqual(client.acksFor("cmd-20"), ["received", "running"]);
+    room.state.agents.set("virtual/20", { state: "moving" });
+
+    // Pause immediately (near-zero elapsed budget used so far), then hold the pause for
+    // 3x navTimeoutMs -- long enough that, without the fix, several nav_timeout checks
+    // would have fired while frozen.
+    room.pause();
+    await sleep(300);
+    assert.deepEqual(
+      client.acksFor("cmd-20"),
+      ["received", "running"],
+      "a navigate must NOT time out while the world is paused, no matter how long the pause lasts",
+    );
+
+    // Resume: the ORIGINAL remaining budget (~navTimeoutMs, since pause landed right
+    // after trackArrival()) must still be intact -- not reset to 0 (which would time out
+    // instantly) and not silently consumed by the paused wall-clock time.
+    room.resume();
+    await sleep(40); // well under navTimeoutMs=100
+    assert.deepEqual(
+      client.acksFor("cmd-20"),
+      ["received", "running"],
+      "immediately after resume, the preserved remaining budget must not have already expired",
+    );
+
+    // The agent never reaches idle -- give it enough further unpaused time to exhaust
+    // the remaining budget and prove the clock is genuinely running again post-resume.
+    await sleep(140);
+    assert.deepEqual(
+      client.acksFor("cmd-20"),
+      ["received", "running", "failed"],
+      "once resumed, the timeout clock must resume counting and eventually fire for a genuinely stuck agent",
+    );
+    assert.equal(client.published.find((p) => p.payload.cmd_id === "cmd-20" && p.payload.state === "failed")!.payload.reason, "nav_timeout");
+
+    bridge.stop();
+    console.log("PASS: pausing the world suspends a pending navigate's nav_timeout clock; it resumes counting (not reset) once unpaused");
+  }
+
+  // ---- an in-flight navigate that genuinely arrives WHILE paused (e.g. the world was
+  // unpaused again by the very next poll tick) still resolves done normally -- arrival
+  // detection is never gated on pause state, only the timeout check is ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({
+      getRoom: () => room,
+      client,
+      pollIntervalMs: 15,
+      navTimeoutMs: 5000,
+      log: { log() {}, warn() {}, error() {} },
+    });
+    bridge.start();
+
+    bridge.handleMessage(cmdTopic("virtual/21"), JSON.stringify(navigateCmd("cmd-21")));
+    room.state.agents.set("virtual/21", { state: "moving" });
+    await sleep(30);
+
+    room.pause();
+    room.state.agents.set("virtual/21", { state: "idle" });
+    await sleep(30);
+
+    assert.deepEqual(
+      client.acksFor("cmd-21"),
+      ["received", "running", "done"],
+      "arrival (moving -> idle) must still be detected even on a poll tick where the room reports paused",
+    );
+
+    bridge.stop();
+    console.log("PASS: arrival detection is not gated on pause state, only the nav_timeout expiry check is");
   }
 
   console.log("\nALL PASS: bridge.test.ts");

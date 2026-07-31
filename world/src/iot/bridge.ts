@@ -112,6 +112,20 @@ export interface WorldRoomLike {
    */
   pause(): void;
   resume(): void;
+  /**
+   * Bug fix (found by code review of Task 5.2's commit f6b79f2): exposes WorldRoom's
+   * pause flag so pollPending() can stop a pending navigate's nav_timeout deadline from
+   * advancing while the whole world is frozen -- see pollPending()'s doc comment for the
+   * full story. Without this, pausing the world for longer than the remaining timeout
+   * window (e.g. an admin narrating over a demo) would cause a spurious failed/
+   * nav_timeout ack for a navigate that was never actually stuck, just paused along with
+   * everything else -- directly undermining the reliability of Task 5.2's own kill
+   * switch. The real WorldRoom already has this as a public getter (see WorldRoom.ts's
+   * `isPaused`, added alongside pause()/resume() in Task 5.2) -- this is purely a
+   * structural addition to the fake-friendly interface so the fix can reach it; no change
+   * to WorldRoom.ts was needed.
+   */
+  readonly isPaused: boolean;
   state: {
     agents: {
       /** `x`/`z`/`route` are optional in this structural type (a fake test double may
@@ -209,6 +223,11 @@ export class IotBridge {
   private readonly pending = new Map<string, PendingNav>();
   private readonly pendingByRobot = new Map<string, string>();
   private pollTimer: ReturnType<typeof setInterval> | undefined;
+  /** Wall-clock timestamp of the previous pollPending() tick (any tick, not just ones
+   * with pending navs) -- used only to measure how much real time elapsed since the last
+   * tick, so a paused tick can shift every pending deadline forward by exactly that much.
+   * See pollPending()'s doc comment. */
+  private lastPollAt: number | undefined;
 
   constructor(opts: IotBridgeOptions) {
     this.getRoom = opts.getRoom;
@@ -532,10 +551,57 @@ export class IotBridge {
     this.pendingByRobot.set(robotId, cmdId);
   }
 
+  /**
+   * Bug fix (code review of Task 5.2's commit f6b79f2, confirmed real): this poll loop
+   * used to track each pending navigate's expiry with a plain WALL-CLOCK deadline
+   * (`Date.now() + navTimeoutMs`, set once in trackArrival()), completely unaware of
+   * `WorldRoom.pause()` (also Task 5.2) freezing the Crowd tick on a totally independent
+   * timer. So pausing the world while a navigate was in flight -- e.g. an admin pausing
+   * to narrate over a demo for a minute -- did nothing to this deadline: it kept expiring
+   * on real wall-clock time, so pollPending() would fire a SPURIOUS failed/nav_timeout
+   * ack for a command that was legitimately still in progress, just frozen along with
+   * everything else. That directly undermined the reliability of the kill switch this
+   * bridge itself wires up (handleFleetStop above).
+   *
+   * DESIGN DECISION (documented here per the task): while paused, wall-clock time does
+   * NOT count against navTimeoutMs at all -- i.e. the timeout clock pauses and resumes
+   * together with the world, rather than continuing to run out in the background. This
+   * is the least-surprising behavior for an admin pausing a live demo: nothing about a
+   * paused navigate should look more "at risk of timing out" than it did the moment the
+   * pause began. (The alternative -- letting paused time count, just deferring the
+   * failed ack until resume -- would still be wrong: it would immediately fail a nav the
+   * instant the world resumes, for a delay the admin caused, not the robot.)
+   *
+   * Mechanism: every poll tick (paused or not) measures how much real time elapsed since
+   * the previous tick. If the room reports `isPaused`, every CURRENTLY pending nav's
+   * absolute deadline is shifted forward by that elapsed amount, before the
+   * expiry check below runs -- so the deadline's position relative to "now" never moves
+   * while paused, and the original remaining budget is exactly what's left once resumed.
+   * While unpaused this shift is simply never applied, so behavior is byte-for-byte
+   * unchanged from before this fix (verified by the pre-existing nav_timeout /
+   * already-arrived tests in bridge.test.ts, none of which touch pause/resume).
+   *
+   * Arrival detection (the moving->idle edge) is intentionally NOT skipped while paused
+   * -- it's cheap, it's already keyed off the agent's synced `state` rather than time,
+   * and if the world happens to already be unpaused again by the time this tick runs
+   * (pause/resume can race an in-flight poll interval), a genuine arrival should still be
+   * caught immediately rather than waiting for the next tick. In practice no arrival will
+   * be observed while GENUINELY paused, since WorldRoom.update() -- the only thing that
+   * ever moves an agent from "moving" to "idle" -- is itself frozen by the same pause.
+   */
   private pollPending(): void {
+    const now = Date.now();
+    const elapsedSinceLastPoll = this.lastPollAt !== undefined ? now - this.lastPollAt : 0;
+    this.lastPollAt = now;
+
     if (this.pending.size === 0) return;
     const room = this.getRoom();
-    const now = Date.now();
+
+    if (room?.isPaused) {
+      for (const nav of this.pending.values()) {
+        nav.deadline += elapsedSinceLastPoll;
+      }
+    }
 
     for (const [cmdId, nav] of this.pending) {
       if (!room) {
