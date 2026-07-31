@@ -15,8 +15,10 @@
     "test": "tsx src/test/join.test.ts",
     "test:nav": "tsx src/nav/__tests__/loadFloorPlan.test.ts && tsx src/nav/__tests__/buildNavMesh.geometry.test.ts && tsx src/nav/__tests__/buildNavMesh.test.ts",
     "test:crowd": "tsx src/nav/__tests__/crowd.test.ts && tsx src/rooms/__tests__/WorldRoom.test.ts",
+    "test:iot": "tsx src/iot/__tests__/bridge.test.ts",
+    "test:iot:integration": "tsx src/iot/__tests__/bridge.integration.test.ts",
     "test:load": "tsx scripts/loadtest.ts",
-    "test:all": "npm run test && npm run test:nav && npm run test:crowd"
+    "test:all": "npm run test && npm run test:nav && npm run test:crowd && npm run test:iot"
   },
   "dependencies": {
     "@colyseus/schema": "4.0.30",
@@ -24,6 +26,7 @@
     "colyseus": "0.17.10",
     "earcut": "3.2.3",
     "express": "^5.2.1",
+    "mqtt": "^5.15.2",
     "recast-navigation": "0.43.1"
   },
   "devDependencies": {
