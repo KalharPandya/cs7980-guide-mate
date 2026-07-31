@@ -41,7 +41,14 @@ async function main(): Promise<void> {
   const [doorX, doorZ] = room1425.door;
 
   const room = new WorldRoom();
-  await room.onCreate();
+  // Task 4.1 wired a simulated-visitor spawner into onCreate()/update() that (by default)
+  // competes for any idle robot -- this test has exactly one robot and cares about ITS
+  // idle/route state precisely (e.g. "route clears once idle"), so the background
+  // spawner grabbing that same robot for a different escort the instant it goes idle would
+  // give it a fresh non-empty route out from under this test. Disabled here since this
+  // test's scope (the Task 1.2/3.3 crowd loop + route line) is orthogonal to Task 4.1's
+  // spawner; visitors.test.ts covers the spawner itself.
+  await room.onCreate({ disableSimulatedVisitors: true });
   // Cancel the real setSimulationInterval timer onCreate() started -- this test advances
   // simulated time itself via update(), not a real wall-clock interval (see file header).
   room.setSimulationInterval();

@@ -9,6 +9,8 @@ import type { FloorPlan } from "../nav/loadFloorPlan.js";
 import { AgentCrowd } from "../nav/crowd.js";
 import type { AgentParams } from "../nav/crowd.js";
 import { AGENT_HEIGHT_M, AGENT_RADIUS_M } from "../nav/agentProfile.js";
+import { VisitorManager } from "./visitors.js";
+import type { VisitorDebugStats, VisitorHost } from "./visitors.js";
 
 /**
  * Task 1.2: the real Detour Crowd simulation loop, replacing the single-demo-agent
@@ -60,9 +62,16 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   private nav!: BuiltNavMesh;
   private plan!: FloorPlan;
   private crowd!: AgentCrowd;
+  private visitors!: VisitorManager;
   private disposed = false;
 
-  async onCreate(): Promise<void> {
+  /**
+   * `options.disableSimulatedVisitors` exists purely for test isolation (Task 4.1's
+   * requestGuide/no-double-assignment tests want to bind specific known robots without the
+   * background simulated-visitor spawner also competing for them); production room
+   * creation passes no options and gets the spawner running at its default target.
+   */
+  async onCreate(options?: { disableSimulatedVisitors?: boolean }): Promise<void> {
     this.setState(new WorldState());
     console.log("WorldRoom created");
 
@@ -78,6 +87,21 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     this.addAgent(TEST_AGENT_ID, "robot", {
       x: this.plan.entrance.point[0],
       z: this.plan.entrance.point[1],
+    });
+
+    // Task 4.1: the simulated-visitor spawner + guide-assignment bookkeeping. `visitorHost`
+    // is the narrow slice of this room visitors.ts needs -- see VisitorHost's doc comment.
+    const visitorHost: VisitorHost = {
+      plan: this.plan,
+      nav: this.nav,
+      agents: this.state.agents,
+      addAgent: (id, kind, spawn) => this.addAgent(id, kind, spawn),
+      removeAgent: (id) => this.removeAgent(id),
+      moveAgentTo: (id, target) => this.moveAgentTo(id, target),
+      requestMoveTarget: (id, target) => this.crowd.requestMoveTarget(id, { x: target.x, y: 0, z: target.z }),
+    };
+    this.visitors = new VisitorManager(visitorHost, {
+      simulatedTarget: options?.disableSimulatedVisitors ? 0 : undefined,
     });
 
     this.setSimulationInterval((deltaMs) => this.update(deltaMs));
@@ -98,6 +122,37 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     agent.x = spawn.x;
     agent.z = spawn.z;
     this.state.agents.set(id, agent);
+  }
+
+  /**
+   * Removes a tracked agent from both the Crowd and the synced schema -- the inverse of
+   * `addAgent`. Task 4.1's simulated-visitor spawner uses this to despawn a visitor once
+   * it has walked back to the entrance, freeing its spawn slot. No-op if `id` isn't
+   * tracked (mirrors `AgentCrowd.removeAgent`'s own no-op-on-unknown-id behavior, so a
+   * double-despawn attempt can't throw).
+   */
+  removeAgent(id: string): void {
+    this.crowd.removeAgent(id);
+    this.state.agents.delete(id);
+  }
+
+  /**
+   * Task 4.1: picks the nearest idle robot, binds it to `visitorId`, and sends it to
+   * `roomNameOrCoords` -- the plain-TypeScript guide-assignment entry point a later task's
+   * Moses/IoT bridge will call for a real visitor (this task deliberately does not touch
+   * IoT/MQTT at all). Returns `null` if no robot is currently idle. All of the actual
+   * bookkeeping (escort-binding maps, un-binding on arrival/timeout, the simulated-visitor
+   * spawner) lives in `./visitors.ts` -- see `VisitorManager.requestGuide`.
+   */
+  requestGuide(visitorId: string, roomNameOrCoords: string | RoomTarget): { robotId: string } | null {
+    return this.visitors.requestGuide(visitorId, roomNameOrCoords);
+  }
+
+  /** Read-only escort/spawner counters for tests and ops visibility -- see
+   * `VisitorDebugStats`'s doc comments for what each field means and the invariants it's
+   * meant to let a caller check (e.g. `escortedVisitors === robotBindings`). */
+  getVisitorDebugStats(): VisitorDebugStats {
+    return this.visitors.getDebugStats();
   }
 
   /**
@@ -209,6 +264,11 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       }
       agent.state = nextState;
     }
+
+    // Task 4.1: escort trailing/arrival + the simulated-visitor spawner. Must run AFTER
+    // the crowd tick + schema sync above -- see VisitorManager.tick's doc comment for why
+    // that ordering is load-bearing for arrival detection, not just a style choice.
+    this.visitors.tick(dtSeconds);
   }
 
   onJoin(client: Client): void {
