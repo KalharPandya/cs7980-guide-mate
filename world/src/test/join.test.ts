@@ -35,7 +35,13 @@ async function main(): Promise<void> {
 
   try {
     const client = new Client(`ws://localhost:${TEST_PORT}`);
-    const room = await client.joinOrCreate("world");
+    // disableSimulatedVisitors: this is a bare connectivity smoke test, not a
+    // visitor-lifecycle test -- without this, the Task 4.1 simulated-visitor
+    // spawner can add a visitor before the first state patch arrives, making
+    // the "agents map has exactly 1 (the seeded test-robot)" assertion below
+    // intermittently flaky. Reproduced directly: this test failed with
+    // `agents.size === 2` under concurrent load, passed cleanly once isolated.
+    const room = await client.joinOrCreate("world", { disableSimulatedVisitors: true });
 
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(
