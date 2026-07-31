@@ -184,6 +184,66 @@ def test_physical_emote_publishes():
     assert "simulated" in out.lower() or "delivered" in out.lower()
 
 
+# --- Task 5.3: GUIDEMATE_EMOTE_MIRROR_ROBOT_ID mirrors virtual emotes onto a
+# physical robot, best-effort. Unset = feature off (regression guard); set =
+# also publish; a registry exception on the mirror publish is swallowed.
+def test_virtual_emote_mirror_unset_no_registry_call(monkeypatch):
+    monkeypatch.delenv("GUIDEMATE_EMOTE_MIRROR_ROBOT_ID", raising=False)
+    reg = RecordingRegistry()
+    agent = _agent(reg)
+    captured = {"emote": None, "acks": []}
+    out = agent._emote_impl("happy", target="turtlebot468", captured=captured,
+                            physical=False)
+    assert reg.sent == []                       # unchanged: nothing published
+    assert captured["emote"] == "happy"
+    assert captured["acks"] == []
+    assert "virtual" in out.lower()
+
+
+def test_virtual_emote_mirror_set_also_publishes_to_mirror_robot(monkeypatch):
+    monkeypatch.setenv("GUIDEMATE_EMOTE_MIRROR_ROBOT_ID", "turtlebot468")
+    reg = RecordingRegistry()
+    agent = _agent(reg)
+    captured = {"emote": None, "acks": []}
+    out = agent._emote_impl("happy", target="turtlebot468", captured=captured,
+                            physical=False)
+    assert reg.sent == [("turtlebot468", "emote", "happy")]
+    assert captured["emote"] == "happy"
+    # mirror acks are not folded into this (virtual) turn's UI state
+    assert captured["acks"] == []
+    assert "virtual" in out.lower()
+
+
+def test_virtual_emote_mirror_publish_failure_is_swallowed(monkeypatch):
+    monkeypatch.setenv("GUIDEMATE_EMOTE_MIRROR_ROBOT_ID", "turtlebot468")
+
+    class ExplodingRegistry:
+        def send_command(self, robot_id, cmd, timeout_s=5.0):
+            raise RuntimeError("mqtt broker unreachable")
+
+    agent = _agent(ExplodingRegistry())
+    captured = {"emote": None, "acks": []}
+    out = agent._emote_impl("no", target="turtlebot468", captured=captured,
+                            physical=False)
+    assert captured["emote"] == "no"
+    assert captured["acks"] == []
+    assert out == "virtual emote played (avatar only — not connected to a robot)"
+
+
+def test_physical_emote_unaffected_by_mirror_var(monkeypatch):
+    """Regression guard: the mirror var must not alter the physical=True branch."""
+    monkeypatch.setenv("GUIDEMATE_EMOTE_MIRROR_ROBOT_ID", "some-other-robot")
+    reg = RecordingRegistry()
+    agent = _agent(reg)
+    captured = {"emote": None, "acks": []}
+    out = agent._emote_impl("yes", target="turtlebot468", captured=captured,
+                            physical=True)
+    # only the real target is published to -- no mirror call added
+    assert reg.sent == [("turtlebot468", "emote", "yes")]
+    assert captured["acks"] and captured["acks"][-1]["state"] == "done"
+    assert "simulated" in out.lower() or "delivered" in out.lower()
+
+
 # --- system prompt: user name + last-10-message recap ---
 def test_system_prompt_includes_name_and_history():
     agent = _agent(RecordingRegistry())

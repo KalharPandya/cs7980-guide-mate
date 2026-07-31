@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 import uuid
 from typing import Optional
@@ -56,6 +57,17 @@ NEUTRAL_PROMPT = (
 PERSONA = PERSONA_BASE + " " + EMOTE_INSTRUCTION + " " + MOTION_INSTRUCTION
 
 _OFFLINE = "robot did not respond — I'm probably napping offline"
+
+
+def _emote_mirror_robot_id() -> Optional[str]:
+    """Physical robot id to mirror virtual emotes onto, or None (feature off).
+
+    Unset by default -- follows the same ad-hoc single-var env convention as
+    GUIDEMATE_ADMIN_PASSWORD (admin.py): read directly at the point of use
+    rather than threaded through Config, since it's a single optional string
+    with no other config surface needing it.
+    """
+    return os.environ.get("GUIDEMATE_EMOTE_MIRROR_ROBOT_ID") or None
 
 
 def _usage_from_result(result) -> Optional[tuple[int, int]]:
@@ -200,9 +212,24 @@ class DogAgent:
         MQTT. physical=True (the default, and the legacy no-session behaviour)
         publishes to the target robot. This is the lock gate — a virtual session
         can wag the avatar but can never move a physical dog.
+
+        Virtual sessions additionally mirror the emote onto one physical robot
+        when GUIDEMATE_EMOTE_MIRROR_ROBOT_ID is set (Task 5.3) -- best-effort
+        and non-blocking: a publish failure here is logged and swallowed, never
+        raised and never allowed to change the returned reply string, so the
+        virtual visitor's own turn never degrades because a mirror robot is
+        offline.
         """
         captured["emote"] = name
         if not physical:
+            mirror_id = _emote_mirror_robot_id()
+            if mirror_id:
+                try:
+                    self._registry.send_command(mirror_id, Command(type="emote", name=name))
+                except Exception:
+                    log.warning(
+                        "emote mirror publish to %s failed", mirror_id, exc_info=True
+                    )
             return "virtual emote played (avatar only — not connected to a robot)"
         if target is None:
             return _OFFLINE
