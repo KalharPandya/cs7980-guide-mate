@@ -151,7 +151,7 @@ PARAMS
     --comparison-operator GreaterThanThreshold --treat-missing-data notBreaching \
     --tags Key=project,Value=guidemate-poc
 else
-  echo "   (no running instance — skipping procstat push + alarm; re-run after launch_ec2.sh)"
+  echo "   (no running instance: skipping procstat push + alarm; re-run after launch_ec2.sh)"
 fi
 
 echo ">> Dashboard ${DASH}"
