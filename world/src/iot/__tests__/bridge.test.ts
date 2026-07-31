@@ -710,8 +710,40 @@ async function main(): Promise<void> {
   // world (see pollPending()'s doc comment for the full reasoning).
   // ==================================================================================
 
-  // ---- an in-flight navigate survives a pause far longer than navTimeoutMs, then still
-  // times out (does not hang forever) once resumed if the agent never arrives ----
+  // ---- a pending navigate that has already burned a NON-DEGENERATE chunk of its
+  // timeout budget before the world is paused must resume with that SAME reduced
+  // budget -- not a full fresh navTimeoutMs, and not an already-expired one.
+  //
+  // Why this version of the test exists: an earlier version of this test paused
+  // IMMEDIATELY after the command started, so the remaining budget at pause-time was
+  // ≈ the full navTimeoutMs. That couldn't distinguish a correct fix from a bug where
+  // the deadline gets reset to a fresh navTimeoutMs on resume -- both look identical
+  // when ~0% of the budget was consumed pre-pause. This version burns a real, known
+  // fraction of the budget BEFORE pausing so "preserved remaining budget" and "reset to
+  // full" produce different, checkable timings.
+  //
+  // The math (spelled out here so a future reader doesn't have to re-derive it):
+  //   navTimeoutMs = 400ms
+  //   preElapsed   = 200ms  (50% of budget consumed BEFORE pause -> remaining ~200ms)
+  //   pauseHoldMs  = 1200ms (3x navTimeoutMs -- long enough that a bug where paused time
+  //                          still counts against the deadline would have already fired
+  //                          the timeout WHILE frozen; asserted separately below)
+  //   checkpoint A = +80ms  after resume  (well under the ~200ms remaining budget, with
+  //                          ~120ms of margin) -> must still be "running".
+  //                          Catches "paused time counts against the deadline" (no
+  //                          shift): that bug's raw wall-clock deadline (set 200ms after
+  //                          start) was crossed ~1000ms ago by the time resume happens,
+  //                          so it would already ack "failed" here instead of "running".
+  //   checkpoint B = +280ms after resume (80 + 200 more) -- past the ~200ms remaining
+  //                          budget (~80ms margin) but well short of a fresh 400ms
+  //                          (~120ms margin) -> must now be "failed".
+  //                          Catches "deadline reset to a fresh navTimeoutMs on resume":
+  //                          that bug needs the full 400ms post-resume before it fires,
+  //                          so at +280ms it would still be "running" instead of
+  //                          "failed".
+  // Only the correct fix (shift the deadline forward by exactly the paused duration,
+  // preserving the original ~200ms remaining budget) satisfies BOTH checkpoints; either
+  // bug flips one of the two assertions below to the wrong ack state.
   {
     const client = new FakeMqttClient();
     const room = new FakeWorldRoom();
@@ -719,7 +751,7 @@ async function main(): Promise<void> {
       getRoom: () => room,
       client,
       pollIntervalMs: 20,
-      navTimeoutMs: 100,
+      navTimeoutMs: 400,
       log: { log() {}, warn() {}, error() {} },
     });
     bridge.start();
@@ -728,40 +760,51 @@ async function main(): Promise<void> {
     assert.deepEqual(client.acksFor("cmd-20"), ["received", "running"]);
     room.state.agents.set("virtual/20", { state: "moving" });
 
-    // Pause immediately (near-zero elapsed budget used so far), then hold the pause for
-    // 3x navTimeoutMs -- long enough that, without the fix, several nav_timeout checks
-    // would have fired while frozen.
+    // Burn a real, non-degenerate chunk (50%) of the timeout budget BEFORE pausing.
+    await sleep(200);
+    assert.deepEqual(
+      client.acksFor("cmd-20"),
+      ["received", "running"],
+      "must still be running just before pause (sanity check on the 200ms pre-pause wait)",
+    );
+
+    // Pause, then hold the pause for 3x navTimeoutMs -- long enough that, without the
+    // fix, the (unshifted) deadline would have been crossed while still frozen.
     room.pause();
-    await sleep(300);
+    await sleep(1200);
     assert.deepEqual(
       client.acksFor("cmd-20"),
       ["received", "running"],
       "a navigate must NOT time out while the world is paused, no matter how long the pause lasts",
     );
 
-    // Resume: the ORIGINAL remaining budget (~navTimeoutMs, since pause landed right
-    // after trackArrival()) must still be intact -- not reset to 0 (which would time out
-    // instantly) and not silently consumed by the paused wall-clock time.
     room.resume();
-    await sleep(40); // well under navTimeoutMs=100
+
+    // Checkpoint A: well under the ~200ms remaining budget -> must still be running.
+    await sleep(80);
     assert.deepEqual(
       client.acksFor("cmd-20"),
       ["received", "running"],
-      "immediately after resume, the preserved remaining budget must not have already expired",
+      "80ms after resume must still be running -- the ~200ms preserved remaining budget isn't exhausted yet " +
+        "(a bug where paused time counted against the deadline would already show failed here)",
     );
 
-    // The agent never reaches idle -- give it enough further unpaused time to exhaust
-    // the remaining budget and prove the clock is genuinely running again post-resume.
-    await sleep(140);
+    // Checkpoint B: past the ~200ms remaining budget but short of a fresh 400ms ->
+    // must now be failed.
+    await sleep(200); // cumulative 280ms since resume
     assert.deepEqual(
       client.acksFor("cmd-20"),
       ["received", "running", "failed"],
-      "once resumed, the timeout clock must resume counting and eventually fire for a genuinely stuck agent",
+      "~280ms after resume (> the ~200ms preserved remaining budget, < a fresh 400ms) must now be failed " +
+        "(a bug that resets the deadline to a fresh navTimeoutMs on resume would still show running here)",
     );
     assert.equal(client.published.find((p) => p.payload.cmd_id === "cmd-20" && p.payload.state === "failed")!.payload.reason, "nav_timeout");
 
     bridge.stop();
-    console.log("PASS: pausing the world suspends a pending navigate's nav_timeout clock; it resumes counting (not reset) once unpaused");
+    console.log(
+      "PASS: pausing the world suspends a pending navigate's nav_timeout clock at its CURRENT remaining budget " +
+        "(not reset to full, not already expired); it resumes counting from exactly that point once unpaused",
+    );
   }
 
   // ---- an in-flight navigate that genuinely arrives WHILE paused (e.g. the world was
