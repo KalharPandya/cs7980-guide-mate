@@ -14,7 +14,7 @@ import { Server } from "colyseus";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import express from "express";
 
-import { WorldRoom } from "../rooms/WorldRoom.js";
+import { WorldRoom, GUIDE_ROBOT_COUNT } from "../rooms/WorldRoom.js";
 
 const TEST_PORT = Number(process.env.TEST_PORT) || 22567;
 
@@ -38,9 +38,10 @@ async function main(): Promise<void> {
     // disableSimulatedVisitors: this is a bare connectivity smoke test, not a
     // visitor-lifecycle test -- without this, the Task 4.1 simulated-visitor
     // spawner can add a visitor before the first state patch arrives, making
-    // the "agents map has exactly 1 (the seeded test-robot)" assertion below
-    // intermittently flaky. Reproduced directly: this test failed with
-    // `agents.size === 2` under concurrent load, passed cleanly once isolated.
+    // the "agents map has exactly GUIDE_ROBOT_COUNT (the seeded guide fleet, no
+    // visitors yet)" assertion below intermittently flaky. Reproduced directly (back when
+    // the fleet was a single seeded robot): this test failed with `agents.size === 2`
+    // under concurrent load, passed cleanly once isolated.
     const room = await client.joinOrCreate("world", { disableSimulatedVisitors: true });
 
     await new Promise<void>((resolve, reject) => {
@@ -56,15 +57,23 @@ async function main(): Promise<void> {
 
     const state = room.state as { agents: Map<string, unknown>; floor: number };
 
-    // WorldRoom seeds one test agent on creation for the Task 1.2 Detour Crowd loop (see
-    // WorldRoom.ts / world/src/nav/crowd.ts). This test's original "agents map should
-    // start empty" assumption no longer holds; it's not a regression, it's this task's
-    // own change to what "initial state" means.
-    assert.equal(state.agents.size, 1, "agents map should start with the one test agent");
+    // WorldRoom seeds the full guide-robot fleet on creation (see WorldRoom.ts's
+    // GUIDE_ROBOT_COUNT / onCreate). This test's original "agents map should start empty"
+    // assumption no longer holds; it's not a regression, it's this task's own change to
+    // what "initial state" means -- first to "1 test agent" (Task 1.2), now to "the real
+    // fleet" (this bugfix: a single test robot left every visitor past the first with no
+    // idle robot to assign, see WorldRoom.ts's GUIDE_ROBOT_COUNT doc comment).
+    assert.equal(
+      state.agents.size,
+      GUIDE_ROBOT_COUNT,
+      `agents map should start with the ${GUIDE_ROBOT_COUNT}-robot guide fleet`,
+    );
     assert.equal(typeof state.floor, "number", "floor should be present as a number");
 
     await room.leave();
-    console.log("PASS: joined 'world' room, received initial state (1 test agent, floor present)");
+    console.log(
+      `PASS: joined 'world' room, received initial state (${GUIDE_ROBOT_COUNT} guide robots, floor present)`,
+    );
   } finally {
     await gameServer.gracefullyShutdown(false);
   }

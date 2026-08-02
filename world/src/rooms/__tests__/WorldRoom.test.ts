@@ -48,17 +48,28 @@ async function main(): Promise<void> {
   // give it a fresh non-empty route out from under this test. Disabled here since this
   // test's scope (the Task 1.2/3.3 crowd loop + route line) is orthogonal to Task 4.1's
   // spawner; visitors.test.ts covers the spawner itself.
-  await room.onCreate({ disableSimulatedVisitors: true });
+  //
+  // disableGuideRobots: this test also wants exactly ONE robot to reason precisely about
+  // (the MAX_AGENTS capacity-fill block below counts up from whatever's already tracked),
+  // not the real GUIDE_ROBOT_COUNT-sized fleet WorldRoom seeds by default -- see
+  // WorldRoom.ts's onCreate() doc comment. The single test agent is added by hand right
+  // after, in its place.
+  await room.onCreate({ disableSimulatedVisitors: true, disableGuideRobots: true });
   // Cancel the real setSimulationInterval timer onCreate() started -- this test advances
   // simulated time itself via update(), not a real wall-clock interval (see file header).
   room.setSimulationInterval();
 
   const state = room.state as unknown as { agents: Map<string, SyncedAgent> };
 
+  const seeded = room.addAgent(TEST_AGENT_ID, "robot", {
+    x: plan.entrance.point[0],
+    z: plan.entrance.point[1],
+  });
+  assert.ok(seeded, "test setup should be able to add the single test agent");
   const initialAgent = state.agents.get(TEST_AGENT_ID);
-  assert.ok(initialAgent, "WorldRoom should seed one test agent on creation");
+  assert.ok(initialAgent, "WorldRoom should track the manually-seeded test agent");
   assert.equal(initialAgent!.state, "idle", "freshly seeded agent should start idle");
-  console.log("PASS: WorldRoom seeds one test agent on creation");
+  console.log("PASS: WorldRoom tracks the manually-seeded test agent");
 
   // --- ms->seconds + 0.1s clamp: one giant deltaMs must NOT move the agent as if it
   // were that many seconds of simulated time. ---

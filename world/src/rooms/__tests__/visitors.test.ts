@@ -28,7 +28,13 @@ const TICK_MS = 16.6;
 
 async function testSimulatedSpawnerConvergence(): Promise<void> {
   const room = new WorldRoom();
-  await room.onCreate(); // default options -- spawner ENABLED, target SIMULATED_VISITOR_TARGET
+  // disableGuideRobots: this test wants to control the exact robot supply itself (spawns
+  // its own ROBOT_COUNT test robots below and reasons about totalRobots precisely) rather
+  // than also getting the real GUIDE_ROBOT_COUNT-sized fleet WorldRoom seeds by default --
+  // see WorldRoom.ts's onCreate() doc comment. Without this, the fleet's 50 robots plus
+  // this test's own 50 plus the ~45-visitor spawner target would exceed MAX_AGENTS (128),
+  // silently starving the spawner and breaking this test's convergence assertions.
+  await room.onCreate({ disableGuideRobots: true }); // spawner ENABLED, target SIMULATED_VISITOR_TARGET
   room.setSimulationInterval();
 
   const plan = loadFloorPlan();
@@ -40,9 +46,9 @@ async function testSimulatedSpawnerConvergence(): Promise<void> {
   for (let i = 0; i < ROBOT_COUNT; i++) {
     room.addAgent(`load-test-robot-${i}`, "robot", entrance);
   }
-  // Plus the one robot WorldRoom seeds itself on creation (TEST_AGENT_ID) -- total robot
-  // supply is ROBOT_COUNT + 1, comfortably above SIMULATED_VISITOR_TARGET.
-  const totalRobots = ROBOT_COUNT + 1;
+  // disableGuideRobots means WorldRoom seeded no robots of its own -- total robot supply
+  // is exactly ROBOT_COUNT, comfortably above SIMULATED_VISITOR_TARGET.
+  const totalRobots = ROBOT_COUNT;
 
   // Advance simulated time using dt = the crowd's own MAX_TICK_SECONDS clamp ceiling
   // (0.1s/tick) -- this is the coarsest step WorldRoom.update() is willing to treat as a
@@ -227,14 +233,21 @@ async function testRequestGuideConvergenceAndTrailing(): Promise<void> {
 
 async function testRequestGuideReturnsNullWhenNoRobotIdle(): Promise<void> {
   const room = new WorldRoom();
-  await room.onCreate({ disableSimulatedVisitors: true });
+  // disableGuideRobots: this test's whole premise is "exactly one robot exists" -- the
+  // real GUIDE_ROBOT_COUNT-sized fleet WorldRoom seeds by default would give visitor-c2
+  // plenty of idle robots to bind to and this test's core "requestGuide returns null once
+  // every robot is escorting" assertion would never fire. See WorldRoom.ts's onCreate()
+  // doc comment. The single robot is added by hand right after, in the fleet's place.
+  await room.onCreate({ disableSimulatedVisitors: true, disableGuideRobots: true });
   room.setSimulationInterval();
 
   const plan = loadFloorPlan();
   const entrance = { x: plan.entrance.point[0], z: plan.entrance.point[1] };
 
-  // Exactly one robot exists (WorldRoom's own seeded TEST_AGENT_ID) and no others were
-  // added, so after binding it once, zero idle robots remain.
+  // Exactly one robot exists (added by hand, replacing WorldRoom's old single seeded
+  // TEST_AGENT_ID) and no others were added, so after binding it once, zero idle robots
+  // remain.
+  room.addAgent("only-robot", "robot", entrance);
   room.addAgent("visitor-c1", "visitor", entrance);
   room.addAgent("visitor-c2", "visitor", entrance);
 

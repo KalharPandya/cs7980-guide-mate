@@ -11,6 +11,7 @@ import type { AgentParams } from "../nav/crowd.js";
 import { AGENT_HEIGHT_M, AGENT_RADIUS_M } from "../nav/agentProfile.js";
 import { VisitorManager } from "./visitors.js";
 import type { VisitorDebugStats, VisitorHost } from "./visitors.js";
+import { computeGuideFleetSpawns } from "./guideFleetSpawns.js";
 
 /**
  * Task 1.2: the real Detour Crowd simulation loop, replacing the single-demo-agent
@@ -42,10 +43,31 @@ const DEFAULT_AGENT_PARAMS: AgentParams = {
   separationWeight: 2,
 };
 
-/** No visitors/robots distinction concept yet (that's Phase 4) -- this is the one test
- * agent seeded on room creation so Task 1.2 is independently testable without the IoT
- * bridge or Moses. */
-const TEST_AGENT_ID = "test-robot-1";
+/**
+ * Real guide-robot fleet size, seeded on room creation (replaces the single
+ * `TEST_AGENT_ID` demo robot the original Task 1.2 scaffold seeded, which left every
+ * visitor past the first with no idle robot to assign -- `EscortManager.requestGuide`
+ * (escortManager.ts) returns `null` when no `kind: "robot"` agent is idle, so ~44 of
+ * `SIMULATED_VISITOR_TARGET`'s 45 concurrent visitors piled up motionless at the entrance
+ * forever with only one robot ever moving).
+ *
+ * Robot ids are `"virtual/1"`..`"virtual/${GUIDE_ROBOT_COUNT}"` via `guideRobotId()` below
+ * -- this exact format is load-bearing, not cosmetic: `world/src/iot/bridge.ts`'s
+ * `extractRobotId` pulls the full `"virtual/<n>"` segment straight out of the MQTT topic
+ * (`guidemate/virtual/<n>/cmd`) and uses it AS-IS as the `WorldRoom` agent id, and Task
+ * 2.2's IAM policy scopes device access to the `guidemate/virtual/*` topic root. A robot
+ * spawned here must already carry the id Moses/the IoT bridge will address it by.
+ *
+ * 50 robots + `SIMULATED_VISITOR_TARGET` (45, simulatedVisitorSpawner.ts) = 95 agents,
+ * matching Task 1.3's load-tested design point (`scripts/loadtest.ts`) -- validated at
+ * 0/7500 ticks over the 16.6ms frame budget at that scale -- leaving 33 agents of headroom
+ * under `MAX_AGENTS` (128) for real (non-simulated) visitors the IoT bridge spawns on top.
+ */
+export const GUIDE_ROBOT_COUNT = 50;
+
+function guideRobotId(oneBasedIndex: number): string {
+  return `virtual/${oneBasedIndex}`;
+}
 
 /** Colyseus's setSimulationInterval callback delivers deltaTime in MILLISECONDS; Detour's
  * `crowd.update()` expects SECONDS. Clamped so a stall (e.g. a slow tick after GC) can't
@@ -75,8 +97,17 @@ export class WorldRoom extends Room<{ state: WorldState }> {
    * requestGuide/no-double-assignment tests want to bind specific known robots without the
    * background simulated-visitor spawner also competing for them); production room
    * creation passes no options and gets the spawner running at its default target.
+   *
+   * `options.disableGuideRobots` exists for the same reason: tests that want to control
+   * their own exact robot population (e.g. "exactly one idle robot exists" or "here are 50
+   * hand-placed test robots") would otherwise have to account for the real
+   * `GUIDE_ROBOT_COUNT`-sized fleet this method seeds by default; production room creation
+   * passes no options and gets the real fleet.
    */
-  async onCreate(options?: { disableSimulatedVisitors?: boolean }): Promise<void> {
+  async onCreate(options?: {
+    disableSimulatedVisitors?: boolean;
+    disableGuideRobots?: boolean;
+  }): Promise<void> {
     this.setState(new WorldState());
     console.log("WorldRoom created");
 
@@ -89,10 +120,16 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       maxAgentRadius: MAX_AGENT_RADIUS_M,
     });
 
-    this.addAgent(TEST_AGENT_ID, "robot", {
-      x: this.plan.entrance.point[0],
-      z: this.plan.entrance.point[1],
-    });
+    if (!options?.disableGuideRobots) {
+      // See guideFleetSpawns.ts's doc comment: deterministic navmesh-snapped positions
+      // spread across the whole floor, NOT all 50 stacked on the entrance point (that
+      // would interpenetrate at t=0 and make Detour's local avoidance spend its first
+      // several ticks shoving them apart into a scrum).
+      const spawns = computeGuideFleetSpawns(this.plan, this.nav, GUIDE_ROBOT_COUNT);
+      for (let i = 0; i < GUIDE_ROBOT_COUNT; i++) {
+        this.addAgent(guideRobotId(i + 1), "robot", spawns[i]);
+      }
+    }
 
     // Task 4.1: the simulated-visitor spawner + guide-assignment bookkeeping. `visitorHost`
     // is the narrow slice of this room visitors.ts needs -- see VisitorHost's doc comment.
@@ -192,10 +229,12 @@ export class WorldRoom extends Room<{ state: WorldState }> {
    * calling `requestGuide` -- `requestGuide` itself requires `visitorId` to already be a
    * tracked agent (see `VisitorManager.requestGuide`'s doc comment: it only lazily
    * creates the bookkeeping record, not the Crowd/schema agent), so a caller assigning a
-   * visitor the room has never seen before must add it first. Returns the same point
-   * `onCreate`'s seed robot and the simulated-visitor spawner (`visitors.ts`) already
-   * spawn at, so a freshly-assigned real visitor starts in the same place a simulated
-   * one would.
+   * visitor the room has never seen before must add it first. Returns the same point the
+   * simulated-visitor spawner (`simulatedVisitorSpawner.ts`) already spawns visitors at,
+   * so a freshly-assigned real visitor starts in the same place a simulated one would.
+   * (The guide-robot fleet spawns spread across the floor instead -- see
+   * `guideFleetSpawns.ts` -- since robots aren't arriving at the building, they're already
+   * stationed and waiting to guide.)
    */
   getEntrancePoint(): { x: number; z: number } {
     return { x: this.plan.entrance.point[0], z: this.plan.entrance.point[1] };
