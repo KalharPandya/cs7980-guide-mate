@@ -58,7 +58,7 @@ export interface Bounds2D {
  *   different because this rig IS animated (Visitor.tsx always has either the Idle or Walk clip
  *   playing from the first frame -- see VisitorInstance). The static default pose baked into the
  *   node hierarchy is a red herring: `Hips`'s default rotation carries a spurious ~43 degree
- *   yaw (its quaternion's rotation axis is ~84% aligned with Y), most likely a stray keyframe
+ *   yaw (quaternion [-0.0388, -0.3703, -0.0157, 0.9280]: angle 43.75 deg, rotation axis 99.4% aligned with Y -- an earlier revision of this comment said ~84%, which was wrong; recomputed from the raw GLB node), most likely a stray keyframe
  *   captured as the file's "default" rather than a true bind/T-pose -- and EVERY clip (Idle
  *   included) has its own `Hips -> quaternion` track, so that skew is fully overridden from
  *   frame 0 and is never actually what's rendered. Naively measuring the rest-pose
