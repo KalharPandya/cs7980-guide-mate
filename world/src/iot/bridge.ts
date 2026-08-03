@@ -95,9 +95,21 @@ export interface WorldRoomLike {
    * Task 4.2: picks the nearest idle robot, binds it to `visitorId`, and sends it to
    * `roomNameOrCoords` -- see `WorldRoom.requestGuide` (Task 4.1). Requires `visitorId`
    * to already be a tracked agent (this bridge's `addAgent` call ensures that for a
-   * brand-new real visitor before calling this). Returns `null` if no robot is idle.
+   * brand-new real visitor before calling this).
+   *
+   * Bug fix (defect found by assignChain.test.ts's `testAssignToNonexistentRoom`):
+   * `robotId: null` used to be the ONLY failure shape, collapsing "no robot is idle" and
+   * "an idle robot existed but `roomNameOrCoords` didn't resolve" into the same signal --
+   * `handleFleetCommand` below then always acked "no_idle_robot" for both, which is
+   * actively misleading when the real problem was an unresolvable room name and idle
+   * robots were plentiful. `reason` now distinguishes the two; see this interface's real
+   * implementation (`EscortManager.requestGuide` / `RequestGuideResult`, escortManager.ts)
+   * for the authoritative doc comment.
    */
-  requestGuide(visitorId: string, roomNameOrCoords: string | { x: number; z: number }): { robotId: string } | null;
+  requestGuide(
+    visitorId: string,
+    roomNameOrCoords: string | { x: number; z: number },
+  ): { robotId: string } | { robotId: null; reason: "no_idle_robot" | "target_unresolved" };
   /** Adds a new tracked agent (Crowd + synced schema) -- see `WorldRoom.addAgent`. Used
    * here to spawn a brand-new "real" visitor at the entrance before its first `assign`.
    * Returns `false` (adds nothing) if the world is already at MAX_AGENTS --
@@ -385,9 +397,14 @@ export class IotBridge {
     }
 
     const result = room.requestGuide(visitorId, roomName);
-    if (!result) {
+    if (result.robotId === null) {
+      // Relay requestGuide's own distinct reason (e.g. "no_idle_robot" vs
+      // "target_unresolved") instead of always attributing a failed assign to
+      // "no_idle_robot" -- see WorldRoomLike.requestGuide's doc comment above. The
+      // `=== null` (not `!result.robotId`) is what lets TS narrow to the `reason`-bearing
+      // branch of the union below.
       this.publishFleetAck(
-        makeAck({ cmd_id: cmd.cmd_id, state: "failed", reason: "no_idle_robot", simulated: true }),
+        makeAck({ cmd_id: cmd.cmd_id, state: "failed", reason: result.reason, simulated: true }),
       );
       return;
     }

@@ -4,6 +4,7 @@ import type { Agent } from "./schema/WorldState.js";
 import type { BuiltNavMesh, RoomTarget } from "../nav/buildNavMesh.js";
 import type { FloorPlan } from "../nav/loadFloorPlan.js";
 import { EscortManager } from "./escortManager.js";
+import type { RequestGuideResult } from "./escortManager.js";
 import { SimulatedVisitorSpawner } from "./simulatedVisitorSpawner.js";
 import type { SimulatedVisitorSpawnerOptions } from "./simulatedVisitorSpawner.js";
 
@@ -97,8 +98,9 @@ export class VisitorManager {
   }
 
   /** Passthrough to `EscortManager.requestGuide` -- see its doc comment in
-   * escortManager.ts for the full assignment logic. */
-  requestGuide(visitorId: string, roomNameOrCoords: string | RoomTarget): { robotId: string } | null {
+   * escortManager.ts for the full assignment logic, and `RequestGuideResult`'s doc comment
+   * for the failure-reason shape. */
+  requestGuide(visitorId: string, roomNameOrCoords: string | RoomTarget): RequestGuideResult {
     return this.escorts.requestGuide(visitorId, roomNameOrCoords);
   }
 

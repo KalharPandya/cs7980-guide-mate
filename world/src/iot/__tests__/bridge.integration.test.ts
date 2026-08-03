@@ -72,8 +72,8 @@ class FakeWorldRoom implements WorldRoomLike {
   // Task 4.2's assign path is exercised by bridge.test.ts's in-process fakes; this
   // real-broker round trip only needs `navigate`, so these are minimal stand-ins to
   // satisfy WorldRoomLike.
-  requestGuide(): { robotId: string } | null {
-    return null;
+  requestGuide(): { robotId: string } | { robotId: null; reason: "no_idle_robot" | "target_unresolved" } {
+    return { robotId: null, reason: "no_idle_robot" };
   }
 
   addAgent(): boolean {

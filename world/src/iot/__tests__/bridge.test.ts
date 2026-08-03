@@ -82,7 +82,9 @@ class FakeWorldRoom implements WorldRoomLike {
   nextRoomTargetRoute: [number, number] | undefined;
 
   // ---- Task 4.2 test hooks: requestGuide/addAgent/getEntrancePoint ----
-  requestGuideResult: { robotId: string } | null = { robotId: "virtual/1" };
+  requestGuideResult: { robotId: string } | { robotId: null; reason: "no_idle_robot" | "target_unresolved" } = {
+    robotId: "virtual/1",
+  };
   requestGuideCalls: { visitorId: string; target: unknown }[] = [];
   addAgentCalls: { id: string; kind: "robot" | "visitor"; spawn: { x: number; z: number } }[] = [];
   /** Test hook for the MAX_AGENTS guard (security-review finding closed out alongside
@@ -108,7 +110,10 @@ class FakeWorldRoom implements WorldRoomLike {
     return this.moveResult;
   }
 
-  requestGuide(visitorId: string, target: string | { x: number; z: number }): { robotId: string } | null {
+  requestGuide(
+    visitorId: string,
+    target: string | { x: number; z: number },
+  ): { robotId: string } | { robotId: null; reason: "no_idle_robot" | "target_unresolved" } {
     this.requestGuideCalls.push({ visitorId, target });
     return this.requestGuideResult;
   }
@@ -554,11 +559,11 @@ async function main(): Promise<void> {
     console.log("PASS: assign for an already-tracked visitor does not re-spawn it");
   }
 
-  // ---- requestGuide returns null (no idle robot) -> failed/no_idle_robot ----
+  // ---- requestGuide returns robotId: null / reason: no_idle_robot -> failed/no_idle_robot ----
   {
     const client = new FakeMqttClient();
     const room = new FakeWorldRoom();
-    room.requestGuideResult = null;
+    room.requestGuideResult = { robotId: null, reason: "no_idle_robot" };
     const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
 
     bridge.handleMessage(fleetCmdTopic(), JSON.stringify(assignCmd("cmd-a3", "visitor-3")));
@@ -567,7 +572,25 @@ async function main(): Promise<void> {
     const failedAck = client.published.find((p) => p.payload.cmd_id === "cmd-a3" && p.payload.state === "failed")!.payload;
     assert.equal(failedAck.reason, "no_idle_robot");
     assert.equal(failedAck.assigned_robot_id, null);
-    console.log("PASS: requestGuide returning null acks failed/no_idle_robot");
+    console.log("PASS: requestGuide returning robotId: null / reason: no_idle_robot acks failed/no_idle_robot");
+  }
+
+  // ---- defect B fix: requestGuide returns robotId: null / reason: target_unresolved (an
+  // idle robot WAS available, but the room name didn't resolve) -> the bridge must relay
+  // THAT reason, not always fall back to "no_idle_robot" ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    room.requestGuideResult = { robotId: null, reason: "target_unresolved" };
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(assignCmd("cmd-a3c", "visitor-3c")));
+
+    assert.deepEqual(client.acksFor("cmd-a3c"), ["received", "failed"]);
+    const failedAck = client.published.find((p) => p.payload.cmd_id === "cmd-a3c" && p.payload.state === "failed")!.payload;
+    assert.equal(failedAck.reason, "target_unresolved");
+    assert.equal(failedAck.assigned_robot_id, null);
+    console.log("PASS: requestGuide returning robotId: null / reason: target_unresolved acks failed/target_unresolved (not misreported as no_idle_robot)");
   }
 
   // ---- security-review finding: addAgent refuses because the world is at MAX_AGENTS

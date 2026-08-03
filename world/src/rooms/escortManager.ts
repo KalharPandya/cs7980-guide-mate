@@ -1,5 +1,6 @@
 import type { RoomTarget } from "../nav/buildNavMesh.js";
 import type { VisitorHost } from "./visitors.js";
+import { AGENT_RADIUS_M } from "../nav/agentProfile.js";
 
 /**
  * Deferred cleanup of Task 4.1's visitors.ts (flagged by that task's reviewer): this file
@@ -92,6 +93,60 @@ const ARRIVAL_GRACE_PERIOD_S = 0.3;
  * read as "being led" rather than "wandering independently nearby" at demo camera distance. */
 const TRAIL_DISTANCE_M = 1.0;
 
+/**
+ * Defect fix (found by assignChain.test.ts's `testEscortEndsOnRobotArrivalNotVisitorArrival`):
+ * `tick()` used to release an escort the instant the ROBOT's own schema state settled to
+ * "idle", with no reference to where the VISITOR actually was. Combined with `requestGuide`
+ * picking the idle robot nearest to the VISITOR's spawn (not nearest to the DESTINATION), a
+ * robot that happened to already be close to the requested room finished its own trip in
+ * seconds while a visitor that started far away (e.g. at the entrance) was still most of its
+ * own trip away -- the binding released anyway, the robot became reassignable to someone
+ * else, and `tick()` never re-aims an unbound visitor's trailing target again, so the first
+ * visitor was genuinely abandoned mid-floor.
+ *
+ * The fix gates completion on the VISITOR having caught up to the (now-idle) robot too -- see
+ * `tick()`'s `visitorCaughtUpToRobot`, which requires BOTH the visitor's own schema `state
+ * === "idle"` (Detour's own "I'm done moving" signal for the FOLLOWER, the same kind of
+ * signal already trusted for the robot's `robotIdleAtDestination`) AND this distance sanity
+ * bound. Checking distance to the ROBOT (not a separately-resolved destination point) is
+ * deliberate: the robot's own `state === "idle"` already means Detour considers IT at the
+ * destination (see DOOR_TOLERANCE_M in WorldRoom.test.ts/visitors.test.ts/
+ * assignChain.test.ts), so "visitor near the now-idle robot" transitively means "visitor near
+ * the actual destination" -- with no new nav resolution or extra per-visitor bookkeeping
+ * needed.
+ *
+ * This is NOT `TRAIL_DISTANCE_M + AGENT_RADIUS_M` (1.2m), even though that was the first,
+ * more "reuse an existing constant" instinct -- measured against the real Detour Crowd
+ * (`scripts/_debug_settle*.ts`-style harness, several room pairs, fleet enabled/disabled):
+ * once the visitor's trailing target converges onto the STOPPED robot's own resting point
+ * (see recordHistoryAndRetarget's doc comment -- the "conga line" history buffer flushes to
+ * the robot's exact position after it stops moving), the visitor settles at ~1.4-1.65m from
+ * the robot, not ~1.2m -- `separationWeight`'s local-avoidance repulsion between two
+ * `collisionQueryRange`-aware agents holds a wider personal-space gap once the goal is
+ * effectively "stand where the other agent's body is" than the ~1.0m TRAIL_DISTANCE_M gap
+ * achievable while actively CHASING a point that's still ahead of a MOVING robot (a
+ * different, less contested geometry -- see TRAIL_HISTORY_SAMPLES' doc comment). Using the
+ * too-tight 1.2m bound made `visitorCaughtUpToRobot` permanently false and every escort ran
+ * out the clock on ESCORT_TIMEOUT_S instead of completing on genuine arrival -- caught by
+ * this fix's own test coverage before landing, not a theoretical concern. 2.5m keeps real
+ * margin above the measured ~1.65m worst case while still safely excluding "visitor is still
+ * out in the corridor, just between moving-fast frames" (a plainly stationary-but-nearby
+ * visitor within 2.5m of an idle robot is not a state that occurs mid-route). Requiring the
+ * visitor's OWN `state === "idle"` alongside this (not distance alone) is the belt-and-
+ * suspenders half: it's what actually filters out "still en route, just below
+ * IDLE_SPEED_THRESHOLD_MPS for one congested tick" -- distance alone can't tell that apart
+ * from genuine arrival at a route that happens to pass within 2.5m of the destination.
+ *
+ * No deadlock: this can never make "arrived" permanently unreachable, because once the robot
+ * stops, `tick()` keeps calling `recordHistoryAndRetarget` every TRAIL_UPDATE_INTERVAL_S
+ * below regardless of whether `arrived` is currently true (the check failing is NOT treated
+ * as "done", so the tick loop falls through to the normal trailing-update path, same as
+ * mid-route) -- so the visitor keeps being re-aimed at the robot's position until it
+ * genuinely settles nearby, or the ESCORT_TIMEOUT_S safety valve fires regardless if it
+ * physically never can.
+ */
+const VISITOR_ARRIVAL_DISTANCE_M = 2.5;
+
 /** How often the visitor's trailing target is re-aimed while under escort (and how often a
  * robot-position sample is recorded into the history buffer below). Re-issuing
  * `requestMoveTarget` every physics tick (up to 45 escorted visitors at once) would mean up
@@ -162,6 +217,26 @@ function randomBetween(min: number, max: number): number {
 }
 
 /**
+ * Defect fix (found by assignChain.test.ts's `testAssignToNonexistentRoom`): `requestGuide`
+ * used to collapse two structurally different failures -- "no robot is idle" and "an idle
+ * robot WAS available, but `roomNameOrCoords` didn't resolve to a reachable nav-space
+ * point" -- into a single `null`, which meant `bridge.ts`'s `handleFleetCommand` always
+ * attributed a failed `assign` to reason "no_idle_robot", even when idle robots were
+ * plentiful and the real problem was an unresolvable room name. `"target_unresolved"` is
+ * the SAME string `bridge.ts`'s per-robot `navigate` path already uses for its own
+ * `moveAgentTo` failure (see `handleCommand`'s ack), reused here rather than inventing a
+ * differently-named reason for what is, from the caller's point of view, the same kind of
+ * failure on a different code path.
+ */
+export type RequestGuideFailureReason = "no_idle_robot" | "target_unresolved";
+
+/** `requestGuide`'s result: either the bound robot's id, or `robotId: null` plus WHY no
+ * robot was bound -- see `RequestGuideFailureReason`'s doc comment. Deliberately keeps
+ * `robotId` present (rather than `null` as a bare sentinel) on both branches so callers can
+ * narrow with a single `if (result.robotId)` check without a separate discriminant field. */
+export type RequestGuideResult = { robotId: string } | { robotId: null; reason: RequestGuideFailureReason };
+
+/**
  * Owns guide-assignment (`requestGuide`), the bidirectional escort binding, and the
  * trailing-follow physics -- everything driven once per tick by the escort loop.
  * `simulatedVisitorSpawner.ts` depends on this class (constructed first by
@@ -211,15 +286,18 @@ export class EscortManager {
    * never spawned itself, i.e. a real visitor a later task's IoT bridge added via
    * `addAgent` directly.
    *
-   * Returns `null` (no throw) if: `visitorId` isn't a tracked agent at all, the visitor
-   * already has a robot bound, no robot is idle, or the target can't be resolved (in which
-   * case nothing is bound -- a resolution failure must not consume a robot).
+   * Returns `{ robotId: null, reason }` (no throw) if: `visitorId` isn't a tracked agent at
+   * all, the visitor already has a robot bound, no robot is idle (all three: reason
+   * "no_idle_robot"), or the target can't be resolved (reason "target_unresolved", in which
+   * case nothing is bound -- a resolution failure must not consume a robot). See
+   * `RequestGuideFailureReason`'s doc comment for why only the target-resolution failure
+   * gets its own distinct reason.
    */
-  requestGuide(visitorId: string, roomNameOrCoords: string | RoomTarget): { robotId: string } | null {
+  requestGuide(visitorId: string, roomNameOrCoords: string | RoomTarget): RequestGuideResult {
     const visitorAgent = this.host.agents.get(visitorId);
     if (!visitorAgent) {
       console.warn(`EscortManager.requestGuide: unknown visitor id "${visitorId}"`);
-      return null;
+      return { robotId: null, reason: "no_idle_robot" };
     }
 
     let record = this.visitors.get(visitorId);
@@ -242,7 +320,7 @@ export class EscortManager {
       console.warn(
         `EscortManager.requestGuide: visitor "${visitorId}" already has robot "${record.robotId}" assigned`,
       );
-      return null;
+      return { robotId: null, reason: "no_idle_robot" };
     }
 
     let bestRobotId: string | null = null;
@@ -259,10 +337,13 @@ export class EscortManager {
       }
     }
 
-    if (!bestRobotId) return null;
+    if (!bestRobotId) return { robotId: null, reason: "no_idle_robot" };
 
     const moved = this.host.moveAgentTo(bestRobotId, roomNameOrCoords);
-    if (!moved) return null; // unresolvable/unreachable target -- don't bind a robot for nothing
+    // unresolvable/unreachable target -- don't bind a robot for nothing; an idle robot WAS
+    // available, so this is distinctly "target_unresolved", not "no_idle_robot" (see
+    // RequestGuideFailureReason's doc comment).
+    if (!moved) return { robotId: null, reason: "target_unresolved" };
 
     this.robotToVisitor.set(bestRobotId, visitorId);
     record.robotId = bestRobotId;
@@ -331,9 +412,11 @@ export class EscortManager {
    * this step evaluates escorts bound on a PREVIOUS frame against agent state that already
    * had a real crowd tick applied since binding (WorldRoom.update() calls `crowd.tick()` +
    * syncs schema state before calling into this subsystem at all), which is what makes
-   * "robot schema state settled back to idle" a safe, race-free arrival signal: a robot
-   * can never go idle -> (bound this call) -> re-checked-idle within the same tick(),
-   * because new bindings only happen in the spawner step, which runs after this one.
+   * "robot schema state settled back to idle" a safe, race-free ROBOT-arrival signal: a
+   * robot can never go idle -> (bound this call) -> re-checked-idle within the same tick(),
+   * because new bindings only happen in the spawner step, which runs after this one. The
+   * robot going idle is only HALF of "arrived", though -- see VISITOR_ARRIVAL_DISTANCE_M's
+   * doc comment for why completion also requires the VISITOR to have caught up to it.
    */
   tick(dtSeconds: number): void {
     for (const visitor of this.visitors.values()) {
@@ -359,8 +442,25 @@ export class EscortManager {
 
       visitor.escortElapsedSeconds += dtSeconds;
 
-      const arrived =
+      // Defect fix: "arrived" used to be JUST the robot's own idle state -- see
+      // VISITOR_ARRIVAL_DISTANCE_M's doc comment for why that stranded visitors that
+      // started far from a robot which happened to be close to the destination. Now it
+      // also requires the VISITOR to have closed the gap to the (idle) robot. When the
+      // robot is idle but the visitor hasn't caught up yet, `arrived` is false and this
+      // falls through to the normal trailing-update path below every tick, same as
+      // mid-route -- so the visitor keeps getting re-aimed at the robot's (now stationary)
+      // position until it does catch up, or the timeout below fires regardless.
+      const robotIdleAtDestination =
         visitor.escortElapsedSeconds >= ARRIVAL_GRACE_PERIOD_S && robotAgent.state === "idle";
+      // Requires the visitor's OWN state to also be "idle" (Detour's own "I stopped moving"
+      // signal for the follower), not distance alone -- see VISITOR_ARRIVAL_DISTANCE_M's doc
+      // comment for why: distance alone can't tell "still actively closing the gap, just
+      // below IDLE_SPEED_THRESHOLD_MPS for one tick" apart from "genuinely settled nearby".
+      const visitorCaughtUpToRobot =
+        visitorAgent.state === "idle" &&
+        Math.hypot(visitorAgent.x - robotAgent.x, visitorAgent.z - robotAgent.z) <=
+          VISITOR_ARRIVAL_DISTANCE_M;
+      const arrived = robotIdleAtDestination && visitorCaughtUpToRobot;
       const timedOut = !arrived && visitor.escortElapsedSeconds >= this.escortTimeoutS;
 
       if (arrived || timedOut) {

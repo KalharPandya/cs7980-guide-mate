@@ -11,6 +11,7 @@ import type { AgentParams } from "../nav/crowd.js";
 import { AGENT_HEIGHT_M, AGENT_RADIUS_M } from "../nav/agentProfile.js";
 import { VisitorManager } from "./visitors.js";
 import type { VisitorDebugStats, VisitorHost, VisitorManagerOptions } from "./visitors.js";
+import type { RequestGuideResult } from "./escortManager.js";
 import { computeGuideFleetSpawns } from "./guideFleetSpawns.js";
 
 /**
@@ -310,11 +311,13 @@ export class WorldRoom extends Room<{ state: WorldState }> {
    * Task 4.1: picks the nearest idle robot, binds it to `visitorId`, and sends it to
    * `roomNameOrCoords` -- the plain-TypeScript guide-assignment entry point a later task's
    * Moses/IoT bridge will call for a real visitor (this task deliberately does not touch
-   * IoT/MQTT at all). Returns `null` if no robot is currently idle. All of the actual
-   * bookkeeping (escort-binding maps, un-binding on arrival/timeout, the simulated-visitor
-   * spawner) lives in `./visitors.ts` -- see `VisitorManager.requestGuide`.
+   * IoT/MQTT at all). Returns `{ robotId: null, reason }` if no robot is currently idle, or
+   * if `roomNameOrCoords` couldn't be resolved -- see `RequestGuideResult`'s doc comment
+   * (escortManager.ts) for the two distinct reasons. All of the actual bookkeeping
+   * (escort-binding maps, un-binding on arrival/timeout, the simulated-visitor spawner)
+   * lives in `./visitors.ts` -- see `VisitorManager.requestGuide`.
    */
-  requestGuide(visitorId: string, roomNameOrCoords: string | RoomTarget): { robotId: string } | null {
+  requestGuide(visitorId: string, roomNameOrCoords: string | RoomTarget): RequestGuideResult {
     return this.visitors.requestGuide(visitorId, roomNameOrCoords);
   }
 

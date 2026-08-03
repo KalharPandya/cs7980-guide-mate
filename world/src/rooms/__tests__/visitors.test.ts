@@ -171,9 +171,9 @@ async function testRequestGuideConvergenceAndTrailing(): Promise<void> {
   };
 
   const result = room.requestGuide("visitor-b", "Event Space");
-  assert.ok(result, "requestGuide should succeed when an idle robot is available");
-  assert.equal(result!.robotId, "robot-b", "requestGuide should pick the nearest idle robot (robot-b, not one of the 50 seeded fleet robots)");
-  console.log(`PASS: requestGuide("visitor-b", "Event Space") assigned robot "${result!.robotId}"`);
+  assert.ok(result.robotId, "requestGuide should succeed when an idle robot is available");
+  assert.equal(result.robotId, "robot-b", "requestGuide should pick the nearest idle robot (robot-b, not one of the 50 seeded fleet robots)");
+  console.log(`PASS: requestGuide("visitor-b", "Event Space") assigned robot "${result.robotId}"`);
 
   let statsAfterBind = room.getVisitorDebugStats();
   assert.equal(statsAfterBind.escortedVisitors, 1, "exactly one visitor should be escorted right after a successful requestGuide");
@@ -305,18 +305,23 @@ async function testRequestGuideReturnsNullWhenNoRobotIdle(): Promise<void> {
   room.addAgent("visitor-c2", "visitor", entrance);
 
   const firstResult = room.requestGuide("visitor-c1", "Classroom 1425");
-  assert.ok(firstResult, "requestGuide should succeed for the first visitor (one idle robot exists)");
-  console.log(`PASS: requestGuide("visitor-c1", ...) succeeded (no throw), assigned "${firstResult!.robotId}"`);
+  assert.ok(firstResult.robotId, "requestGuide should succeed for the first visitor (one idle robot exists)");
+  console.log(`PASS: requestGuide("visitor-c1", ...) succeeded (no throw), assigned "${firstResult.robotId}"`);
 
   const secondResult = room.requestGuide("visitor-c2", "Classroom 1426");
-  assert.equal(secondResult, null, "requestGuide should return null (not throw) for a second visitor once every robot is already escorting");
-  console.log("PASS: requestGuide returns null (no throw) when every robot is already escorting");
+  assert.equal(secondResult.robotId, null, "requestGuide should return robotId: null (not throw) for a second visitor once every robot is already escorting");
+  assert.equal(
+    (secondResult as { reason?: string }).reason,
+    "no_idle_robot",
+    'the failure reason should be "no_idle_robot" -- an idle robot genuinely wasn\'t available, not an unresolvable target',
+  );
+  console.log("PASS: requestGuide returns robotId: null / reason: no_idle_robot (no throw) when every robot is already escorting");
 
   // Re-requesting for the ALREADY-escorted visitor-c1 should also fail cleanly, not
   // double-assign a second robot to it (there isn't a second robot anyway here, but this
   // also guards against ever double-binding a visitor if more robots existed).
   const reRequestResult = room.requestGuide("visitor-c1", "Classroom 1417");
-  assert.equal(reRequestResult, null, "requestGuide should refuse to re-assign a visitor that already has a robot bound");
+  assert.equal(reRequestResult.robotId, null, "requestGuide should refuse to re-assign a visitor that already has a robot bound");
   console.log("PASS: requestGuide refuses to double-assign an already-escorted visitor");
 
   const stats = room.getVisitorDebugStats();
@@ -328,9 +333,179 @@ async function testRequestGuideReturnsNullWhenNoRobotIdle(): Promise<void> {
   room.onDispose();
 }
 
+/**
+ * Defect-A regression test (the bug assignChain.test.ts's
+ * `testEscortEndsOnRobotArrivalNotVisitorArrival` found and this fix closes): a robot that
+ * happens to already be sitting right at the requested room's door has a near-zero trip of
+ * its own and settles to idle almost immediately -- but the escort must NOT release just
+ * because of that. It should stay bound until the VISITOR (which may have started far away)
+ * has actually caught up, then release once it does.
+ */
+async function testEscortWaitsForVisitorNotJustRobotArrival(): Promise<void> {
+  const room = new WorldRoom();
+  await room.onCreate({ disableSimulatedVisitors: true, disableGuideRobots: true });
+  room.setSimulationInterval();
+
+  const plan = loadFloorPlan();
+  const entrance = { x: plan.entrance.point[0], z: plan.entrance.point[1] };
+  // "South Collaboration Space" is the room farthest from the entrance in floor-14.json
+  // (~20.4m, same pick assignChain.test.ts's fix-verification scenario uses) -- needed so
+  // the robot's own near-zero trip (spawned AT the door) is unambiguously much shorter than
+  // the visitor's real trip from the entrance.
+  const destRoom = plan.rooms.find((r) => r.name === "South Collaboration Space");
+  assert.ok(destRoom, "floor-14.json should contain 'South Collaboration Space'");
+  const [doorX, doorZ] = destRoom!.door;
+  const entranceToDoorDistance = Math.hypot(doorX - entrance.x, doorZ - entrance.z);
+  assert.ok(
+    entranceToDoorDistance > 15,
+    "test setup: entrance -> South Collaboration Space's door should be a genuinely long distance (>15m) for this " +
+      `test to be meaningful; got ${entranceToDoorDistance.toFixed(2)}m -- pick a farther room if floor-14.json changed`,
+  );
+
+  // Robot spawns AT the door -- its own "trip" is ~0m, so it settles idle almost instantly.
+  // The visitor spawns at the entrance, genuinely far away -- exactly the shape of the
+  // defect assignChain.test.ts found (a robot that happens to already be near the room).
+  room.addAgent("near-door-robot", "robot", { x: doorX, z: doorZ });
+  room.addAgent("far-visitor", "visitor", entrance);
+
+  const result = room.requestGuide("far-visitor", "South Collaboration Space");
+  assert.ok(result.robotId, "requestGuide should succeed (one idle robot exists)");
+  assert.equal(result.robotId, "near-door-robot");
+
+  const state = room.state as unknown as {
+    agents: Map<string, { x: number; z: number; state: string }>;
+  };
+
+  // Advance a SHORT, bounded window -- comfortably enough for the robot's own near-zero
+  // trip to settle to idle, nowhere near enough for the visitor to cross the real
+  // entrance-to-door distance on foot (max agent speed 1.4 m/s).
+  const SHORT_TICKS = 60; // ~1s simulated
+  for (let i = 0; i < SHORT_TICKS; i++) room.update(TICK_MS);
+
+  const robotAfterShort = state.agents.get("near-door-robot")!;
+  assert.equal(
+    robotAfterShort.state,
+    "idle",
+    "test setup: the robot's own near-zero trip should have settled to idle well within 1s",
+  );
+
+  const statsAfterRobotIdle = room.getVisitorDebugStats();
+  assert.equal(
+    statsAfterRobotIdle.robotBindings,
+    1,
+    "defect fix: the escort must NOT release just because the ROBOT went idle -- the visitor is still most of the " +
+      "entrance-to-door distance away and has not caught up yet (the old robot-only arrival check would have " +
+      "released it here)",
+  );
+  console.log(
+    "PASS: robot settled idle after its own near-zero trip, but the escort stayed bound because the visitor " +
+      "hasn't caught up yet",
+  );
+
+  // Now give the visitor enough simulated time to actually walk the real distance and
+  // catch up to the (now-stationary) robot.
+  const MAX_TICKS = 3000; // ~49.8s simulated
+  let released = false;
+  for (let i = 0; i < MAX_TICKS && !released; i++) {
+    room.update(TICK_MS);
+    released = room.getVisitorDebugStats().robotBindings === 0;
+  }
+  assert.ok(released, `escort should release once the visitor genuinely catches up to the robot (within ${MAX_TICKS} ticks)`);
+
+  const visitorFinal = state.agents.get("far-visitor")!;
+  const robotFinal = state.agents.get("near-door-robot")!;
+  const finalSeparation = Math.hypot(visitorFinal.x - robotFinal.x, visitorFinal.z - robotFinal.z);
+  assert.ok(
+    finalSeparation <= 1.5,
+    `visitor "far-visitor" should have actually closed the gap to the robot before the escort released -- got ` +
+      `${finalSeparation.toFixed(2)}m apart`,
+  );
+  assert.equal(robotFinal.state, "idle", "the robot should still be idle (never re-tasked) once the escort finally releases");
+  console.log(
+    `PASS: escort released only once the visitor genuinely caught up (final separation ${finalSeparation.toFixed(2)}m), ` +
+      "proving completion is gated on the VISITOR's arrival, not just the robot's",
+  );
+
+  room.onDispose();
+}
+
+/**
+ * Safety-valve regression test: the fix above must not be able to deadlock an escort
+ * forever if the visitor genuinely never catches up. Uses a short `escortTimeoutSeconds`
+ * override (2s of simulated time) rather than an artificially unreachable target, so the
+ * test stays fast/deterministic -- any real multi-meter trip takes far longer than 2s at
+ * the agent's ~1.4 m/s max speed, so the visitor cannot possibly catch up before the
+ * timeout fires. Covers the "escort-timeout path must stay covered" requirement.
+ */
+async function testEscortTimeoutStillFiresWhenVisitorNeverCatchesUp(): Promise<void> {
+  const room = new WorldRoom();
+  await room.onCreate({
+    disableSimulatedVisitors: true,
+    disableGuideRobots: true,
+    visitorManagerOptions: { escortTimeoutSeconds: 2 },
+  });
+  room.setSimulationInterval();
+
+  const plan = loadFloorPlan();
+  const entrance = { x: plan.entrance.point[0], z: plan.entrance.point[1] };
+  const destRoom = plan.rooms.find((r) => r.name === "South Collaboration Space")!;
+  const [doorX, doorZ] = destRoom.door;
+  const entranceToDoorDistance = Math.hypot(doorX - entrance.x, doorZ - entrance.z);
+  assert.ok(
+    entranceToDoorDistance > 2,
+    `test setup: entrance -> South Collaboration Space's door (${entranceToDoorDistance.toFixed(2)}m) should take ` +
+      "genuinely longer than the 2s escort timeout to walk at ~1.4 m/s max speed",
+  );
+
+  room.addAgent("timeout-robot", "robot", { x: doorX, z: doorZ });
+  room.addAgent("timeout-visitor", "visitor", entrance);
+
+  const result = room.requestGuide("timeout-visitor", "South Collaboration Space");
+  assert.ok(result.robotId, "requestGuide should succeed (one idle robot exists)");
+
+  const MAX_TICKS = 600; // ~10s simulated, generous headroom over the 2s timeout
+  let released = false;
+  for (let i = 0; i < MAX_TICKS && !released; i++) {
+    room.update(TICK_MS);
+    released = room.getVisitorDebugStats().robotBindings === 0;
+  }
+  assert.ok(released, "the ESCORT_TIMEOUT_S safety valve should release the binding even though the visitor never caught up");
+
+  const state = room.state as unknown as {
+    agents: Map<string, { x: number; z: number; state: string }>;
+  };
+  const visitorFinal = state.agents.get("timeout-visitor")!;
+  const robotFinal = state.agents.get("timeout-robot")!;
+  const finalSeparation = Math.hypot(visitorFinal.x - robotFinal.x, visitorFinal.z - robotFinal.z);
+  assert.ok(
+    finalSeparation > 1.5,
+    `test setup: the visitor should still be genuinely far from the robot when the timeout fires (got ` +
+      `${finalSeparation.toFixed(2)}m) -- proves the release was via the TIMEOUT, not a coincidental real arrival`,
+  );
+
+  const stats = room.getVisitorDebugStats();
+  assert.equal(stats.escortedVisitors, 0, "the visitor should no longer be recorded as escorted after the timeout");
+  assert.equal(stats.robotBindings, 0, "the robot binding should be released after the timeout");
+  assert.equal(robotFinal.state, "idle", "the released robot should be idle, immediately reassignable");
+
+  // Concretely prove "reassignable": the freed robot must be selectable again.
+  room.addAgent("timeout-reuse-probe", "visitor", { x: robotFinal.x, z: robotFinal.z });
+  const reuse = room.requestGuide("timeout-reuse-probe", { x: robotFinal.x, z: robotFinal.z });
+  assert.equal(reuse.robotId, "timeout-robot", "the timed-out robot should be immediately reassignable to a new escort");
+
+  console.log(
+    `PASS: escort timeout (2s override) released the binding even though the visitor never caught up ` +
+      `(final separation ${finalSeparation.toFixed(2)}m) -- no deadlock, robot reassignable`,
+  );
+
+  room.onDispose();
+}
+
 async function main(): Promise<void> {
   await testRequestGuideConvergenceAndTrailing();
   await testRequestGuideReturnsNullWhenNoRobotIdle();
+  await testEscortWaitsForVisitorNotJustRobotArrival();
+  await testEscortTimeoutStillFiresWhenVisitorNeverCatchesUp();
   await testSimulatedSpawnerConvergence();
 
   console.log("\nALL PASS: visitors.test.ts");

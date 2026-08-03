@@ -220,7 +220,7 @@ export class SimulatedVisitorSpawner {
    * for the purposes of the ~45-target headcount. */
   private tryStartEscort(record: VisitorRecord): void {
     const result = this.escorts.requestGuide(record.id, record.simulatedTargetRoom!);
-    if (result) {
+    if (result.robotId) {
       record.simulatedPhase = "walking_to_room";
     } else {
       record.simulatedCooldownSeconds = ROBOT_RETRY_INTERVAL_S;

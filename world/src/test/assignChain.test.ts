@@ -443,27 +443,36 @@ async function testAssignChainEndToEnd(): Promise<void> {
 }
 
 // ============================================================================================
-// Scenario 1b (DEFECT, found by this test file, reported per the task brief -- not fixed):
-// the escort ends the moment the GUIDE ROBOT's own crowd state settles to idle
+// Scenario 1b (FIX VERIFICATION -- this test used to document a real defect this test file
+// found: the escort released the instant the GUIDE ROBOT's own crowd state settled to idle
 // (EscortManager.tick(): `arrived = ... && robotAgent.state === "idle"`), with NO check on
-// how far the VISITOR itself still is from the destination. `requestGuide` picks the idle
+// how far the VISITOR itself still was from the destination. `requestGuide` picks the idle
 // robot nearest to the VISITOR's spawn (the entrance) -- not nearest to the DESTINATION -- so
-// if that nearest-to-entrance robot happens to already be sitting close to the requested room
-// (a real, observed case: the deterministic 50-robot spawn grid in guideFleetSpawns.ts puts
-// "virtual/50" only ~4.5m from "South Collaboration Space"'s door, see the NOTE in
-// testAssignChainEndToEnd above), the robot's own trip is over in a few seconds while the
-// visitor -- which started ~17-20m away at the entrance and has to trail the robot's ENTIRE
-// historical path to catch up (EscortManager.recordHistoryAndRetarget, deliberately NOT a
-// beeline to the destination -- see its doc comment) -- has barely begun closing that gap.
-// The escort binding is released ("delivered", robot back in the idle pool) while the visitor
-// is still stranded meters away from the room, with nothing left commanding it any closer:
-// once unbound, EscortManager.tick() never calls requestMoveTarget for that visitor id again,
-// so the visitor's crowd agent just coasts to a stop wherever its last trailing target was and
-// stays there -- Moses would report "escorted to South Collaboration Space" while the visitor
-// avatar is actually resting well short of the door.
+// a robot that happens to already be sitting close to the requested room (a real, observed
+// case: the deterministic 50-robot spawn grid in guideFleetSpawns.ts puts "virtual/50" only
+// ~4.5m from "South Collaboration Space"'s door, see the NOTE in testAssignChainEndToEnd
+// above) used to finish its own trip in a few seconds and release the escort while the
+// visitor -- which started ~17-20m away at the entrance -- was still most of its own trip
+// away, genuinely abandoned mid-floor. Fixed in escortManager.ts's `tick()`: completion now
+// also requires the VISITOR to have caught up to the (now-idle) robot -- see
+// VISITOR_ARRIVAL_DISTANCE_M's doc comment there. This test proves BOTH halves of the fix:
+// (a) the escort stays bound (and the robot stays un-reassignable) the moment the robot
+// itself goes idle but the visitor hasn't caught up yet, and (b) it genuinely releases once
+// the visitor does catch up, with the visitor actually near the door at that point -- not
+// just "eventually", and not via the ESCORT_TIMEOUT_S safety valve (that path has its own
+// dedicated coverage in visitors.test.ts's
+// `testEscortTimeoutStillFiresWhenVisitorNeverCatchesUp`); this test uses a generous
+// escortTimeoutSeconds override so a genuine slow-but-working catch-up can never be cut off
+// by that valve and misread as "arrived".
 // ============================================================================================
-async function testEscortEndsOnRobotArrivalNotVisitorArrival(): Promise<void> {
-  const { room, shutdown } = await bootRealRoom({ disableSimulatedVisitors: true });
+async function testEscortEndsOnVisitorArrivalNotJustRobot(): Promise<void> {
+  const { room, shutdown } = await bootRealRoom({
+    disableSimulatedVisitors: true,
+    // Generous override (vs. the real 90s default) purely to decouple THIS test's claim
+    // ("the visitor genuinely arrives") from the timeout safety valve, which is covered
+    // separately -- see the block comment above.
+    visitorManagerOptions: { escortTimeoutSeconds: 180 },
+  });
   try {
     const plan = loadFloorPlan();
     const entrance = room.getEntrancePoint();
@@ -471,7 +480,10 @@ async function testEscortEndsOnRobotArrivalNotVisitorArrival(): Promise<void> {
     const destRoom = plan.rooms.find((r) => r.name === targetRoomName)!;
     const [doorX, doorZ] = destRoom.door;
     const entranceToDoorDistance = Math.hypot(doorX - entrance.x, doorZ - entrance.z);
-    assert.ok(entranceToDoorDistance > 15, "test setup: the visitor's own entrance-to-door trip must be genuinely long for this defect to be observable");
+    assert.ok(
+      entranceToDoorDistance > 15,
+      "test setup: the visitor's own entrance-to-door trip must be genuinely long for this fix to be meaningfully exercised",
+    );
 
     const client = new FakeMqttClient();
     const bridge = new IotBridge({ getRoom: () => room as unknown as WorldRoomLike, client, log: QUIET_LOG });
@@ -482,7 +494,7 @@ async function testEscortEndsOnRobotArrivalNotVisitorArrival(): Promise<void> {
         cmd_id: cmdId,
         type: "assign",
         name: "assign",
-        params: { visitor_id: "chain-visitor-defect-probe", room: targetRoomName },
+        params: { visitor_id: "chain-visitor-fix-probe", room: targetRoomName },
         ts: new Date().toISOString(),
       } satisfies Command),
     );
@@ -492,73 +504,98 @@ async function testEscortEndsOnRobotArrivalNotVisitorArrival(): Promise<void> {
     const robotTripDistance = Math.hypot(doorX - robotStart.x, doorZ - robotStart.z);
     assert.ok(
       robotTripDistance < entranceToDoorDistance / 2,
-      `test setup: for this defect to reproduce, the assigned robot's own trip (${robotTripDistance.toFixed(2)}m) must be ` +
-        `much shorter than the visitor's real entrance-to-door trip (${entranceToDoorDistance.toFixed(2)}m) -- if ` +
-        "floor-14.json or the fleet spawn grid changed, re-pick a target room close to virtual/50's spawn",
+      `test setup: for this fix to be meaningfully exercised, the assigned robot's own trip (${robotTripDistance.toFixed(2)}m) must ` +
+        `be much shorter than the visitor's real entrance-to-door trip (${entranceToDoorDistance.toFixed(2)}m) -- if floor-14.json or ` +
+        "the fleet spawn grid changed, re-pick a target room close to virtual/50's spawn",
     );
 
-    // Advance until the escort actually releases (robot arrived, per its OWN state).
-    let released = false;
+    // ---- (a) the robot itself settles idle quickly (its own short trip) -- the escort must
+    // still be bound right then; the pre-fix behavior released it exactly here. ----
+    let sawRobotIdle = false;
+    let robotIdleWhileStillBound = false;
     advance(room, 3000, () => {
+      const robot = room.state.agents.get(assignedRobotId)!;
+      if (robot.state === "idle") {
+        sawRobotIdle = true;
+        if (room.getVisitorDebugStats().robotBindings === 1) robotIdleWhileStillBound = true;
+        return true; // stop the moment the robot first goes idle
+      }
+      return false;
+    });
+    assert.ok(sawRobotIdle, "test setup: the assigned robot should settle idle at its own (short) destination within the budget");
+    assert.ok(
+      robotIdleWhileStillBound,
+      "FIX VERIFIED: the escort must still be bound the moment the robot itself goes idle -- completion must wait for the visitor too",
+    );
+
+    const visitorAtRobotIdle = room.state.agents.get("chain-visitor-fix-probe")!;
+    const visitorDoorDistAtRobotIdle = Math.hypot(visitorAtRobotIdle.x - doorX, visitorAtRobotIdle.z - doorZ);
+    console.log(
+      `[evidence] robot "${assignedRobotId}" went idle at its own ${robotTripDistance.toFixed(2)}m destination; escort STILL bound ` +
+        `(robotBindings=1) with the visitor still ${visitorDoorDistAtRobotIdle.toFixed(2)}m from "${targetRoomName}"'s door ` +
+        `(entrance-to-door is ${entranceToDoorDistance.toFixed(2)}m) -- the pre-fix behavior released the binding right here`,
+    );
+
+    // The SPECIFIC robot ("assignedRobotId") must NOT be reassignable yet -- it is still
+    // owed to the first visitor. (The real 50-robot fleet is present here, unlike the
+    // single-robot scenarios elsewhere in this file, so requestGuide may well hand out some
+    // OTHER idle robot for this probe -- that's fine and expected; the claim is narrowly
+    // about `assignedRobotId` itself staying bound.)
+    room.addAgent("chain-visitor-fix-premature-probe", "visitor", { x: robotStart.x, z: robotStart.z });
+    const prematureReassign = room.requestGuide("chain-visitor-fix-premature-probe", { x: robotStart.x, z: robotStart.z });
+    assert.notEqual(
+      prematureReassign.robotId,
+      assignedRobotId,
+      "the idle-but-still-owed robot must NOT be reassignable to a new visitor while the first visitor hasn't arrived yet",
+    );
+    assert.equal(
+      room.state.agents.get(assignedRobotId)!.state,
+      "idle",
+      "the still-owed robot should remain idle in place, not re-tasked, while it waits for its own visitor to catch up",
+    );
+    console.log(
+      `[evidence] robot "${assignedRobotId}" stayed un-reassigned (idle-but-still-owed to "chain-visitor-fix-probe"; the new ` +
+        `probe got "${prematureReassign.robotId}" instead) -- no double-assignment of the still-owed robot while it waits`,
+    );
+
+    // ---- (b) let the visitor actually catch up -- the escort should release once it does,
+    // genuinely close to the door, not just "eventually". ----
+    let released = false;
+    advance(room, 5000, () => {
       released = room.getVisitorDebugStats().robotBindings === 0;
       return released;
     });
-    assert.ok(released, "test setup: the escort should release once the (nearby) robot arrives");
+    assert.ok(released, "escort should release once the visitor genuinely catches up to the robot");
 
-    const visitorAtRelease = room.state.agents.get("chain-visitor-defect-probe")!;
+    const visitorAtRelease = room.state.agents.get("chain-visitor-fix-probe")!;
     const visitorDoorDistAtRelease = Math.hypot(visitorAtRelease.x - doorX, visitorAtRelease.z - doorZ);
     console.log(
-      `[evidence] escort released after robot "${assignedRobotId}"'s own ${robotTripDistance.toFixed(2)}m trip; at that ` +
-        `moment the visitor was still ${visitorDoorDistAtRelease.toFixed(2)}m from "${targetRoomName}"'s door ` +
-        `(entrance-to-door is ${entranceToDoorDistance.toFixed(2)}m)`,
+      `[evidence] escort released with the visitor ${visitorDoorDistAtRelease.toFixed(2)}m from "${targetRoomName}"'s door ` +
+        `(was ${visitorDoorDistAtRobotIdle.toFixed(2)}m away the moment the robot itself first went idle)`,
     );
     assert.ok(
-      visitorDoorDistAtRelease > entranceToDoorDistance * 0.3,
-      "DEFECT reproduced: the escort released while the visitor was still a substantial fraction of the full " +
-        "trip away from the destination -- the robot's own (short) arrival, not the visitor's, ends the escort",
+      visitorDoorDistAtRelease < visitorDoorDistAtRobotIdle,
+      "the visitor should have gotten meaningfully closer to the door between the robot's own arrival and the escort's actual release",
     );
+    assert.ok(
+      visitorDoorDistAtRelease <= DOOR_TOLERANCE_M * 3,
+      `the visitor should end up close to "${targetRoomName}"'s door (within ${(DOOR_TOLERANCE_M * 3).toFixed(1)}m, a generous ` +
+        "multiple of the robot's own convergence tolerance, allowing for the ~1m trailing gap) once the escort actually releases " +
+        `-- got ${visitorDoorDistAtRelease.toFixed(2)}m`,
+    );
+    assert.equal(room.state.agents.get(assignedRobotId)!.state, "idle", "the escorting robot should still be idle once genuinely released");
 
-    // Concurrency hazard this enables: the instant the escort releases, the robot re-enters
-    // the idle pool and is immediately selectable for a BRAND NEW assignment -- even though
-    // the FIRST visitor has not come anywhere close to actually reaching the room it was
-    // promised. Prove this concretely (robust regardless of exact coasting distances below):
-    // request a second escort for a probe visitor placed right next to the just-released
-    // robot, and confirm the SAME robot id is handed out again.
-    room.addAgent("chain-visitor-defect-reuse-probe", "visitor", { x: robotStart.x, z: robotStart.z });
-    const reassign = room.requestGuide("chain-visitor-defect-reuse-probe", { x: robotStart.x, z: robotStart.z });
+    // NOW the robot is legitimately free -- prove it concretely.
+    room.addAgent("chain-visitor-fix-reuse-probe", "visitor", { x: robotStart.x, z: robotStart.z });
+    const reassign = room.requestGuide("chain-visitor-fix-reuse-probe", { x: robotStart.x, z: robotStart.z });
     assert.equal(
-      reassign?.robotId,
+      reassign.robotId,
       assignedRobotId,
-      "the just-released robot must be immediately reassignable to a NEW visitor while the FIRST visitor is still stranded",
+      "the robot should be selectable again for a new escort immediately after genuinely finishing the previous one",
     );
     console.log(
-      `[evidence] robot "${assignedRobotId}" was reassigned to a brand-new visitor the instant it released, while ` +
-        `"chain-visitor-defect-probe" was still ${visitorDoorDistAtRelease.toFixed(2)}m from its promised destination`,
-    );
-
-    // Purely observational (NOT asserted -- what happens to the abandoned visitor's crowd
-    // agent afterward depends on Detour's own path-following internals, which is not this
-    // test's claim): EscortManager.tick() never calls requestMoveTarget for this visitor id
-    // again once unbound (its record's `robotId` is now null, see the tick() loop's `if
-    // (!visitor.robotId) continue`), so whatever it does next happens on the LAST target it
-    // was ever given -- it is no longer tracking the robot's real-time position, including
-    // if that robot immediately gets sent somewhere else entirely (as just proven above).
-    let pos = { x: visitorAtRelease.x, z: visitorAtRelease.z };
-    advance(room, 1200, () => {
-      const v = room.state.agents.get("chain-visitor-defect-probe")!;
-      pos = { x: v.x, z: v.z };
-    });
-    const laterVisitorDoorDist = Math.hypot(pos.x - doorX, pos.z - doorZ);
-    console.log(
-      `[evidence] ${(1200 * TICK_MS) / 1000}s further simulated with no active escort: visitor is now ` +
-        `${laterVisitorDoorDist.toFixed(2)}m from the door -- whatever this settles to, it happened with no escort ` +
-        "binding, no re-aiming at the robot (which was reassigned elsewhere above), and no ack reflecting it",
-    );
-
-    console.log(
-      "PASS (defect documented, not fixed -- see the block comment above): a guide robot that starts close to the " +
-        "requested room ends the escort and becomes reassignable to a brand-new visitor on ITS OWN arrival, with no " +
-        "check on how far the FIRST visitor's own avatar still is from the promised room",
+      `PASS: escort stayed bound while the robot idled at its own destination waiting for the visitor, released only once the ` +
+        `visitor genuinely arrived (${visitorDoorDistAtRelease.toFixed(2)}m from the door), and the robot was reassignable right after`,
     );
   } finally {
     await shutdown();
@@ -629,8 +666,16 @@ async function testNoIdleRobotThroughRealChain(): Promise<void> {
 }
 
 // ============================================================================================
-// Scenario 3 (bonus): assign naming a room that does not exist -> a real failure ack, not a
-// crash, and the idle robot must NOT be consumed by the doomed attempt.
+// Scenario 3 (bonus, FIX VERIFICATION): assign naming a room that does not exist -> a real
+// failure ack, not a crash, and the idle robot must NOT be consumed by the doomed attempt.
+// This used to document a real defect this test file found: WorldRoomLike.requestGuide's
+// return type collapsed "no robot was idle" and "an idle robot existed but the target room
+// name didn't resolve" into the same bare `null`, so bridge.ts's handleFleetCommand always
+// attributed a failed assign to reason "no_idle_robot" -- misleading here, since an idle
+// robot was very much available. Fixed: requestGuide now returns `{ robotId: null, reason }`
+// with a distinct "target_unresolved" reason (the SAME string bridge.ts's per-robot
+// `navigate` path already uses for its own unresolved-target failure), and the bridge relays
+// whatever reason requestGuide gives it instead of hardcoding "no_idle_robot".
 // ============================================================================================
 async function testAssignToNonexistentRoom(): Promise<void> {
   const { room, shutdown } = await bootRealRoom({ disableGuideRobots: true, disableSimulatedVisitors: true });
@@ -662,22 +707,13 @@ async function testAssignToNonexistentRoom(): Promise<void> {
     const failedAck = acks.find((a) => a.payload.state === "failed")!.payload;
     console.log(`[evidence] assign to a nonexistent room failed with reason="${failedAck.reason}"`);
 
-    // DEFECT (found by this test, reported per the task brief -- not fixed, per the
-    // "do not modify the bridge's ack semantics" constraint): WorldRoomLike.requestGuide's
-    // return type is `{robotId} | null` with NO distinction between "no robot was idle" and
-    // "an idle robot existed but the target room name didn't resolve" -- see
-    // EscortManager.requestGuide (world/src/rooms/escortManager.ts): it finds `bestRobotId`,
-    // calls `moveAgentTo`, and on a resolution failure does `if (!moved) return null;` with
-    // no reason attached, indistinguishable from the "no robot was idle at all" case. bridge.ts's
-    // handleFleetCommand then always attributes a null result to reason "no_idle_robot" (see
-    // its `if (!result) { ...reason: "no_idle_robot"... }`), even though an idle robot was very
-    // much available here. This assertion documents the CURRENT (misleading) observed reason
-    // rather than silently asserting past it -- a human should decide whether requestGuide's
-    // return type should grow a real reason code.
+    // FIX VERIFIED: an idle robot WAS available here (chain-only-robot-2), so the failure
+    // must be attributed to the target not resolving, not misreported as "no_idle_robot" --
+    // see the block comment above.
     assert.equal(
       failedAck.reason,
-      "no_idle_robot",
-      "documents the current (misleading) reason string for an unresolvable room name -- see the DEFECT comment above",
+      "target_unresolved",
+      "an idle robot was available; the failure must be attributed to the unresolvable room name, not misreported as no_idle_robot",
     );
 
     // The idle robot must not have been silently consumed by the doomed attempt.
@@ -712,7 +748,7 @@ async function testAssignToNonexistentRoom(): Promise<void> {
 
 async function main(): Promise<void> {
   await testAssignChainEndToEnd();
-  await testEscortEndsOnRobotArrivalNotVisitorArrival();
+  await testEscortEndsOnVisitorArrivalNotJustRobot();
   await testNoIdleRobotThroughRealChain();
   await testAssignToNonexistentRoom();
 
