@@ -190,3 +190,80 @@ during Task 3.2/3.3 cleanup. Kept here only as historical context; nothing to re
   the tests. What was missing was **running the thing and looking at it**. Kalhar found both
   headline bugs in minutes by opening the browser. Weight "did anyone actually watch it work"
   above any amount of green CI.
+- 2026-08-02/03 (overnight, continued): after the fleet and map fixes above, work continued
+  looking for what else the Phase 0-5 review process had missed. Twelve more genuine defects,
+  grouped by how they were found, because the *method* is the transferable part.
+
+  **Found by auditing comments against code** (~170 claims checked, ~160 verified correct):
+  - `run_motion`, the LLM-facing chat tool, advertised "tricks: circle or spin" but passed the
+    model's string straight into `Command(type="motion", name=...)`, and the shared schema also
+    accepts `dock`, `undock`, `forward` (added for a separate admin flow). So `run_motion("undock")`
+    validated and dispatched **real physical motion** on a robot this repo requires a human observer
+    for. The "I only know circle and spin" message was a `ValidationError` handler that those names
+    never trigger. The restriction existed only in prompt text. Fixed by enforcing a deliberately
+    narrower `_ALLOWED_TRICKS` at the tool boundary (`f8fae05`).
+  - `messages.py` still described bridge-side dock/undock execution as "Phase 8" future work.
+    Phase 8 had landed; production takes the real-drive path and those commands dispatch actual
+    Create 3 ROS actions. That comment is much of why the gap above read as harmless.
+  - Three more corrected: a "one draw call" claim that is really ~19, "one wildcard subscribe"
+    that is two, and an XOR that is inclusive-OR (`0664c4d`).
+
+  **Found by resolving an assumption nobody had verified:** the rotation code assumes both GLB
+  models face +Z. Confirmed correct for both, but only via animation sampling — `visitor.glb`'s
+  REST pose carries a spurious 43.75 degree Hips yaw (99.4% Y-aligned) that every clip overrides,
+  which had made an earlier static check report the wrong axis. Evidence recorded in
+  `directionToYRotation` (`affa43e`), and a figure in that very comment was itself wrong on first
+  writing and corrected (`cc4a8dd`).
+
+  **Found by reasoning from that finding:** because the rest pose is skewed, `Visitor.tsx` calling
+  `fadeIn()` on the FIRST clip activation (no previous action to fade from) blended against that
+  skewed rest pose — every spawning visitor visibly swung ~44 degrees into place, on every one of
+  ~45 continuously cycling visitors (`4252f89`).
+
+  **Found by asking what happens when the demo runs unattended:**
+  - `useWorldRoom.ts` had NO reconnect handling; its own comment conceded it. A server restart,
+    a network blip, or the page loading before the server was up left the big screen **frozen on
+    the last frame, still looking alive**. Added backoff reconnection plus a status badge
+    (`d9931a8`). The E2E kill/restart test then found `@colyseus/sdk`'s own internal reconnection
+    loop stalls 100+ seconds trying to resume a room that no longer exists (disabled it), and that
+    `room.leave()` can throw on unmount as an unhandled rejection (fixed).
+  - **`WorldRoom` auto-disposed when the last viewer left** — the entire world, all 50 robots,
+    existed only while a browser was watching. That inverts the architecture: the world-server is
+    supposed to be the authoritative simulation Moses commands over IoT, so a phone user could get
+    `world_not_ready` because the projector's browser hiccupped. Fixed with `autoDispose = false`
+    plus eager room creation at boot (`383f561`).
+  - That fix then made a latent leak matter, so a soak test was written — and found **two real
+    `@colyseus/schema` 4.0.30 encoder leaks**: `Root.remove()` never deletes a removed ref's
+    `refCount` entry, and `MapSchema#set()`'s index allocation is only reclaimed by
+    `$onEncodeEnd()`, which is **skipped entirely when zero clients are connected** — precisely the
+    unobserved-kiosk state the persistence fix creates. Fixed by pooling `Agent` instances and
+    recycling visitor ids (`d1dcaae`), then proved wire-safe with a real Colyseus client
+    (`7b0ab53`): 184 addAgent calls resolved to 67 distinct refIds, `root.refCount` delta 0.
+
+  **Found by measuring what had only been claimed:** `test:load`'s widely-quoted "0.48ms/tick"
+  times `crowd.tick()` ONLY. True full-frame `WorldRoom.update()` is avg 0.53ms / p95 0.64ms
+  (crowd 88%, schema sync 8%, visitors 4%), still 0/7500 over the 16.6ms budget, with a worst-case
+  route-recompute burst of +1.85ms. Good result, but a different number — and the record was
+  corrected in four places rather than just noted (`e776466`).
+
+  **Found by testing the chain instead of the hops** — the most valuable one. Every hop of
+  "Moses assigns → robot escorts visitor → arrival" was tested; the chain never was. An end-to-end
+  test through the real bridge against a real room (`3e23c87`) immediately exposed that
+  **escorts completed when the ROBOT arrived, not the visitor**. Since `requestGuide` picks the
+  robot nearest the VISITOR's spawn rather than the destination, a robot already near the target
+  finished in seconds and released the binding while the visitor was still 13.86m from a 20.39m
+  trip — abandoned mid-floor, with the robot immediately reassigned to someone else. Fixed to gate
+  completion on visitor arrival (`7a9b171`); measured effect: escorted-visitor time roughly doubled
+  (16.95 -> 30.99) and population health improved (42.50 -> 44.56 against a 45 target). Also fixed:
+  an unresolvable room acked `no_idle_robot` even with robots free; now `target_unresolved`.
+
+  **Standing harnesses now in `world/`**: `test:load` (per-frame crowd cost), `test:frame` (true
+  full-frame cost), `test:soak` (multi-hour retention), `test:pool` (schema-identity safety),
+  `test:assign-chain` (the end-to-end demo promise). Those cover the four failure modes ordinary
+  unit tests structurally cannot see. `world-client` went from zero tests to six suites.
+
+  **The through-line, worth internalising:** every one of these passed implementer + spec review +
+  quality review. The failures were not sloppiness; they were *category* errors — mocking the seam
+  that contained the bug, measuring a sub-part and quoting it as the whole, trusting a comment as
+  evidence, and never running the thing unattended or looking at it. Kalhar found the first two by
+  opening a browser for five minutes.
