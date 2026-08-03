@@ -114,3 +114,79 @@ during Task 3.2/3.3 cleanup. Kept here only as historical context; nothing to re
   (Phases 0 through 5) is now implemented and reviewed.** What remains is entirely Kalhar's own
   action per the risk register: apply the virtual-fleet IoT identity, deploy world-server, and
   rehearse end to end with a human watching robot 468 if the emote mirror is enabled.
+- 2026-08-02: **Kalhar ran the demo and found two things the entire Phase 0-5 review process
+  had missed.** Both were real, both are instructive about where the verification was weak.
+
+  **(1) "Only one robot is moving, people are stuck in a corner."** `WorldRoom.onCreate()`
+  seeded exactly ONE robot (`test-robot-1`) while the spawner targeted 45 visitors, so
+  `requestGuide` bound the single robot to visitor #1 and returned `null` for the other 44,
+  who then sat at the entrance forever. The design spec had always called for ~50 robots;
+  the production fleet spawn was simply never written. **Why every test passed anyway:**
+  `visitors.test.ts` manually spawned ~50 test robots before exercising `requestGuide`, so
+  the suite only ever tested a 50-robot world that existed exclusively inside the tests.
+  Fixed in `bf06612`: `GUIDE_ROBOT_COUNT = 50`, ids `virtual/1..50` (matching the IoT topic
+  scheme), spawns distributed deterministically over the navmesh via `findClosestPoint` in
+  `guideFleetSpawns.ts` so they do not spawn stacked and shove each other. Live-verified:
+  95 agents, 71-77 moving simultaneously, 117 of 135 distinct agents changing position.
+
+  **(2) "The map doesn't match the map I gave you."** Correct. `floor-14.json` was a previous
+  session's freehand approximation, and its own `source` field admitted it. The real plan is a
+  pinwheel plate with angled wings and TWO core service bands; the file modelled it as an
+  axis-aligned 36x21 rectangle with one rectangular hole. **The source images had been pasted
+  into a chat and never committed** - recovered this session by extracting the base64 out of an
+  old session transcript, and now committed at `world/data/source/` (both the original scan and
+  a higher-DPI one) so they cannot be lost again. Re-traced algorithmically (OpenCV/Hough)
+  rather than by eye.
+
+  **The most important finding of the day, though, was a test that lied.**
+  `buildNavMesh.test.ts` claimed "18/18 rooms path-reachable" while asserting only that
+  `computePath` returned `success` with a non-empty path. **Detour returns success on a PARTIAL
+  path** - when the target is unreachable it silently hands back a path to the nearest reachable
+  point. Rooms 1407/1408/1409 were genuine dead ends the whole time, and the escort code
+  (`escortManager.ts` decides "arrived" by the robot going idle) could not distinguish *stuck*
+  from *arrived*, so escorts there falsely reported success and stranded robots mid-corridor.
+  Strengthened in `bd3aefd` to assert the path's final point actually lands within
+  `AGENT_RADIUS_M * 2` of the target AND that `DT_PARTIAL_RESULT` is clear, validated against a
+  known-broken case first. It has since caught a further regression in the wild.
+
+  Subsequent map fixes: doors moved off the corridor onto their real thresholds (`642ba65`,
+  Event Space was 8.7m from its own centre), glass walls restored after an algorithmic rebuild
+  silently dropped them (`6f11d0b`), Wellness Room found 5m adrift inside South Collaboration
+  Space with 4 "walls" that were actually the extraction tracing its own label glyphs
+  (`38ce3a4`), 1430 and 1407 centres corrected (`38ce3a4`, `d0f5adb`).
+
+  **A false alarm worth recording, since it cost a subagent run:** the controller swept room
+  centres against label positions and reported the whole east tip as 3-5m displaced. It was not
+  - the label pixel positions had been *eyeballed*. Re-measured properly by pixel bounding box,
+  Kitchen was 0.68m not 4.2m, 1408 0.27m not 3.8m. Only 1407 was genuinely (mildly) off. The
+  lesson is the same one as (1) and the partial-path bug: **a measurement you did not actually
+  make is not evidence.**
+
+  Scale (`0.075214` m/px) had always been assumed. Now independently derived from the drawing
+  itself (`7ce7817`) - elevator shafts, core corridor width and stair-tread pitch all bracket it,
+  stair treads centring almost exactly on it. Confirmed, geometry unchanged. The door-width
+  method was tried first and *failed* (at ~7.5cm/px a door gap is 9-12px, indistinguishable from
+  this floor's corner jogs) and was reported as failed rather than forced.
+
+  `world-client` had **zero tests** despite being the entire visual surface and consuming a
+  `floor-14.json` that changed eight times in one day. Suite added in `6132bc2`, every guard
+  proven by breaking the thing it protects and watching it fail: the two `floor-14.json` copies
+  must be byte-identical (nothing but convention enforced that before), glass walls must survive
+  a rebuild, `directionToYRotation` differs from the server's heading formula by exactly -pi/2
+  (pinning the convention behind this project's documented double-convert bug), and camera
+  framing must contain every wall endpoint, room centre and door.
+
+  **Open at time of writing:** a concurrent Claude session is mid-re-trace in this shared
+  worktree with uncommitted changes (156 walls replaced, outline 18->20 points, washroom doors
+  moved) that currently leave the map at 17/18 reachable - Gender Neutral Washroom 0.85m short,
+  `DT_PARTIAL_RESULT` set. Not reverted deliberately: it is live work, and this worktree has had
+  repeated collisions today from two sessions editing one file. The committed state is good at
+  18/18; the breakage is working-tree only.
+
+  **Process note for whoever reads this next.** Phases 0-5 were built with implementer +
+  spec-review + quality-review on every task, and all of it passed while the product had a
+  one-robot fleet, a wrong-shaped map, three unreachable rooms, and a reachability test that
+  could not detect unreachability. The reviews were not lazy - they verified against the spec and
+  the tests. What was missing was **running the thing and looking at it**. Kalhar found both
+  headline bugs in minutes by opening the browser. Weight "did anyone actually watch it work"
+  above any amount of green CI.
