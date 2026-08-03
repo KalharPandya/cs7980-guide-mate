@@ -501,11 +501,251 @@ async function testEscortTimeoutStillFiresWhenVisitorNeverCatchesUp(): Promise<v
   room.onDispose();
 }
 
+/**
+ * Pause-correctness regression test (2026-08-03 audit of every timer/accumulator in
+ * world/src for Task 5.2's fleet-wide pause): `ESCORT_TIMEOUT_S` (escortManager.ts)
+ * accumulates purely in SIMULATED time -- `visitor.escortElapsedSeconds += dtSeconds`
+ * lives inside `EscortManager.tick()`, which `WorldRoom.update()` only ever reaches AFTER
+ * its `if (this.paused) return;` guard (see WorldRoom.ts's `update()`). That makes the
+ * escort timeout correct-by-construction against pause: a pause of any real-world length
+ * must not advance the escort clock at all, and the clock must resume from exactly where
+ * it left off once resumed -- not reset to fresh, not already-expired. This was
+ * previously unverified by any test (the escort timeout is the safety valve that stops a
+ * stranded visitor deadlocking an escort forever, load-bearing for the defect fix landed
+ * in 7a9b171); this closes that gap. Same class of fix/test as `iot/bridge.ts`'s
+ * `navTimeoutMs` pause-correctness (fixed in 40f19c7/cd9aef0, tested in
+ * `iot/__tests__/bridge.test.ts`), applied here to the escort timeout, which turned out to
+ * already be correct rather than needing a code fix.
+ *
+ * Uses a short `escortTimeoutSeconds` override (2s), same technique as
+ * `testEscortTimeoutStillFiresWhenVisitorNeverCatchesUp` above, so both halves of the
+ * proof stay fast and deterministic:
+ *   (a) bind an escort that can never catch up in time (near-door robot, far visitor, same
+ *       shape as the sibling timeout test), pause IMMEDIATELY (escortElapsedSeconds still
+ *       ~0), then tick for far longer than 2s of simulated-time-equivalent WOULD take if
+ *       unpaused -- the binding must stay live throughout, and agent positions must not
+ *       move at all.
+ *   (b) resume, and confirm the escort times out roughly `escortTimeoutSeconds` later --
+ *       not instantly (would mean the clock got reset to already-expired) and not never
+ *       (would mean the clock got stuck permanently frozen even after resume).
+ */
+async function testEscortTimeoutPauseCorrectness(): Promise<void> {
+  const ESCORT_TIMEOUT_S = 2;
+  const room = new WorldRoom();
+  await room.onCreate({
+    disableSimulatedVisitors: true,
+    disableGuideRobots: true,
+    visitorManagerOptions: { escortTimeoutSeconds: ESCORT_TIMEOUT_S },
+  });
+  room.setSimulationInterval();
+
+  const plan = loadFloorPlan();
+  const entrance = { x: plan.entrance.point[0], z: plan.entrance.point[1] };
+  const destRoom = plan.rooms.find((r) => r.name === "South Collaboration Space")!;
+  const [doorX, doorZ] = destRoom.door;
+  const entranceToDoorDistance = Math.hypot(doorX - entrance.x, doorZ - entrance.z);
+  assert.ok(
+    entranceToDoorDistance > ESCORT_TIMEOUT_S * 1.4,
+    `test setup: entrance -> South Collaboration Space's door (${entranceToDoorDistance.toFixed(2)}m) should be ` +
+      `unreachable within the ${ESCORT_TIMEOUT_S}s timeout at the agent's 1.4 m/s max speed`,
+  );
+
+  room.addAgent("pause-timeout-robot", "robot", { x: doorX, z: doorZ });
+  room.addAgent("pause-timeout-visitor", "visitor", entrance);
+
+  const result = room.requestGuide("pause-timeout-visitor", "South Collaboration Space");
+  assert.ok(result.robotId, "requestGuide should succeed (one idle robot exists)");
+
+  const state = room.state as unknown as {
+    agents: Map<string, { x: number; z: number; state: string }>;
+  };
+
+  // Pause IMMEDIATELY -- escortElapsedSeconds is still ~0 here (requestGuide binds
+  // synchronously; no update() tick has run yet since the bind).
+  room.pause();
+  assert.equal(room.isPaused, true, "pause() should set isPaused true");
+
+  const frozenRobot = { ...state.agents.get("pause-timeout-robot")! };
+  const frozenVisitor = { ...state.agents.get("pause-timeout-visitor")! };
+
+  // Tick for far longer (simulated-time-equivalent) than ESCORT_TIMEOUT_S would need to
+  // fire if unpaused -- 10s worth of ticks against a 2s timeout. If the timeout clock were
+  // (bugged) wall-clock-based instead of gated on update()'s paused early-return, this
+  // would already have fired well before this loop ends.
+  const PAUSE_TICKS = Math.ceil((ESCORT_TIMEOUT_S * 5 * 1000) / TICK_MS);
+  for (let i = 0; i < PAUSE_TICKS; i++) {
+    room.update(TICK_MS);
+    assert.equal(
+      room.getVisitorDebugStats().robotBindings,
+      1,
+      `escort must NOT time out while paused (tick ${i} of ${PAUSE_TICKS}, ${ESCORT_TIMEOUT_S}s timeout, ` +
+        `${((i * TICK_MS) / 1000).toFixed(1)}s of would-be simulated time elapsed)`,
+    );
+  }
+
+  const robotAfterPause = state.agents.get("pause-timeout-robot")!;
+  const visitorAfterPause = state.agents.get("pause-timeout-visitor")!;
+  assert.equal(robotAfterPause.x, frozenRobot.x, "robot x must not change while paused");
+  assert.equal(robotAfterPause.z, frozenRobot.z, "robot z must not change while paused");
+  assert.equal(visitorAfterPause.x, frozenVisitor.x, "visitor x must not change while paused");
+  assert.equal(visitorAfterPause.z, frozenVisitor.z, "visitor z must not change while paused");
+  console.log(
+    `PASS: escort survived ${((PAUSE_TICKS * TICK_MS) / 1000).toFixed(1)}s of would-be simulated time ` +
+      `(${ESCORT_TIMEOUT_S}s timeout) fully paused -- binding stayed live, positions frozen`,
+  );
+
+  room.resume();
+  assert.equal(room.isPaused, false, "resume() should set isPaused false");
+
+  // The escort must still eventually time out post-resume (the visitor genuinely never
+  // catches up within the timeout) -- and it should take roughly ESCORT_TIMEOUT_S more of
+  // simulated time from HERE, not instantly (clock reset-to-expired bug) and not never
+  // (clock permanently stuck bug).
+  const MAX_POST_RESUME_TICKS = Math.ceil((ESCORT_TIMEOUT_S * 5 * 1000) / TICK_MS);
+  let ticksToTimeout = 0;
+  let released = false;
+  for (let i = 0; i < MAX_POST_RESUME_TICKS && !released; i++) {
+    room.update(TICK_MS);
+    ticksToTimeout++;
+    released = room.getVisitorDebugStats().robotBindings === 0;
+  }
+  assert.ok(
+    released,
+    `escort should still time out after resume (within ${MAX_POST_RESUME_TICKS} post-resume ticks) since the ` +
+      "visitor genuinely never caught up",
+  );
+
+  const secondsToTimeout = (ticksToTimeout * TICK_MS) / 1000;
+  assert.ok(
+    secondsToTimeout >= ESCORT_TIMEOUT_S * 0.5 && secondsToTimeout <= ESCORT_TIMEOUT_S * 2,
+    `post-resume, the timeout should fire roughly ${ESCORT_TIMEOUT_S}s later (proving the clock resumed from ` +
+      `where it left off, not reset) -- took ${secondsToTimeout.toFixed(2)}s`,
+  );
+  console.log(
+    `PASS: post-resume, escort timed out after ${secondsToTimeout.toFixed(2)}s (~matches the ${ESCORT_TIMEOUT_S}s ` +
+      "timeout, proving the escort clock resumed from where it left off, not reset or permanently stuck)",
+  );
+
+  const visitorFinal = state.agents.get("pause-timeout-visitor")!;
+  const robotFinal = state.agents.get("pause-timeout-robot")!;
+  const finalSeparation = Math.hypot(visitorFinal.x - robotFinal.x, visitorFinal.z - robotFinal.z);
+  assert.ok(
+    finalSeparation > 1.5,
+    `test setup: the visitor should still be genuinely far from the robot when the timeout fires (got ` +
+      `${finalSeparation.toFixed(2)}m) -- proves release was via the TIMEOUT, not a coincidental arrival`,
+  );
+  assert.equal(robotFinal.state, "idle", "the released robot should be idle, immediately reassignable");
+
+  room.onDispose();
+}
+
+/**
+ * Pause-correctness regression test for the simulated-visitor lifecycle as a whole (spawn
+ * stagger, the "waiting_for_robot" retry cooldown, the dwell countdown, and the
+ * despawn-on-idle check for "walking_to_entrance") -- not just the escort timeout above.
+ * Every one of these is a `-= dtSeconds`-style accumulator inside
+ * `SimulatedVisitorSpawner.tick()`/`tickLifecycle()` (simulatedVisitorSpawner.ts), driven
+ * only from `VisitorManager.tick()` (visitors.ts), itself only ever reached from
+ * `WorldRoom.update()` AFTER the SAME `if (this.paused) return;` guard that gates the
+ * escort tick and the crowd tick -- see WorldRoom.ts's `update()`. So by construction the
+ * whole simulated-visitor lifecycle should freeze exactly like the escort timeout above,
+ * and resume cleanly with no stampede and no lost/corrupted progress. This pins that at
+ * the aggregate level (`getVisitorDebugStats()`) an operator narrating a demo actually
+ * cares about: pausing for a while and resuming should look like nothing happened, not
+ * cause a burst of despawns/spawns or a spike past the target headcount.
+ */
+async function testSimulatedSpawnerPauseFreezesLifecycle(): Promise<void> {
+  const room = new WorldRoom();
+  // Small target + tight timings so this test stays fast while still exercising every
+  // simulated-visitor phase (spawn stagger, wait-for-robot retry, dwell, walk-to-entrance)
+  // within a bounded tick budget.
+  const SIM_TARGET = 8;
+  await room.onCreate({
+    disableGuideRobots: true,
+    visitorManagerOptions: {
+      simulatedTarget: SIM_TARGET,
+      spawnStaggerSeconds: 0.2,
+      dwellMinSeconds: 0.5,
+      dwellMaxSeconds: 1,
+    },
+  });
+  room.setSimulationInterval();
+
+  const plan = loadFloorPlan();
+  const entrance = { x: plan.entrance.point[0], z: plan.entrance.point[1] };
+  const ROBOT_COUNT = 12; // comfortably above SIM_TARGET
+  for (let i = 0; i < ROBOT_COUNT; i++) {
+    room.addAgent(`pause-lifecycle-robot-${i}`, "robot", entrance);
+  }
+
+  // Warm up to a steady state where visitors are actively cycling through every phase
+  // (spawn -> waiting_for_robot -> walking_to_room -> dwelling -> walking_to_entrance ->
+  // despawn) -- 30s simulated is many multiples of the ~0.5-1s dwell + short trips at this
+  // scale.
+  for (let i = 0; i < 1800; i++) room.update(TICK_MS);
+
+  const beforePause = room.getVisitorDebugStats();
+  assert.ok(beforePause.simulatedActive > 0, "test setup: some simulated visitors should be active before pausing");
+
+  room.pause();
+  assert.equal(room.isPaused, true);
+
+  // Tick for a duration that, if unpaused, would comfortably cycle every visitor through
+  // several full spawn/dwell/despawn loops (dwell alone is 0.5-1s; this is 20s).
+  const PAUSE_TICKS = 1200;
+  for (let i = 0; i < PAUSE_TICKS; i++) {
+    room.update(TICK_MS);
+    const stats = room.getVisitorDebugStats();
+    assert.deepEqual(
+      stats,
+      beforePause,
+      `simulated-visitor debug stats must not change at all while paused (tick ${i} of ${PAUSE_TICKS})`,
+    );
+  }
+  console.log(
+    `PASS: simulated-visitor lifecycle (spawn/dwell/escort counts) fully frozen across ${(
+      (PAUSE_TICKS * TICK_MS) /
+      1000
+    ).toFixed(1)}s of would-be simulated time while paused`,
+  );
+
+  room.resume();
+  assert.equal(room.isPaused, false);
+
+  // After resume, the lifecycle should carry on sanely: never exceed the target, never let
+  // escortedVisitors/robotBindings desync, and never exceed the available robot supply --
+  // i.e. no stampede and no corruption from having been paused.
+  for (let i = 0; i < 1800; i++) {
+    room.update(TICK_MS);
+    const stats = room.getVisitorDebugStats();
+    assert.ok(
+      stats.simulatedActive <= SIM_TARGET,
+      `simulated visitor count (${stats.simulatedActive}) must not exceed the target (${SIM_TARGET}) after resume`,
+    );
+    assert.equal(
+      stats.escortedVisitors,
+      stats.robotBindings,
+      "escortedVisitors/robotBindings must not diverge after resume",
+    );
+    assert.ok(
+      stats.robotBindings <= ROBOT_COUNT,
+      `robotBindings (${stats.robotBindings}) must not exceed available robots (${ROBOT_COUNT}) after resume`,
+    );
+  }
+  console.log(
+    "PASS: simulated-visitor lifecycle resumes and runs sanely after a pause -- no stampede, no double-assignment",
+  );
+
+  room.onDispose();
+}
+
 async function main(): Promise<void> {
   await testRequestGuideConvergenceAndTrailing();
   await testRequestGuideReturnsNullWhenNoRobotIdle();
   await testEscortWaitsForVisitorNotJustRobotArrival();
   await testEscortTimeoutStillFiresWhenVisitorNeverCatchesUp();
+  await testEscortTimeoutPauseCorrectness();
+  await testSimulatedSpawnerPauseFreezesLifecycle();
   await testSimulatedSpawnerConvergence();
 
   console.log("\nALL PASS: visitors.test.ts");
