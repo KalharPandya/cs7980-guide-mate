@@ -95,10 +95,11 @@ function isNumber(value: unknown): value is number {
 
 /**
  * Validates a parsed JSON payload against the Command schema (mirrors messages.py's
- * pydantic model_validator: type-specific name enums, and navigate's `room` XOR `x`/`z`
- * params requirement). Returns `null` (never throws) on any schema violation -- callers log
- * and drop the message, exactly like the Python bridge's `on_message` does for a
- * `ValidationError`.
+ * pydantic model_validator: type-specific name enums, and navigate's `room` OR `x`/`z`
+ * params requirement -- at least one must be present; both may be, in which case
+ * `navigateTarget()` prefers `room`). Returns `null` (never throws) on any schema
+ * violation -- callers log and drop the message, exactly like the Python bridge's
+ * `on_message` does for a `ValidationError`.
  */
 export function parseCommand(raw: unknown): Command | null {
   if (typeof raw !== "object" || raw === null) return null;

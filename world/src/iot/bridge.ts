@@ -62,7 +62,8 @@
  * ---- multi-robot, one connection ----
  * Unlike the Python bridge (one process = one robot id = one MQTT client identity), this
  * runs ONE process for potentially dozens of virtual robots under the single shared
- * "Virtual-Fleet" cert: one MQTT connection, one wildcard subscribe, per-message robot-id
+ * "Virtual-Fleet" cert: one MQTT connection (a wildcard subscribe for per-robot topics
+ * plus an explicit subscribe for the fleet topic, see `start()`), per-message robot-id
  * routing via `extractRobotId`. Never spin up a connection per robot.
  */
 import { readFileSync } from "node:fs";
