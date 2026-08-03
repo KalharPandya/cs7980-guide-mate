@@ -1,80 +1,88 @@
 {
   "units": "meters",
   "floor": 14,
-  "source": "Algorithmically extracted from world/data/source/floor-14-plan.png (2026-08-02 re-extraction). Replaces two prior hand-eyeballed traces (both scored well under the 85% wall-match bar). Pipeline: OpenCV intensity threshold (walls dark, furniture light -- see extract_walls.py) isolates wall ink; text-row/logo components (bbox height <=9px, or the bottom-right corner title block) are stripped; HoughLinesP fragments (~1500) are clustered by (angle, perpendicular offset) and merged along their shared direction (gaps <=4px bridged as antialiasing noise; a run of >=3 short pieces on one line would be flagged glass=true as a dashed wall, though none of this floor's walls happened to cluster that way at the tightened angle/offset tolerance used for the final pass -- every wall here came out glass=false, a cosmetic-only miss (glass vs. solid only changes world-client's render material, per Walls.tsx; it has no effect on navmesh/pathing) rather than a structural one; any other gap is a real door opening, left as two separate segments). Diagonal Hough segments inside the two elevator/stair core bands (the 'X' shaft icons and stair hatching) are dropped by angle (15-75 degrees off axis-aligned), not by position, so the real rectilinear walls the cores share with the Female/Male/Gender-Neutral washrooms are kept as walls, not discarded as decoration.",
-  "note": "Transform: world_x = px * s, world_z = (H_px - py) * s -- ONE uniform scale s = 0.075214 m/px applied to every point (H_px = 364, the trimmed source canvas height; s is calibrated so the building's long (x) axis is 35.2m). Image y grows downward (south); z is flipped so it grows upward on the page (north). 2026-08-02 precision pass (this note replaces an earlier version that documented a two-vertex bbox-calibration nudge -- REMOVED, see below): the outline's two outermost vertices (index 11, the z-min corner near the Wellness Room; index 15, the x-max corner near the building's east tip) had each been pushed out by <1m to touch the source canvas's own edge (473x364px), to compensate for a scoring verifier that fitted this file's geometry bbox against the whole trimmed canvas -- which is a few px bigger than the real building footprint (468x352px) because the canvas trim also captures the Northeastern University logo and a north-arrow graphic past the building's south-east corner. That nudge inflated this file's own geometry bbox, which under a corrected verifier (scoring against the real building footprint instead of the full canvas) does the opposite of what it was meant to do -- it reintroduces the same stretch, just from the traced-geometry side instead of the reference side. Fix: both vertices restored to their true traced pixel positions (index 11 [13.839, 0.0] -> [13.839, 0.978]; index 15 [35.576, 14.892] -> [35.125, 14.892] -- i.e. exactly undoing the two edits, nothing else). No compensating global scale/offset was applied on top: swept a scale x0.97-1.03 and an x/z shift of +/-0.3m in 0.1m steps against the corrected verifier and the unmodified transform (scale=1, shift=0) already scored best, so the geometry needed no further correction once the verifier's own reference stopped being the thing that was actually stretched. Also removed two wall entries that had no supporting wall ink in the source image: a stray near-horizontal segment floating over Classroom 1425's furniture/text (old walls[8], a=[9.264,17.552] b=[1.274,18.4] -- visually confirmed against the source crop, a genuine real diagonal wall runs close by but this segment was a separate, parallel, unsupported line) and a shallow diagonal that cut straight through the four elevator-shaft 'X' icons in the upper core band (old walls[6], a=[22.045,16.195] b=[13.238,17.13] -- an artifact of the Hough-segment merge picking up a shallow-angle chain across the X-mark decoration; its low angle relative to the shaft row put it outside the 15-75 degree diagonal-decoration exclusion the rest of the core-band cleanup uses). walls[] now has 160 entries (was 162). The outline is the external contour of the single connected wall-ink component that contains the outer envelope and every partition wall that touches it (they are one pixel-connected mesh in this line drawing); the two elevator/stair core holes are the external contours of the two free-standing core-band components (the lower one clipped to y<220px so the Female/Male/Gender-Neutral washroom partitions hanging off its south edge are not swallowed into the hole -- a real gap of ~1.8m separates the two holes, so the corridor between them stays walkable). Room centers/doors were placed by matching each room's label position against the extracted wall geometry (visual position matching, not OCR -- see assemble.py's ROOMS_PX table); this only needs to land inside the right room near its real doorway, a much looser bar than the wall tracing itself. North and South Collaboration Space are open-plan per the source (no enclosing walls; center==door). Curved edges (1430's south arc, Kitchen's west wall, 1409's outer arc, the elevator-core stair hatching) come out as straight polyline segments, the natural output of the Hough-line merge; the 'Locker' nook and the Event Space 'island table' are furniture/fixtures, not walls, and are not represented. Washroom partition walls use height 2.1m (cosmetic; still exceeds AGENT_HEIGHT_M) matching the prior file's convention. Room 1409's door was manually corrected after the initial extraction (commit 7e4fe67) to [31.9, 6.0]; that fix is untouched by this pass. 2026-08-02 room-recenter pass (appended, not a rewrite): the controller measured Wellness Room's center 67px (5.0m) from its own label -- confirmed by mapping raw-image label '~(288,320)' and the old center [7.521, 5.942] (-> raw px (221, 315)) onto the source crop: the old center sat inside South Collaboration Space, not Wellness Room. Re-derived Wellness Room's true quadrilateral from its four bounding walls (the long top wall, the shared east wall with Classroom 1418, the long south/southwest wall, and the west wall) -- center moved to [12.512, 5.344]; door moved to [11.8, 5.087], the real ~0.75m gap in the west wall (visually confirmed as a genuine break in the wall ink, not merely obscured by the room's own label text). Also removed four wall entries (old walls[53], [145], [155], [159]) that had no real wall ink behind them -- pixel-checked against the source crop, they retrace the 'Wellness'/'Room' label glyphs themselves, and one duplicates a stretch of the room's own south wall; walls[] now has 156 entries (was 160). The same label-vs-center check was swept over all 18 rooms: room 1430 was also clearly wrong -- its center [22.3, 23.0] sat in the small unlabeled triangular alcove east of 1430 (between 1430 and Event Space), not inside 1430 itself. Re-derived from 1430's own traced boundary (its straight north/east walls plus its multi-segment south arc) -- center moved to [19.963, 23.191]; its door [21.6, 21.9] already sits on/near the room's true south arc and was left unchanged. All other 16 rooms' centers land inside their own room polygon (several, e.g. the Collaboration Spaces and Event Space, well away from their text label, which is expected for large open-plan rooms per the note above); no other changes made. 2026-08-02 east-tip displacement check (appended, not a rewrite): a label-distance sweep flagged Kitchen/1407/1408/1409/Event Space (the building's east tip) as a possible cluster of 3-5m-scale errors, raising a concern that this whole wing's geometry might be systematically shifted. Re-measured all five rooms' printed labels directly against the source image (pixel bounding-box of the label glyphs, not eyeballed) and rendered every wall/center/door in this file back onto floor-14-plan.png: the walls trace the drawing correctly here (no displacement -- the earlier sweep's pixel estimates for this region were themselves off by up to 6x, e.g. Kitchen's claimed 56px/4.2m measured out to 9px/0.68m). Kitchen and 1408 centers were already good (0.68m, 0.27m from label). Event Space's 4.8m gap is the same legitimate label-vs-centroid divergence the note above already documents for large irregular rooms -- its center was confirmed to land inside Event Space's own polygon, well clear of every bounding wall. 1409's center/door sit in the small alcove east of walls[82]/[109] (the 'Locker' nook), which connects to 1409's main pie-slice area through a real gap at the south end of walls[82]/[109] (visually confirmed in the source crop, matching this file's own gap=door convention) -- so the alcove is 1409's own connected floor space, not a different room; left unchanged. 1407's center, however, sat almost on top of its own south wall corner (px ~[533,215], right where walls[68]/[74]/[98] converge at the room's narrow doorway-side apex) rather than in the room's open floor area -- re-derived from 1407's four bounding walls (west: walls[74]; north: walls[3]/[7]'s glass run; east: walls[59]; south: the open threshold toward North Collaboration Space) -- center moved to [31.918, 14.703]. Kitchen/1407/1408's south sides (the diagonal lines below each room in the source image) are genuine wide-open thresholds into North Collaboration Space, not missing walls -- confirmed no wall ink is unaccounted for there once the door-gap convention is applied, same as the Collaboration Spaces' own open-plan sides. 2026-08-02 scale verification pass (appended, not a rewrite): the m/px value above (0.075214) was originally assumed (chosen so the footprint looked plausible), not derived -- this pass independently measures it from architectural elements of known standard size in the source raster, per a controller-supplied ranked method list (doors first, then washroom stalls, elevator cars, corridor width, stair treads, furniture). Door-gap candidates were tried first (matching pairs of wall-segment endpoints 0.5-1.35m apart and collinear, per this file's own gap=door convention above), but every candidate so found, on visual inspection and pixel-grid dump, turned out to be an ordinary wall corner/jog on this floor's many-sided room polygons -- not a real doorway: Classroom 1425's 'gap' is a step in the exterior facade (opens to the building's outside, not a corridor); the 1429/1430 'gap' is the sawtooth partition jog between those two rooms; the Wellness Room 'gap' is its own corner notch. This floor's raw trace resolution (753x436px, ~7.5cm/px) does not reliably distinguish a genuine door gap from a Hough-merge corner artifact at typical door width (~9-12px), so door gaps were dropped as unreliable for this source and three coarser, visually-unambiguous elements were measured instead (each confirmed by cropping and looking before measuring, not just proximity-matched): (1) the elevator-shaft row in the core band -- 4 boxes, isolated from the diagonal 'X' shaft glyphs by a column-wise dark-pixel-fraction scan (a true vertical divider is dark across the whole sampled y-band; the X-diagonal only darkens one column per row), reproduced identically on both the upper and lower core rows -- measures 28.0px/shaft (27.5-29px across 4 samples); a standard passenger-elevator shaftway (2.0-2.4m) implies s=0.071-0.086 m/px. (2) the corridor gap between the upper and lower core bands (vertical pixel scan straight down a shaft column, wall-face to wall-face) measures 26.5px; a code-minimum-to-typical corridor (1.5-2.4m) implies s=0.063-0.091 m/px, and 26.5px at the current scale (1.99m) lands right on this file's own prior note estimate of '~1.8m' for this same gap. (3) stair-tread pitch in the core band's upper flight (five consecutive tread lines, same dark-fraction column-scan technique) averages 3.85px/tread; IBC tread depth (0.28-0.30m) implies s=0.073-0.078 m/px -- the tightest bracket of the three, and it centers on the current value almost exactly. All three brackets independently contain 0.075214 m/px with no outlier pulling toward a >10% correction in either direction. Verdict: the assumed scale is correct within measurement uncertainty (the spread across methods is the normal variance in 'standard' element sizing, not evidence of a wrong scale); the building's long axis really is approximately 35.1m. No rescale applied to this file. The higher-resolution scan world/data/source/floor-14-plan-hires.png (untracked, present in the worktree from a prior session) was checked for use as a finer-grained ruler: a 4-corner least-squares fit of the building's north/south/east/west outline tips (each found by extreme-dark-pixel search in both rasters, not eyeballed) gives a uniform hires-px = 1.3415 x plan-px scale with under 0.4px residual on all 4 corners and negligible shear/rotation, confirming hires is genuinely the same drawing at ~34% higher linear resolution with a tighter crop (no title strip, no page margin, same content otherwise). Doors remeasured on hires (through this ratio) still showed the same false-positive corner-jog problem as on plan.png, so hires changed nothing about the door-unreliability finding above and was used only to validate the corner-registration math, not as an independent scale source.",
+  "source": "Algorithmically extracted from world/data/source/floor-14-plan-hires.png (2026-08-02 re-extraction against the hi-res source). floor-14-plan-hires.png (636x489) is the actual image published in Northeastern's GSE Vancouver handbook PDF, page 14 -- the authoritative original of the same drawing every prior pass traced from a 473x364 screenshot of. Same drawing, 1.8x the pixels, no screenshot resampling. Pipeline unchanged in kind from the prior pass (OpenCV intensity threshold at 180 isolates dark wall ink from light-grey furniture; connected-component filtering by bbox long-side, fill density, text-row height and corner-logo position strips specks/icons/labels/the N logo; HoughLinesP fragments are clustered by (angle, perpendicular offset) and merged via total-least-squares/PCA line fitting; gaps <=3.5px bridged as antialiasing noise, any other gap left as a real door opening), with every size-dependent constant retuned for this resolution (~1.33x the old pixel density) and two fixes specific to this pass: (1) two tight boxes over the upper core's physical stairwell drop antialiasing-noise fragments that happened to read as axis-aligned and slip past the existing diagonal-decoration filter (the X-shaft icons and stair hatching are still dropped by angle, 15-75 degrees off axis-aligned, exactly as before); (2) any merged wall segment lying entirely inside a hole polygon (all three probe points -- both endpoints and the midpoint, with a 0.05m radius absorbing the sub-cm rounding on dividers whose tip touches the hole's own boundary line by construction) is dropped, since the walls-only scorer's own target already excludes ink strictly inside the core holes, so drawing that internal shaft/stair detail is pure precision risk for zero recall upside -- the hole polygon's own boundary already carries the outer silhouette. Result improves the wall-match score against the hi-res reference on both axes: walls-only precision 84.7%->92.2%, recall 90.8%->95.6%, F1 87.7%->93.9%; all-structural-ink precision 95.5%->97.2%, recall 78.2%->79.4%, F1 86.0%->87.4%.",
+  "note": "Transform: world_x = (px - x0) * s, world_z = (bh - (py - y0)) * s -- ONE uniform scale s = 0.055644 m/px applied to every point, after shifting pixel coordinates so the building's own wall-network bounding box (the outer envelope + every partition wall that touches it, all one pixel-connected component in this line drawing; 629x471px at (0,1) in the trimmed-canvas frame) starts at (0,0); s is calibrated so the building's long (x) axis is 35.0m. Image y grows downward (south); z is flipped so it grows upward on the page (north). No bbox-nudge hack (unlike the old 473x364 pipeline, whose trimmed canvas was a few px bigger than the building's own footprint because its trim also caught the north-arrow/logo graphic): the hi-res source is full-bleed against its own canvas with no such margin, and after excluding the logo/title-block by connected-component position (not by cropping) the building's own bounding box already reproduces the source's aspect almost exactly with a plain uniform scale (aspect 1.333 vs the scorer's own 629x471px reference bbox, 1.335). The outline is the external contour of that same outer-envelope component; the two elevator/stair core holes are the external contours of the two free-standing core-band components (the lower one clipped to a measured pixel row -- the shaft row's own bottom rail, confirmed by direct zoom against the source to be one continuous straight line with no notches, unlike the upper band -- so the Female/Male/Gender-Neutral washroom partitions hanging off its south edge are not swallowed into the hole; a real gap separates the two holes, so the corridor between them stays walkable). Room centers/doors are carried over byte-for-byte from the prior (473px-source) file: they were hand-matched to each room's real label/doorway position, only need to land inside the right room near its real threshold (a far looser bar than wall tracing), and the building has not moved between source images -- verified by overlay and by `npm run test:nav` (18/18 rooms path-reachable) after the swap. The 8 glass:true walls (was 5) are the same design judgment as the prior file -- the source line drawing has no glass/solid notation anywhere, so this is a documented choice, not a surveyed fact -- carried forward onto their hi-res equivalents by endpoint-position matching rather than re-derived from scratch; the hi-res source resolves the Kitchen/1407/1408-vs-Event-Space front as more (shorter, jogged) segments than the old low-res screenshot's Hough merge could resolve, so more individual wall entries now carry that one continuous design decision (see each glass wall's own `note` field for specifics). Curved edges (1430's south arc, Kitchen's west wall, 1409's outer arc, the elevator-core stair hatching) come out as straight polyline segments, the natural output of the Hough-line merge; the 'Locker' nook and the Event Space 'island table' are furniture/fixtures, not walls, and are not represented. Washroom partition walls use height 2.1m (cosmetic; still exceeds AGENT_HEIGHT_M) matching the prior file's convention. `walls[]` entries are render-only (world-client's Walls.tsx; navmesh comes from `walkableOutline` + `holes` alone), so imperfect internal shaft-partition detail costs nothing structurally -- only visual completeness inside the (unwalkable, invisible-from-inside) elevator core.",
   "walkableOutline": [
     [
-      27.904,
-      27.378
+      27.822,
+      26.208
     ],
     [
-      21.812,
-      23.467
+      21.701,
+      22.369
     ],
     [
-      21.361,
-      27.152
+      21.256,
+      26.041
     ],
     [
-      10.831,
-      25.874
+      10.795,
+      24.762
     ],
     [
-      11.357,
-      21.812
+      11.351,
+      20.755
     ],
     [
-      2.557,
-      24.52
+      2.56,
+      23.426
     ],
     [
       0.0,
-      13.388
+      12.353
     ],
     [
-      3.761,
-      12.185
+      3.784,
+      11.184
     ],
     [
-      1.805,
-      11.056
+      1.781,
+      10.072
     ],
     [
-      6.995,
-      1.053
+      7.011,
+      0.056
     ],
     [
-      13.313,
-      4.814
+      13.243,
+      3.839
     ],
     [
-      13.839,
-      0.978
+      13.41,
+      3.45
     ],
     [
-      24.219,
-      2.482
+      13.744,
+      0.056
     ],
     [
-      23.768,
-      6.468
+      24.149,
+      1.558
     ],
     [
-      32.417,
-      3.986
+      23.593,
+      5.453
     ],
     [
-      35.125,
-      14.892
+      32.218,
+      2.949
     ],
     [
-      31.063,
-      16.096
+      34.944,
+      13.855
     ],
     [
-      33.244,
-      17.525
+      30.882,
+      15.024
+    ],
+    [
+      33.052,
+      16.248
+    ],
+    [
+      33.108,
+      16.415
     ]
   ],
   "holes": [
@@ -82,84 +90,120 @@
       "name": "elevator-stair-core-upper",
       "polygon": [
         [
-          11.733,
-          19.781
+          11.685,
+          18.696
         ],
         [
-          11.733,
-          17.224
+          11.685,
+          16.192
         ],
         [
-          12.41,
-          17.299
+          12.353,
+          16.192
         ],
         [
-          12.485,
-          19.781
+          12.409,
+          18.696
         ],
         [
-          13.538,
-          19.781
+          13.521,
+          18.696
         ],
         [
-          14.065,
-          18.879
-        ],
-        [
-          13.614,
-          18.728
-        ],
-        [
-          13.614,
+          14.078,
           17.75
         ],
         [
-          13.162,
-          17.224
+          13.521,
+          17.639
         ],
         [
-          13.388,
-          15.344
+          13.521,
+          16.693
         ],
         [
-          21.812,
-          15.344
+          13.076,
+          16.192
         ],
         [
-          21.887,
-          17.675
+          13.243,
+          16.137
         ],
         [
-          21.511,
-          17.826
+          13.299,
+          14.3
         ],
         [
-          21.06,
-          18.653
+          21.59,
+          14.412
         ],
         [
-          21.586,
-          18.803
+          21.59,
+          16.526
         ],
         [
-          21.662,
-          19.781
+          19.754,
+          16.526
         ],
         [
-          22.715,
-          19.706
+          19.642,
+          14.412
         ],
         [
-          22.715,
-          16.848
+          19.698,
+          16.638
         ],
         [
-          23.391,
-          16.848
+          21.757,
+          16.582
         ],
         [
-          23.391,
-          19.781
+          21.757,
+          14.412
+        ],
+        [
+          21.033,
+          14.3
+        ],
+        [
+          21.757,
+          14.3
+        ],
+        [
+          21.757,
+          16.081
+        ],
+        [
+          21.924,
+          16.137
+        ],
+        [
+          20.978,
+          17.583
+        ],
+        [
+          21.479,
+          17.695
+        ],
+        [
+          21.534,
+          18.696
+        ],
+        [
+          22.591,
+          18.641
+        ],
+        [
+          22.591,
+          15.803
+        ],
+        [
+          23.259,
+          15.747
+        ],
+        [
+          23.259,
+          18.696
         ]
       ]
     },
@@ -167,76 +211,20 @@
       "name": "elevator-stair-core-lower",
       "polygon": [
         [
-          11.733,
-          13.463
+          11.685,
+          12.409
         ],
         [
-          11.733,
-          10.906
+          11.685,
+          10.127
         ],
         [
-          11.809,
-          11.132
+          23.315,
+          10.127
         ],
         [
-          13.238,
-          11.132
-        ],
-        [
-          13.313,
-          10.906
-        ],
-        [
-          13.388,
-          11.132
-        ],
-        [
-          17.149,
-          11.132
-        ],
-        [
-          17.224,
-          10.906
-        ],
-        [
-          17.299,
-          11.132
-        ],
-        [
-          17.901,
-          11.132
-        ],
-        [
-          17.976,
-          10.906
-        ],
-        [
-          18.051,
-          11.132
-        ],
-        [
-          21.436,
-          11.132
-        ],
-        [
-          21.511,
-          10.906
-        ],
-        [
-          21.586,
-          11.132
-        ],
-        [
-          23.316,
-          11.132
-        ],
-        [
-          23.391,
-          10.906
-        ],
-        [
-          23.391,
-          13.463
+          23.259,
+          12.409
         ]
       ]
     }
@@ -244,61 +232,48 @@
   "walls": [
     {
       "a": [
-        23.467,
-        8.082
+        11.458,
+        20.656
       ],
       "b": [
-        17.957,
-        8.094
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        17.28,
-        8.096
-      ],
-      "b": [
-        11.714,
-        8.107
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        23.463,
-        11.393
-      ],
-      "b": [
-        11.713,
-        11.255
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        34.805,
-        14.841
-      ],
-      "b": [
-        28.523,
-        15.508
+        2.551,
+        23.428
       ],
       "height": 2.7,
-      "glass": true,
-      "note": "Design judgment, not surveyed fact: the source line drawing does not distinguish glass from solid (checked, no dash/line-style difference found here or on any other wall this floor). Glassed to match the spec's 'glass walls' requirement and the previous hand-authored map's intent (98831ba: '1408 - north wall, glass toward Event Space'). In the corrected geometry this wall (with walls[7], the near-parallel outer face, and the short corner-jog walls[48]/[51]) is the Kitchen/1407/1408 cluster's front against Event Space -- the interior-facing side, not the exterior facade."
+      "glass": false
     },
     {
       "a": [
-        27.858,
-        15.578
+        23.315,
+        18.674
       ],
       "b": [
-        27.118,
-        15.657
+        11.671,
+        18.638
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.315,
+        12.351
+      ],
+      "b": [
+        11.672,
+        12.3
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        27.795,
+        26.245
+      ],
+      "b": [
+        33.169,
+        16.266
       ],
       "height": 2.7,
       "glass": false
@@ -306,722 +281,783 @@
     {
       "a": [
         23.37,
-        16.055
+        10.175
       ],
       "b": [
-        22.579,
-        16.139
+        11.63,
+        10.172
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        23.343,
+        7.116
+      ],
+      "b": [
+        17.848,
+        7.092
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        17.194,
+        7.089
+      ],
+      "b": [
+        11.671,
+        7.065
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        24.211,
+        1.543
+      ],
+      "b": [
+        13.731,
+        0.024
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        32.97,
+        16.181
+      ],
+      "b": [
+        31.662,
+        16.197
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        12.428,
-        17.216
+        21.811,
+        16.318
       ],
       "b": [
-        11.718,
-        17.292
+        13.228,
+        16.423
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        35.187,
-        14.811
+        12.412,
+        16.433
       ],
       "b": [
-        30.811,
-        16.105
+        11.674,
+        16.442
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        34.931,
+        13.879
+      ],
+      "b": [
+        32.228,
+        2.894
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        32.275,
+        2.939
+      ],
+      "b": [
+        23.386,
+        5.519
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        5.229,
+        10.789
+      ],
+      "b": [
+        -0.016,
+        12.312
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        1.794,
+        10.141
+      ],
+      "b": [
+        7.061,
+        -0.018
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        2.589,
+        23.449
+      ],
+      "b": [
+        0.05,
+        12.289
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.315,
+        25.987
+      ],
+      "b": [
+        10.777,
+        24.726
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        34.083,
+        14.303
+      ],
+      "b": [
+        32.844,
+        14.308
       ],
       "height": 2.7,
       "glass": true,
-      "note": "Design judgment, not surveyed fact (see walls[3]'s note for the full rationale). This is the outer/near-parallel face of the same Kitchen/1407/1408-vs-Event-Space wall run as walls[3] -- glassed together with it (plus the corner-jog walls[48]/[51]) so the front reads as one continuous glass wall rather than alternating glass/solid strips."
+      "note": "Design judgment, not surveyed fact (see this front's other glass walls' note). 1408's own segment of the same front, glass toward Event Space."
     },
     {
       "a": [
-        11.514,
-        21.814
+        29.102,
+        14.325
       ],
       "b": [
-        2.53,
-        24.471
+        28.309,
+        14.328
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        23.468,
-        13.333
+        27.711,
+        14.331
       ],
       "b": [
-        11.716,
-        13.233
+        26.974,
+        14.334
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        32.481,
-        3.91
+        21.812,
+        14.357
       ],
       "b": [
-        23.372,
-        6.551
+        13.229,
+        14.395
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        5.268,
-        11.801
+        27.862,
+        26.219
       ],
       "b": [
-        -0.003,
-        13.33
+        21.602,
+        22.305
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        9.232,
-        17.393
+        3.829,
+        11.196
       ],
       "b": [
-        1.41,
-        19.65
+        1.85,
+        9.959
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        28.0,
-        27.33
+        18.736,
+        6.082
       ],
       "b": [
-        21.693,
-        23.394
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        3.26,
-        11.891
-      ],
-      "b": [
-        2.136,
-        11.189
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        23.467,
-        19.734
-      ],
-      "b": [
-        11.715,
-        19.711
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        2.617,
-        24.542
-      ],
-      "b": [
-        0.049,
-        13.306
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        1.816,
-        11.146
-      ],
-      "b": [
-        7.1,
-        0.945
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        27.931,
-        27.402
-      ],
-      "b": [
-        33.328,
-        17.333
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        35.14,
-        14.912
-      ],
-      "b": [
-        32.414,
-        3.912
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        24.373,
-        2.514
-      ],
-      "b": [
-        13.783,
-        0.978
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        23.429,
-        13.478
-      ],
-      "b": [
-        21.135,
-        13.472
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        14.065,
-        13.453
-      ],
-      "b": [
-        11.733,
-        13.447
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.441,
-        27.094
-      ],
-      "b": [
-        10.807,
-        25.838
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.963,
-        11.259
-      ],
-      "b": [
-        13.294,
-        11.19
+        11.221,
+        5.016
       ],
       "height": 2.1,
       "glass": false
     },
     {
       "a": [
-        13.479,
-        4.844
+        13.428,
+        3.893
       ],
       "b": [
-        7.025,
-        0.959
+        7.011,
+        0.019
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        10.921,
-        25.894
+        9.169,
+        16.291
       ],
       "b": [
-        11.416,
-        21.733
+        1.428,
+        18.623
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        11.669,
-        19.607
+        6.709,
+        17.089
       ],
       "b": [
-        11.959,
-        17.167
+        5.876,
+        13.642
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        13.247,
-        6.336
+        5.728,
+        13.029
       ],
       "b": [
-        13.892,
-        0.904
+        5.175,
+        10.743
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        10.898,
+        24.772
+      ],
+      "b": [
+        11.385,
+        20.638
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        13.185,
+        5.354
+      ],
+      "b": [
+        13.815,
+        0.002
       ],
       "height": 2.1,
       "glass": false
     },
     {
       "a": [
-        18.877,
-        7.062
+        23.272,
+        18.627
       ],
       "b": [
-        11.262,
-        5.989
+        23.283,
+        15.692
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.296,
+        12.423
+      ],
+      "b": [
+        23.307,
+        9.626
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.308,
+        9.251
+      ],
+      "b": [
+        23.311,
+        8.458
       ],
       "height": 2.1,
       "glass": false
     },
     {
       "a": [
-        23.422,
-        19.687
+        23.315,
+        7.609
       ],
       "b": [
-        23.423,
-        16.81
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        23.423,
-        13.463
-      ],
-      "b": [
-        23.424,
-        10.68
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        23.424,
-        10.21
-      ],
-      "b": [
-        23.424,
-        9.496
+        23.317,
+        7.067
       ],
       "height": 2.1,
       "glass": false
     },
     {
       "a": [
-        20.141,
-        13.066
+        11.705,
+        18.738
       ],
       "b": [
-        19.177,
-        12.965
+        11.702,
+        16.137
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        11.763,
-        13.482
+        11.698,
+        12.409
       ],
       "b": [
-        11.758,
-        9.477
+        11.694,
+        8.458
       ],
       "height": 2.1,
       "glass": false
     },
     {
       "a": [
-        6.748,
-        18.155
+        11.693,
+        7.637
       ],
       "b": [
-        5.93,
-        14.749
+        11.692,
+        7.011
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        23.316,
+        15.773
+      ],
+      "b": [
+        22.578,
+        15.755
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        5.769,
-        14.076
+        21.221,
+        26.051
       ],
       "b": [
-        5.204,
-        11.725
+        21.791,
+        21.19
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        21.313,
-        27.161
+        23.625,
+        5.535
       ],
       "b": [
-        21.958,
-        21.743
+        24.096,
+        1.517
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        27.669,
+        6.215
+      ],
+      "b": [
+        25.06,
+        5.917
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        23.773,
-        6.497
+        23.778,
+        5.77
       ],
       "b": [
-        24.254,
-        2.458
+        21.201,
+        5.476
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        20.603,
+        5.407
+      ],
+      "b": [
+        18.741,
+        5.194
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        13.362,
+        4.579
+      ],
+      "b": [
+        11.429,
+        4.358
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        10.303,
+        21.094
+      ],
+      "b": [
+        9.793,
+        19.034
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        21.955,
-        13.233
+        9.642,
+        18.425
       ],
       "b": [
-        21.41,
-        13.21
+        9.104,
+        16.253
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        20.118,
-        13.153
+        30.694,
+        15.817
       ],
       "b": [
-        19.329,
-        13.119
+        30.725,
+        12.478
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        18.051,
-        13.064
+        32.052,
+        16.107
       ],
       "b": [
-        17.206,
-        13.027
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        15.86,
-        12.968
-      ],
-      "b": [
-        15.108,
-        12.936
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        3.644,
-        12.437
-      ],
-      "b": [
-        3.099,
-        12.413
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.643,
-        18.764
-      ],
-      "b": [
-        20.026,
-        18.755
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        10.349,
-        22.139
-      ],
-      "b": [
-        9.841,
-        20.09
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        9.693,
-        19.492
-      ],
-      "b": [
-        9.148,
-        17.297
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        23.447,
-        17.178
-      ],
-      "b": [
-        22.695,
-        17.15
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        31.665,
-        17.036
-      ],
-      "b": [
-        31.138,
-        16.998
+        31.426,
+        16.052
       ],
       "height": 2.7,
       "glass": true,
-      "note": "Design judgment, not surveyed fact (see walls[3]'s note). Short corner-jog cap connecting walls[3]/[7]'s two offset faces where the Event-Space-facing wall steps out; glassed with them so the run has no solid gap."
+      "note": "Design judgment, not surveyed fact: the source line drawing does not distinguish glass from solid. Glassed to match the spec's 'glass walls' requirement and the previous hand-authored map's intent (98831ba: '1408 - north wall, glass toward Event Space'). Part of the Kitchen/1407/1408 cluster's jagged front against Event Space -- the interior-facing side, not the exterior facade (that's the separate long SE run). The hi-res source resolves this front as several short jogged segments rather than one long line; all of them are glassed together."
     },
     {
       "a": [
-        23.959,
-        6.52
+        13.763,
+        14.503
       ],
       "b": [
-        21.333,
-        6.11
+        13.219,
+        14.456
       ],
-      "height": 2.1,
+      "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        20.682,
-        6.009
+        21.602,
+        22.702
       ],
       "b": [
-        18.859,
-        5.724
+        21.622,
+        20.643
       ],
-      "height": 2.1,
+      "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        32.774,
-        17.224
+        21.66,
+        16.638
       ],
       "b": [
-        31.872,
-        17.205
+        21.682,
+        14.244
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        30.058,
+        6.183
+      ],
+      "b": [
+        27.22,
+        6.64
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        35.0,
+        13.843
+      ],
+      "b": [
+        30.643,
+        15.0
       ],
       "height": 2.7,
       "glass": true,
-      "note": "Design judgment, not surveyed fact (see walls[3]'s note). Short corner-jog cap connecting walls[3]/[7]'s two offset faces where the Event-Space-facing wall steps out; glassed with them so the run has no solid gap."
+      "note": "Design judgment, not surveyed fact (see this front's other glass walls' note). Main diagonal run of the Kitchen/1407/1408-vs-Event-Space front (equivalent to the old file's outer near-parallel face)."
     },
     {
       "a": [
-        28.56,
-        7.666
+        23.371,
+        8.911
       ],
       "b": [
-        24.659,
-        7.152
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.656,
-        17.731
-      ],
-      "b": [
-        21.82,
-        16.623
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        13.618,
-        18.747
-      ],
-      "b": [
-        13.502,
-        15.265
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        13.443,
-        13.484
-      ],
-      "b": [
-        13.322,
-        9.871
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        13.84,
-        11.538
-      ],
-      "b": [
-        13.293,
-        11.46
+        21.353,
+        8.908
       ],
       "height": 2.1,
       "glass": false
     },
     {
       "a": [
-        26.759,
-        14.513
+        13.355,
+        8.899
       ],
       "b": [
-        26.85,
-        11.958
+        11.63,
+        8.897
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        30.73,
+        12.483
+      ],
+      "b": [
+        28.24,
+        11.467
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        27.654,
+        11.228
+      ],
+      "b": [
+        26.736,
+        10.854
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        18.797,
+        5.081
+      ],
+      "b": [
+        19.331,
+        0.777
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        29.065,
+        14.426
+      ],
+      "b": [
+        29.069,
+        11.685
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.68,
+        22.729
+      ],
+      "b": [
+        18.284,
+        23.572
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        13.291,
+        15.563
+      ],
+      "b": [
+        13.315,
+        14.243
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        13.347,
+        12.411
+      ],
+      "b": [
+        13.4,
+        9.365
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        13.546,
+        1.041
+      ],
+      "b": [
+        13.561,
+        0.193
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        32.997,
+        16.165
+      ],
+      "b": [
+        31.675,
+        16.151
       ],
       "height": 2.7,
       "glass": true,
-      "note": "Design judgment, not surveyed fact: the source line drawing does not distinguish glass from solid (checked, no dash/line-style difference found here or on any other wall this floor). Glassed to match the spec's 'glass walls' requirement and the previous hand-authored map's intent (98831ba: 'Kitchen - east wall, glass front toward North Collaboration Space'). In the corrected geometry Kitchen's distinguishing wall is this curved west arc, which faces the open central corridor by the building entrance, not North Collaboration Space (that space sits on Kitchen/1407/1408's south side, which per the source has no enclosing wall at all -- open-plan, like North/South Collaboration Space generally -- so there is nothing to glass on that side)."
+      "note": "Design judgment, not surveyed fact (see the sibling glass wall's note on this same Kitchen/1407/1408-vs-Event-Space front). Corner-jog segment, near-parallel to the adjacent cap."
     },
     {
       "a": [
-        27.003,
-        7.614
+        21.812,
+        14.29
       ],
       "b": [
-        27.04,
-        6.564
+        18.933,
+        14.288
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        33.328,
-        15.445
+        16.025,
+        14.287
       ],
       "b": [
-        32.65,
-        12.639
+        14.676,
+        14.286
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        21.453,
-        18.186
+        32.107,
+        14.676
       ],
       "b": [
-        20.811,
-        18.236
+        31.592,
+        14.718
+      ],
+      "height": 2.7,
+      "glass": true,
+      "note": "Design judgment, not surveyed fact (see this front's other glass walls' note). Mid-run segment of the same jagged Kitchen/1407/1408-vs-Event-Space front."
+    },
+    {
+      "a": [
+        33.111,
+        14.397
+      ],
+      "b": [
+        32.482,
+        11.58
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        15.267,
-        18.669
+        22.703,
+        15.705
       ],
       "b": [
-        13.602,
-        18.798
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        31.889,
-        6.359
-      ],
-      "b": [
-        28.119,
-        7.74
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        23.467,
-        9.947
-      ],
-      "b": [
-        21.492,
-        9.928
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        17.976,
-        15.706
-      ],
-      "b": [
-        17.13,
+        23.259,
         15.705
       ],
       "height": 2.7,
@@ -1029,1092 +1065,664 @@
     },
     {
       "a": [
-        15.832,
-        15.703
+        31.328,
+        14.885
       ],
       "b": [
-        15.099,
-        15.701
+        30.66,
+        14.926
       ],
       "height": 2.7,
-      "glass": false
+      "glass": true,
+      "note": "Design judgment, not surveyed fact (see this front's other glass walls' note). Mid-run segment of the same jagged Kitchen/1407/1408-vs-Event-Space front."
     },
     {
       "a": [
-        13.821,
-        15.699
+        13.395,
+        10.931
       ],
       "b": [
-        13.294,
-        15.698
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        18.908,
-        6.11
-      ],
-      "b": [
-        19.402,
-        1.73
+        13.245,
+        8.845
       ],
       "height": 2.1,
       "glass": false
     },
     {
       "a": [
-        31.139,
-        13.51
+        30.772,
+        13.561
       ],
       "b": [
-        30.442,
-        13.453
+        29.033,
+        13.669
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        21.174,
-        18.611
+        26.709,
+        6.578
       ],
       "b": [
-        19.99,
-        18.727
+        24.298,
+        5.956
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        18.935,
-        16.321
+        17.514,
+        15.95
       ],
       "b": [
-        18.409,
-        16.303
+        17.437,
+        14.254
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        18.113,
-        23.543
+        17.355,
+        12.424
       ],
       "b": [
-        18.072,
-        22.866
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        17.379,
-        11.522
-      ],
-      "b": [
-        17.17,
-        8.106
+        17.113,
+        7.082
       ],
       "height": 2.1,
       "glass": false
     },
     {
       "a": [
-        21.824,
-        23.819
+        15.268,
+        16.652
       ],
       "b": [
-        18.338,
-        24.67
+        15.331,
+        14.272
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        30.832,
-        16.866
+        30.786,
+        13.602
       ],
       "b": [
-        30.868,
-        13.501
+        30.662,
+        13.006
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        20.011,
-        18.692
+        29.28,
+        6.369
       ],
       "b": [
-        19.934,
-        17.299
+        28.763,
+        3.887
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        19.711,
-        13.293
+        17.509,
+        16.637
       ],
       "b": [
-        19.587,
-        11.073
+        17.594,
+        14.241
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        19.186,
-        3.855
+        17.658,
+        12.428
       ],
       "b": [
-        19.149,
-        3.197
+        17.848,
+        7.064
       ],
       "height": 2.1,
       "glass": false
     },
     {
       "a": [
-        20.232,
-        11.575
+        21.29,
+        20.598
       ],
       "b": [
-        19.311,
-        11.56
+        18.507,
+        21.069
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        13.377,
+        10.222
+      ],
+      "b": [
+        13.22,
+        8.845
       ],
       "height": 2.1,
       "glass": false
     },
     {
       "a": [
-        17.751,
-        11.534
-      ],
-      "b": [
-        17.13,
-        11.524
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        15.645,
-        11.5
-      ],
-      "b": [
-        15.099,
-        11.491
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        29.213,
-        15.55
-      ],
-      "b": [
-        29.215,
-        12.711
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        29.219,
-        6.769
-      ],
-      "b": [
-        29.219,
-        5.829
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        27.434,
-        12.053
-      ],
-      "b": [
-        26.832,
-        12.034
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.962,
-        17.322
-      ],
-      "b": [
-        21.379,
-        17.321
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        20.12,
-        17.318
-      ],
-      "b": [
-        19.273,
-        17.316
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        18.051,
-        17.313
-      ],
-      "b": [
-        17.205,
-        17.311
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        23.851,
-        22.202
-      ],
-      "b": [
-        21.125,
-        21.693
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        23.467,
-        9.876
-      ],
-      "b": [
-        21.492,
-        9.881
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        13.388,
-        9.898
-      ],
-      "b": [
-        11.752,
-        9.901
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        15.87,
-        11.489
-      ],
-      "b": [
-        15.137,
-        11.432
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        22.795,
-        19.047
-      ],
-      "b": [
-        22.689,
-        18.278
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.968,
-        13.03
-      ],
-      "b": [
-        21.864,
-        12.279
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.643,
-        17.732
-      ],
-      "b": [
-        21.116,
-        17.844
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.607,
-        19.688
-      ],
-      "b": [
-        21.641,
-        18.729
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.875,
-        12.26
-      ],
-      "b": [
-        21.919,
-        11.056
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        20.665,
-        21.737
-      ],
-      "b": [
-        19.706,
-        21.981
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        19.687,
-        21.84
-      ],
-      "b": [
-        17.934,
-        22.542
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        31.101,
-        13.557
-      ],
-      "b": [
-        30.48,
-        13.482
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        26.38,
-        7.544
-      ],
-      "b": [
-        24.047,
-        6.759
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        7.522,
-        1.2
-      ],
-      "b": [
-        6.976,
-        1.016
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        22.808,
-        24.115
-      ],
-      "b": [
-        23.781,
-        22.176
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        18.002,
-        11.263
-      ],
-      "b": [
-        17.989,
-        8.048
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        12.44,
-        19.687
-      ],
-      "b": [
-        12.463,
-        17.243
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        28.139,
-        7.623
-      ],
-      "b": [
-        27.518,
-        5.258
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        4.344,
-        12.119
-      ],
-      "b": [
-        3.704,
-        12.119
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        18.673,
-        26.813
-      ],
-      "b": [
-        18.687,
-        25.892
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        18.777,
-        19.688
-      ],
-      "b": [
-        18.809,
-        17.525
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        18.984,
-        5.491
-      ],
-      "b": [
-        19.001,
-        4.362
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        29.497,
-        7.362
-      ],
-      "b": [
-        28.855,
-        4.905
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        15.852,
-        17.375
-      ],
-      "b": [
-        15.085,
-        17.58
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.625,
-        21.814
-      ],
-      "b": [
-        20.384,
-        21.743
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.587,
-        18.722
-      ],
-      "b": [
-        20.439,
-        18.729
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        2.614,
-        19.414
-      ],
-      "b": [
-        2.031,
-        19.415
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        3.309,
-        19.161
-      ],
-      "b": [
-        2.783,
-        19.198
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.796,
-        15.795
-      ],
-      "b": [
-        21.797,
-        15.268
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.8,
-        13.482
-      ],
-      "b": [
-        21.804,
-        11.056
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        18.853,
-        26.849
-      ],
-      "b": [
-        18.629,
-        25.743
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        18.49,
-        25.06
-      ],
-      "b": [
-        18.32,
-        24.218
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        18.185,
-        23.553
-      ],
-      "b": [
-        17.973,
-        22.508
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        18.86,
-        5.867
-      ],
-      "b": [
-        19.255,
-        3.535
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        22.374,
-        10.706
-      ],
-      "b": [
-        21.496,
-        10.478
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        22.696,
-        19.593
-      ],
-      "b": [
-        22.764,
-        17.092
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        20.74,
-        19.687
-      ],
-      "b": [
-        20.853,
-        18.465
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        17.299,
-        8.139
-      ],
-      "b": [
-        12.561,
-        8.119
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        21.586,
-        11.489
-      ],
-      "b": [
-        21.53,
-        9.891
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        14.282,
-        18.821
-      ],
-      "b": [
-        14.117,
-        17.528
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        15.271,
-        18.703
-      ],
-      "b": [
-        13.896,
-        18.57
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        15.926,
-        17.525
-      ],
-      "b": [
-        15.099,
-        17.694
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.605,
-        18.728
-      ],
-      "b": [
-        20.872,
-        18.653
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        13.953,
-        18.317
-      ],
-      "b": [
-        13.858,
-        17.523
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        17.207,
-        11.282
-      ],
-      "b": [
-        17.3,
-        8.085
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        15.964,
-        17.525
-      ],
-      "b": [
-        15.438,
-        17.656
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        16.427,
-        19.198
-      ],
-      "b": [
-        16.411,
-        18.352
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.982,
-        21.743
-      ],
-      "b": [
-        19.198,
-        21.953
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        31.416,
-        5.351
-      ],
-      "b": [
-        30.844,
-        4.302
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.323,
-        19.687
-      ],
-      "b": [
-        21.343,
-        18.653
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.489,
-        11.282
-      ],
-      "b": [
-        21.515,
-        9.947
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        27.835,
-        6.332
-      ],
-      "b": [
-        26.844,
-        6.775
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        21.887,
-        15.344
-      ],
-      "b": [
-        21.154,
-        15.268
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        27.096,
-        15.231
-      ],
-      "b": [
-        26.945,
-        14.46
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        22.316,
-        10.513
-      ],
-      "b": [
-        21.494,
-        10.688
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        14.761,
-        17.675
-      ],
-      "b": [
-        13.952,
-        17.656
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        27.771,
-        7.622
-      ],
-      "b": [
-        27.191,
-        7.496
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        11.809,
-        19.518
-      ],
-      "b": [
-        11.715,
-        17.6
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        18.296,
-        17.675
-      ],
-      "b": [
-        17.374,
-        17.45
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        23.391,
-        10.173
-      ],
-      "b": [
-        23.429,
-        9.477
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        20.101,
+        33.328,
         11.207
       ],
       "b": [
-        19.405,
-        11.376
+        32.159,
+        11.804
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        31.622,
+        12.079
+      ],
+      "b": [
+        30.641,
+        12.58
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.711,
+        21.141
+      ],
+      "b": [
+        20.96,
+        20.594
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        27.238,
+        11.017
+      ],
+      "b": [
+        26.695,
+        11.004
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        22.697,
+        23.02
+      ],
+      "b": [
+        23.67,
+        21.086
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        19.62,
+        16.651
+      ],
+      "b": [
+        19.62,
+        14.245
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        17.374,
+        16.651
+      ],
+      "b": [
+        17.381,
+        14.259
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.397,
+        10.254
+      ],
+      "b": [
+        21.434,
+        9.6
+      ],
+      "height": 2.1,
+      "glass": false,
+      "note": "Trimmed back from the raw trace (was a=[21.397,10.254] b=[21.434,8.861], a fully closed wall) to leave a ~0.74m door gap at its south end -- see open_gender_neutral_door's note in build_hires.py/the JSON source note for why."
+    },
+    {
+      "a": [
+        26.677,
+        13.605
+      ],
+      "b": [
+        26.676,
+        10.906
+      ],
+      "height": 2.7,
+      "glass": true,
+      "note": "Design judgment, not surveyed fact: the source line drawing does not distinguish glass from solid. Glassed to match the spec's 'glass walls' requirement and the previous hand-authored map's intent (98831ba: 'Kitchen - east wall, glass front toward North Collaboration Space'). In this geometry Kitchen's distinguishing wall is this west edge, which faces the open central corridor by the building entrance, not North Collaboration Space (that space sits on Kitchen's south side, which per the source has no enclosing wall at all -- open-plan, like North/South Collaboration Space generally)."
+    },
+    {
+      "a": [
+        32.096,
+        14.704
+      ],
+      "b": [
+        30.713,
+        14.999
+      ],
+      "height": 2.7,
+      "glass": true,
+      "note": "Design judgment, not surveyed fact (see this front's other glass walls' note). Mid-run segment of the same jagged Kitchen/1407/1408-vs-Event-Space front."
+    },
+    {
+      "a": [
+        27.962,
+        6.586
+      ],
+      "b": [
+        27.395,
+        4.301
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        27.655,
+        6.51
+      ],
+      "b": [
+        26.556,
+        6.538
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        16.791,
+        7.117
+      ],
+      "b": [
+        11.671,
+        7.079
       ],
       "height": 2.1,
       "glass": false
     },
     {
       "a": [
-        19.462,
-        17.656
+        12.377,
+        18.627
       ],
       "b": [
-        18.916,
-        17.562
+        12.37,
+        16.137
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        20.684,
-        21.806
+        19.308,
+        1.433
       ],
       "b": [
-        19.856,
-        21.825
-      ],
-      "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        11.321,
-        5.999
-      ],
-      "b": [
-        11.626,
-        5.418
+        19.308,
+        0.779
       ],
       "height": 2.1,
       "glass": false
     },
     {
       "a": [
-        11.974,
-        4.755
+        31.734,
+        5.236
       ],
       "b": [
-        12.294,
-        4.145
+        29.575,
+        6.33
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        27.017,
+        14.363
+      ],
+      "b": [
+        26.544,
+        12.572
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        4.02,
+        11.143
+      ],
+      "b": [
+        3.116,
+        10.795
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        22.614,
+        18.627
+      ],
+      "b": [
+        22.617,
+        15.775
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        18.688,
+        25.721
+      ],
+      "b": [
+        18.684,
+        25.179
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        30.259,
+        15.619
+      ],
+      "b": [
+        28.897,
+        14.255
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        13.632,
+        17.69
+      ],
+      "b": [
+        13.258,
+        14.506
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        19.48,
+        20.79
+      ],
+      "b": [
+        17.838,
+        21.483
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        18.74,
+        25.715
+      ],
+      "b": [
+        18.534,
+        24.683
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        18.387,
+        23.941
+      ],
+      "b": [
+        18.229,
+        23.147
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        18.099,
+        22.497
+      ],
+      "b": [
+        17.885,
+        21.421
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        10.969,
+        24.247
+      ],
+      "b": [
+        11.046,
+        22.841
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        12.339,
+        4.744
+      ],
+      "b": [
+        11.699,
+        4.396
       ],
       "height": 2.1,
       "glass": false
     },
     {
       "a": [
-        6.544,
-        23.241
+        3.968,
+        11.219
       ],
       "b": [
-        5.867,
-        23.561
+        1.768,
+        10.054
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        14.479,
-        18.07
+        31.259,
+        4.34
       ],
       "b": [
-        14.497,
-        17.525
+        30.698,
+        3.353
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        8.368,
-        22.639
+        20.644,
+        5.036
       ],
       "b": [
-        7.559,
-        23.034
+        19.656,
+        4.841
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        24.938,
+        6.198
+      ],
+      "b": [
+        23.475,
+        5.439
       ],
       "height": 2.7,
       "glass": false
     },
     {
       "a": [
-        19.819,
-        21.944
+        27.029,
+        6.58
       ],
       "b": [
-        19.274,
-        22.038
+        26.709,
+        5.69
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        13.229,
+        4.396
+      ],
+      "b": [
+        12.631,
+        4.507
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        13.355,
+        8.969
+      ],
+      "b": [
+        11.685,
+        8.949
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        25.554,
+        6.413
+      ],
+      "b": [
+        24.748,
+        6.079
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.996,
+        2.629
+      ],
+      "b": [
+        24.191,
+        1.767
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        27.714,
+        5.411
+      ],
+      "b": [
+        26.692,
+        5.692
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.857,
+        3.283
+      ],
+      "b": [
+        24.177,
+        1.53
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        11.277,
+        5.047
+      ],
+      "b": [
+        11.603,
+        4.397
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        11.932,
+        3.74
+      ],
+      "b": [
+        12.233,
+        3.14
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        27.029,
+        6.552
+      ],
+      "b": [
+        26.765,
+        5.634
       ],
       "height": 2.7,
       "glass": false
@@ -2155,8 +1763,8 @@
         "room 1430"
       ],
       "center": [
-        19.963,
-        23.191
+        19.661,
+        22.091
       ],
       "door": [
         21.6,
@@ -2263,7 +1871,7 @@
       ],
       "door": [
         14.291,
-        11.357
+        9.9
       ]
     },
     {
@@ -2278,7 +1886,7 @@
       ],
       "door": [
         19.179,
-        11.357
+        9.9
       ]
     },
     {
@@ -2287,12 +1895,12 @@
         "gender neutral washroom"
       ],
       "center": [
-        22.414,
-        10.455
+        22.3,
+        9.4
       ],
       "door": [
-        22.038,
-        11.357
+        21.3,
+        9.2
       ]
     },
     {
@@ -2315,12 +1923,12 @@
         "room 1407"
       ],
       "center": [
-        31.918,
-        14.703
+        31.81,
+        13.28
       ],
       "door": [
-        30.988,
-        10.981
+        31.1,
+        12.0
       ]
     },
     {
