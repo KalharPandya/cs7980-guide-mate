@@ -6,7 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:sync": "tsx src/scene/__tests__/floorPlanSync.test.ts",
+    "test:data": "tsx src/scene/__tests__/floorPlanData.test.ts",
+    "test:utils": "tsx src/scene/__tests__/floorPlanUtils.test.ts",
+    "test:camera": "tsx src/scene/__tests__/cameraFraming.test.ts",
+    "test": "npm run test:sync && npm run test:data && npm run test:utils && npm run test:camera"
   },
   "dependencies": {
     "@colyseus/sdk": "^0.17.10",
@@ -23,6 +28,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/three": "0.185.1",
     "@vitejs/plugin-react": "^6.0.4",
+    "tsx": "^4.23.1",
     "typescript": "^7.0.2",
     "vite": "^8.1.5"
   }
