@@ -11,7 +11,8 @@
     "test:data": "tsx src/scene/__tests__/floorPlanData.test.ts",
     "test:utils": "tsx src/scene/__tests__/floorPlanUtils.test.ts",
     "test:camera": "tsx src/scene/__tests__/cameraFraming.test.ts",
-    "test": "npm run test:sync && npm run test:data && npm run test:utils && npm run test:camera"
+    "test:visitorClip": "tsx src/scene/__tests__/visitorClipTransition.test.ts",
+    "test": "npm run test:sync && npm run test:data && npm run test:utils && npm run test:camera && npm run test:visitorClip"
   },
   "dependencies": {
     "@colyseus/sdk": "^0.17.10",

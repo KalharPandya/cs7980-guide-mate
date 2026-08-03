@@ -27,6 +27,31 @@ const WALK_CLIP_NAME = 'Human Armature|Walk'
 const CROSSFADE_SECONDS = 0.2
 
 /**
+ * Pure decision extracted out of VisitorInstance's clip-switch block so it's unit-testable
+ * without three.js: crossfading only makes sense when there is a previous action to fade
+ * against.
+ *
+ * Why this matters: three.js's PropertyMixer blends a sub-1-weight action's incoming pose
+ * against the bound property's "original" value -- captured by
+ * AnimationMixer._activateAction() -> PropertyMixer.saveOriginalState() the moment a binding's
+ * useCount first goes 0->1 (three/src/animation/AnimationMixer.js, PropertyMixer.js; verified
+ * against the installed three@0.185.1 source, not assumed). On a freshly cloned visitor's very
+ * first play(), that useCount transition IS this call, so "original" is whatever the scene
+ * graph's Hips node currently holds -- the untouched REST POSE, since nothing has driven it yet.
+ * visitor.glb's rest-pose Hips carries a spurious ~44 degree yaw (re-verified directly against
+ * the GLB's parsed JSON: quaternion angle 43.75 deg, rotation axis 99.4% aligned with Y -- see
+ * floorPlanUtils.ts's directionToYRotation doc comment, which every clip's own Hips track
+ * normally overrides from frame 0). `fadeIn()` ramps weight 0->1 over CROSSFADE_SECONDS, so for
+ * that whole ramp PropertyMixer.apply() reintroduces that skew, visible as the visitor swinging
+ * into place on every spawn (simulatedVisitorSpawner.ts spawns/despawns ~45 of these
+ * continuously). A real clip-to-clip crossfade (previousAction present) is unaffected by this
+ * and must keep fading exactly as before.
+ */
+export function shouldCrossfadeClipSwitch(hasPreviousAction: boolean): boolean {
+  return hasPreviousAction
+}
+
+/**
  * One visitor. Individually cloned (not instanced like Robot.tsx's batched robots) because each
  * visitor needs its OWN independently-playing skeletal animation (Idle vs Walk) -- something a
  * single InstancedMesh cannot do per-instance. `SkeletonUtils.clone` (not `Object3D.clone`, which
@@ -93,8 +118,17 @@ function VisitorInstance({
     const duration = nextAction.getClip().duration
     nextAction.reset()
     nextAction.time = duration > 0 ? timeOffsetRef.current % duration : 0
-    nextAction.fadeIn(CROSSFADE_SECONDS).play()
-    previousAction?.fadeOut(CROSSFADE_SECONDS)
+
+    if (shouldCrossfadeClipSwitch(previousAction !== undefined)) {
+      nextAction.fadeIn(CROSSFADE_SECONDS).play()
+      previousAction?.fadeOut(CROSSFADE_SECONDS)
+    } else {
+      // First activation for this instance: no previous action to fade against, so a fadeIn
+      // would blend the incoming pose against the rest pose instead (see
+      // shouldCrossfadeClipSwitch's doc comment). Start at full effective weight so the mixer
+      // applies the clip's own pose outright, skipping PropertyMixer's weight<1 blend path.
+      nextAction.setEffectiveWeight(1).play()
+    }
 
     playingClipRef.current = nextClipName
   })
