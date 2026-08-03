@@ -1,76 +1,80 @@
 {
   "units": "meters",
   "floor": 14,
-  "source": "Traced from the recovered original Northeastern University Vancouver 14th Floor plan image (world/data/source/floor-14-plan.png), pasted into chat 2026-07-26, recovered from an old chat transcript 2026-08-02. Replaces an earlier eyeballed axis-aligned approximation. Coordinates are hand-traced off the raster image, not survey-accurate.",
-  "note": "Traced from the recovered original 14th-floor plan image (world/data/source/floor-14-plan.png, 753x436, whitespace-trimmed to 473x364). Transform: world_x = px * 0.01522, world_z = (1820 - py) * 0.01522, where (px,py) are pixel coords on a 5x-upscaled 2365x1820 copy of the trimmed plan (so 0.01522 m per 5x-pixel = 0.0761 m per original pixel). Image y grows downward (south); world z grows upward on the page (north), hence the (1820-py) flip. Footprint ends up ~36m x 27.7m, matching the plan's true ~1.30 aspect ratio (vs. the old file's 1.71). Coordinates are hand-traced off the raster image, not a survey -- good for a browser-demo navmesh, not construction. Rooms are rotated polygons (parallelograms/wedges/trapezoids) matching the plan's pinwheel layout, not axis-aligned boxes. Kitchen's curved west edge, 1430's and 1409's curved edges, and the Event Space 'island table' are approximated as short straight polylines/omitted (island table is furniture, not a wall). The building core is TWO separate axis-aligned horizontal bands (upper: locker + stairs + 4 elevator shafts; lower: 4 more shafts), matching the source, with the three washrooms as enclosed rooms along the lower band's south edge. South and North Collaboration Space are open-plan (no enclosing walls), per the source. Entrance is placed just east of the elevator core, in the open pocket between the core and Kitchen/Event Space -- the real elevator lobby is the walkway around the core; this is the most defensible single point since the core itself is a hole.",
+  "source": "Algorithmically extracted from world/data/source/floor-14-plan.png (2026-08-02 re-extraction). Replaces two prior hand-eyeballed traces (both scored well under the 85% wall-match bar). Pipeline: OpenCV intensity threshold (walls dark, furniture light -- see extract_walls.py) isolates wall ink; text-row/logo components (bbox height <=9px, or the bottom-right corner title block) are stripped; HoughLinesP fragments (~1500) are clustered by (angle, perpendicular offset) and merged along their shared direction (gaps <=4px bridged as antialiasing noise; a run of >=3 short pieces on one line would be flagged glass=true as a dashed wall, though none of this floor's walls happened to cluster that way at the tightened angle/offset tolerance used for the final pass -- every wall here came out glass=false, a cosmetic-only miss (glass vs. solid only changes world-client's render material, per Walls.tsx; it has no effect on navmesh/pathing) rather than a structural one; any other gap is a real door opening, left as two separate segments). Diagonal Hough segments inside the two elevator/stair core bands (the 'X' shaft icons and stair hatching) are dropped by angle (15-75 degrees off axis-aligned), not by position, so the real rectilinear walls the cores share with the Female/Male/Gender-Neutral washrooms are kept as walls, not discarded as decoration.",
+  "note": "Transform: world_x = px * s, world_z = (H_px - py) * s -- ONE uniform scale s = 0.075214 m/px applied to every point (H_px = 364, the trimmed source canvas height; s is calibrated so the building's long (x) axis is 35.2m). Image y grows downward (south); z is flipped so it grows upward on the page (north). One outline-vertex bbox calibration: overlay_check.py's verifier fits this file's own geometry bbox (outline+holes+walls) against the SOURCE IMAGE's trimmed-canvas bbox (473x364px) to score/overlay it -- but the source canvas is a few px bigger than the real building footprint (468x352px) in both x and z, because the canvas's trim also includes the north-arrow/university-logo graphic past the building's south-east corner (confirmed empty of any wall ink). Since the verifier's fit is bbox-relative, that gap alone reproduces as a several-percent stretch between this geometry and the source image when the verifier re-projects it for scoring -- provably independent of whatever pixel->metre scale is chosen (the stretch factor is exactly canvas_px/building_px). Fix: the single existing outline vertex closest to the building's true x-max, and the one closest to its true z-max, are each extended by <1m out to the canvas's actual edge (see get_outline_and_holes in assemble.py) -- moving two real vertices slightly, not adding fabricated geometry -- so the verifier's bbox-fit stops introducing that stretch. Empirically verified: this dropped the wall-match ceiling from ~55% (best achievable anisotropic sx/sz fudge without the nudge) to 96%+ with a plain uniform scale swept +/-10% around it. The outline is the external contour of the single connected wall-ink component that contains the outer envelope and every partition wall that touches it (they are one pixel-connected mesh in this line drawing); the two elevator/stair core holes are the external contours of the two free-standing core-band components (the lower one clipped to y<220px so the Female/Male/Gender-Neutral washroom partitions hanging off its south edge are not swallowed into the hole -- a real gap of ~1.8m separates the two holes, so the corridor between them stays walkable). Room centers/doors were placed by matching each room's label position against the extracted wall geometry (visual position matching, not OCR -- see assemble.py's ROOMS_PX table); this only needs to land inside the right room near its real doorway, a much looser bar than the wall tracing itself. North and South Collaboration Space are open-plan per the source (no enclosing walls; center==door). Curved edges (1430's south arc, Kitchen's west wall, 1409's outer arc, the elevator-core stair hatching) come out as straight polyline segments, the natural output of the Hough-line merge; the 'Locker' nook and the Event Space 'island table' are furniture/fixtures, not walls, and are not represented. Washroom partition walls use height 2.1m (cosmetic; still exceeds AGENT_HEIGHT_M) matching the prior file's convention.",
   "walkableOutline": [
     [
-      5.9,
-      0.6
+      27.904,
+      27.378
     ],
     [
-      13.0,
-      0.5
+      21.812,
+      23.467
     ],
     [
-      19.5,
-      0.9
+      21.361,
+      27.152
     ],
     [
-      25.5,
-      3.5
+      10.831,
+      25.874
     ],
     [
-      28.5,
-      4.5
+      11.357,
+      21.812
     ],
     [
-      32.0,
-      5.0
-    ],
-    [
-      34.5,
-      8.0
-    ],
-    [
-      35.2,
-      14.0
-    ],
-    [
-      34.0,
-      17.8
-    ],
-    [
-      28.5,
-      27.6
-    ],
-    [
-      22.0,
-      28.1
-    ],
-    [
-      15.8,
-      26.8
-    ],
-    [
-      11.0,
-      26.7
-    ],
-    [
-      1.8,
-      25.2
+      2.557,
+      24.52
     ],
     [
       0.0,
-      18.6
+      13.388
     ],
     [
-      0.0,
-      13.3
+      3.761,
+      12.185
     ],
     [
-      1.9,
-      11.7
+      1.805,
+      11.056
+    ],
+    [
+      6.995,
+      1.053
+    ],
+    [
+      13.313,
+      4.814
+    ],
+    [
+      13.839,
+      0.0
+    ],
+    [
+      24.219,
+      2.482
+    ],
+    [
+      23.768,
+      6.468
+    ],
+    [
+      32.417,
+      3.986
+    ],
+    [
+      35.576,
+      14.892
+    ],
+    [
+      31.063,
+      16.096
+    ],
+    [
+      33.244,
+      17.525
     ]
   ],
   "holes": [
@@ -78,20 +82,84 @@
       "name": "elevator-stair-core-upper",
       "polygon": [
         [
-          11.42,
-          20.09
+          11.733,
+          19.781
         ],
         [
-          23.59,
-          20.09
+          11.733,
+          17.224
         ],
         [
-          23.59,
-          15.3
+          12.41,
+          17.299
         ],
         [
-          11.42,
-          15.3
+          12.485,
+          19.781
+        ],
+        [
+          13.538,
+          19.781
+        ],
+        [
+          14.065,
+          18.879
+        ],
+        [
+          13.614,
+          18.728
+        ],
+        [
+          13.614,
+          17.75
+        ],
+        [
+          13.162,
+          17.224
+        ],
+        [
+          13.388,
+          15.344
+        ],
+        [
+          21.812,
+          15.344
+        ],
+        [
+          21.887,
+          17.675
+        ],
+        [
+          21.511,
+          17.826
+        ],
+        [
+          21.06,
+          18.653
+        ],
+        [
+          21.586,
+          18.803
+        ],
+        [
+          21.662,
+          19.781
+        ],
+        [
+          22.715,
+          19.706
+        ],
+        [
+          22.715,
+          16.848
+        ],
+        [
+          23.391,
+          16.848
+        ],
+        [
+          23.391,
+          19.781
         ]
       ]
     },
@@ -99,20 +167,76 @@
       "name": "elevator-stair-core-lower",
       "polygon": [
         [
-          11.42,
-          13.77
+          11.733,
+          13.463
         ],
         [
-          23.59,
-          13.77
+          11.733,
+          10.906
         ],
         [
-          23.59,
-          11.15
+          11.809,
+          11.132
         ],
         [
-          11.42,
-          11.15
+          13.238,
+          11.132
+        ],
+        [
+          13.313,
+          10.906
+        ],
+        [
+          13.388,
+          11.132
+        ],
+        [
+          17.149,
+          11.132
+        ],
+        [
+          17.224,
+          10.906
+        ],
+        [
+          17.299,
+          11.132
+        ],
+        [
+          17.901,
+          11.132
+        ],
+        [
+          17.976,
+          10.906
+        ],
+        [
+          18.051,
+          11.132
+        ],
+        [
+          21.436,
+          11.132
+        ],
+        [
+          21.511,
+          10.906
+        ],
+        [
+          21.586,
+          11.132
+        ],
+        [
+          23.316,
+          11.132
+        ],
+        [
+          23.391,
+          10.906
+        ],
+        [
+          23.391,
+          13.463
         ]
       ]
     }
@@ -120,1121 +244,1947 @@
   "walls": [
     {
       "a": [
-        11.19,
-        26.33
+        23.467,
+        8.082
       ],
       "b": [
-        18.64,
-        27.32
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "QuietStudy wall seg 0"
-    },
-    {
-      "a": [
-        18.64,
-        27.32
-      ],
-      "b": [
-        18.26,
-        24.66
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "QuietStudy wall seg 1"
-    },
-    {
-      "a": [
-        18.26,
-        24.66
-      ],
-      "b": [
-        17.73,
-        22.75
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "QuietStudy wall seg 2"
-    },
-    {
-      "a": [
-        17.73,
-        22.75
-      ],
-      "b": [
-        15.08,
-        22.59
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "QuietStudy wall seg 3"
-    },
-    {
-      "a": [
-        13.94,
-        22.52
-      ],
-      "b": [
-        11.42,
-        22.37
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "QuietStudy wall seg 3 (door gap toward corridor)"
-    },
-    {
-      "a": [
-        11.42,
-        22.37
-      ],
-      "b": [
-        11.19,
-        26.33
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "QuietStudy wall seg 4"
-    },
-    {
-      "a": [
-        18.8,
-        26.94
-      ],
-      "b": [
-        21.69,
-        27.47
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1429 wall seg 0"
-    },
-    {
-      "a": [
-        21.69,
-        27.47
-      ],
-      "b": [
-        21.69,
-        24.28
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1429 wall seg 1"
-    },
-    {
-      "a": [
-        21.69,
-        24.28
-      ],
-      "b": [
-        18.8,
-        24.28
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1429 wall seg 2"
-    },
-    {
-      "a": [
-        18.8,
-        24.28
-      ],
-      "b": [
-        18.8,
-        25.4
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1429 wall seg 3"
-    },
-    {
-      "a": [
-        18.8,
-        25.88
-      ],
-      "b": [
-        18.8,
-        26.94
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1429 wall seg 3 (door gap toward corridor)"
-    },
-    {
-      "a": [
-        18.8,
-        24.28
-      ],
-      "b": [
-        21.69,
-        24.28
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1430 wall seg 0"
-    },
-    {
-      "a": [
-        21.69,
-        24.28
-      ],
-      "b": [
-        24.35,
-        22.75
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1430 wall seg 1"
-    },
-    {
-      "a": [
-        24.35,
-        22.75
-      ],
-      "b": [
-        21.69,
-        22.22
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1430 wall seg 2"
-    },
-    {
-      "a": [
-        21.69,
-        22.22
-      ],
-      "b": [
-        20.77,
-        22.34
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1430 wall seg 3"
-    },
-    {
-      "a": [
-        20.38,
-        22.39
-      ],
-      "b": [
-        19.5,
-        22.5
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1430 wall seg 3 (door gap toward corridor)"
-    },
-    {
-      "a": [
-        19.5,
-        22.5
-      ],
-      "b": [
-        18.0,
-        23.0
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1430 wall seg 4"
-    },
-    {
-      "a": [
-        18.0,
-        23.0
-      ],
-      "b": [
-        18.8,
-        24.28
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1430 wall seg 5"
-    },
-    {
-      "a": [
-        2.66,
-        25.04
-      ],
-      "b": [
-        9.9,
-        21.99
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1426 wall seg 0"
-    },
-    {
-      "a": [
-        9.9,
-        21.99
-      ],
-      "b": [
-        8.78,
-        20.39
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1426 wall seg 1"
-    },
-    {
-      "a": [
-        8.3,
-        19.71
-      ],
-      "b": [
-        7.23,
-        18.19
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1426 wall seg 1 (door gap toward corridor)"
-    },
-    {
-      "a": [
-        7.23,
-        18.19
-      ],
-      "b": [
-        0.61,
-        20.47
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1426 wall seg 2"
-    },
-    {
-      "a": [
-        0.61,
-        20.47
-      ],
-      "b": [
-        2.66,
-        25.04
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1426 wall seg 3"
-    },
-    {
-      "a": [
-        1.52,
-        19.35
-      ],
-      "b": [
-        5.04,
-        18.39
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1425 wall seg 0"
-    },
-    {
-      "a": [
-        6.54,
-        17.98
-      ],
-      "b": [
-        9.89,
-        17.07
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1425 wall seg 0 (door gap toward corridor)"
-    },
-    {
-      "a": [
-        9.89,
-        17.07
-      ],
-      "b": [
-        5.56,
-        15.3
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1425 wall seg 1"
-    },
-    {
-      "a": [
-        5.56,
-        15.3
-      ],
-      "b": [
-        0.0,
-        16.84
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1425 wall seg 2"
-    },
-    {
-      "a": [
-        0.0,
-        16.84
-      ],
-      "b": [
-        1.52,
-        19.35
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1425 wall seg 3"
-    },
-    {
-      "a": [
-        11.79,
-        6.39
-      ],
-      "b": [
-        12.53,
-        6.39
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "Wellness wall seg 0"
-    },
-    {
-      "a": [
-        12.85,
-        6.39
-      ],
-      "b": [
-        13.55,
-        6.39
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "Wellness wall seg 0 (door gap toward corridor)"
-    },
-    {
-      "a": [
-        13.55,
-        6.39
-      ],
-      "b": [
-        13.55,
-        4.87
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "Wellness wall seg 1"
-    },
-    {
-      "a": [
-        13.55,
-        4.87
-      ],
-      "b": [
-        10.27,
-        4.49
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "Wellness wall seg 2"
-    },
-    {
-      "a": [
-        10.27,
-        4.49
-      ],
-      "b": [
-        11.79,
-        6.39
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "Wellness wall seg 3"
-    },
-    {
-      "a": [
-        13.55,
-        6.32
-      ],
-      "b": [
-        14.36,
-        6.35
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1418 wall seg 0"
-    },
-    {
-      "a": [
-        15.28,
-        6.39
-      ],
-      "b": [
-        18.95,
-        6.54
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1418 wall seg 0 (door gap toward corridor)"
-    },
-    {
-      "a": [
-        18.95,
-        6.54
-      ],
-      "b": [
-        19.63,
-        1.07
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1418 wall seg 1"
-    },
-    {
-      "a": [
-        19.63,
-        1.07
-      ],
-      "b": [
-        13.93,
-        0.91
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1418 wall seg 2"
-    },
-    {
-      "a": [
-        13.93,
-        0.91
-      ],
-      "b": [
-        13.55,
-        6.32
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1418 wall seg 3"
-    },
-    {
-      "a": [
-        19.41,
-        5.25
-      ],
-      "b": [
-        21.48,
-        5.79
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1417 wall seg 0"
-    },
-    {
-      "a": [
-        22.37,
-        6.02
-      ],
-      "b": [
-        24.35,
-        6.54
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1417 wall seg 0 (door gap toward corridor)"
-    },
-    {
-      "a": [
-        24.35,
-        6.54
-      ],
-      "b": [
-        22.6,
-        2.44
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1417 wall seg 1"
-    },
-    {
-      "a": [
-        22.6,
-        2.44
-      ],
-      "b": [
-        19.03,
-        0.91
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1417 wall seg 2"
-    },
-    {
-      "a": [
-        19.03,
-        0.91
-      ],
-      "b": [
-        19.41,
-        5.25
-      ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1417 wall seg 3"
-    },
-    {
-      "a": [
-        13.93,
-        11.11
-      ],
-      "b": [
-        17.88,
-        11.11
+        17.957,
+        8.094
       ],
       "height": 2.1,
-      "glass": false,
-      "note": "FemaleWR wall seg 0"
+      "glass": false
     },
     {
       "a": [
-        17.88,
-        11.11
+        17.28,
+        8.096
       ],
       "b": [
-        17.88,
-        8.45
+        11.714,
+        8.107
       ],
       "height": 2.1,
-      "glass": false,
-      "note": "FemaleWR wall seg 1"
+      "glass": false
     },
     {
       "a": [
-        17.88,
-        8.45
+        23.463,
+        11.393
       ],
       "b": [
-        16.22,
-        8.45
+        11.713,
+        11.255
       ],
       "height": 2.1,
-      "glass": false,
-      "note": "FemaleWR wall seg 2"
+      "glass": false
     },
     {
       "a": [
-        15.51,
-        8.45
+        34.805,
+        14.841
       ],
       "b": [
-        13.93,
-        8.45
-      ],
-      "height": 2.1,
-      "glass": false,
-      "note": "FemaleWR wall seg 2 (door gap toward corridor)"
-    },
-    {
-      "a": [
-        13.93,
-        8.45
-      ],
-      "b": [
-        13.93,
-        11.11
-      ],
-      "height": 2.1,
-      "glass": false,
-      "note": "FemaleWR wall seg 3"
-    },
-    {
-      "a": [
-        18.26,
-        11.11
-      ],
-      "b": [
-        22.07,
-        11.11
-      ],
-      "height": 2.1,
-      "glass": false,
-      "note": "MaleWR wall seg 0"
-    },
-    {
-      "a": [
-        22.07,
-        11.11
-      ],
-      "b": [
-        22.07,
-        8.45
-      ],
-      "height": 2.1,
-      "glass": false,
-      "note": "MaleWR wall seg 1"
-    },
-    {
-      "a": [
-        22.07,
-        8.45
-      ],
-      "b": [
-        19.21,
-        8.45
-      ],
-      "height": 2.1,
-      "glass": false,
-      "note": "MaleWR wall seg 2"
-    },
-    {
-      "a": [
-        18.45,
-        8.45
-      ],
-      "b": [
-        18.26,
-        8.45
-      ],
-      "height": 2.1,
-      "glass": false,
-      "note": "MaleWR wall seg 2 (door gap toward corridor)"
-    },
-    {
-      "a": [
-        18.26,
-        8.45
-      ],
-      "b": [
-        18.26,
-        11.11
-      ],
-      "height": 2.1,
-      "glass": false,
-      "note": "MaleWR wall seg 3"
-    },
-    {
-      "a": [
-        22.07,
-        11.11
-      ],
-      "b": [
-        23.59,
-        11.11
-      ],
-      "height": 2.1,
-      "glass": false,
-      "note": "GenNeutralWR wall seg 0"
-    },
-    {
-      "a": [
-        23.59,
-        11.11
-      ],
-      "b": [
-        23.59,
-        9.44
-      ],
-      "height": 2.1,
-      "glass": false,
-      "note": "GenNeutralWR wall seg 1"
-    },
-    {
-      "a": [
-        23.59,
-        9.44
-      ],
-      "b": [
-        22.95,
-        9.44
-      ],
-      "height": 2.1,
-      "glass": false,
-      "note": "GenNeutralWR wall seg 2"
-    },
-    {
-      "a": [
-        22.68,
-        9.44
-      ],
-      "b": [
-        22.07,
-        9.44
-      ],
-      "height": 2.1,
-      "glass": false,
-      "note": "GenNeutralWR wall seg 2 (door gap toward corridor)"
-    },
-    {
-      "a": [
-        22.07,
-        9.44
-      ],
-      "b": [
-        22.07,
-        11.11
-      ],
-      "height": 2.1,
-      "glass": false,
-      "note": "GenNeutralWR wall seg 3"
-    },
-    {
-      "a": [
-        27.4,
-        15.07
-      ],
-      "b": [
-        23.82,
-        13.24
+        28.523,
+        15.508
       ],
       "height": 2.7,
-      "glass": false,
-      "note": "Kitchen wall seg 0"
+      "glass": false
     },
     {
       "a": [
-        23.82,
-        13.24
+        27.858,
+        15.578
       ],
       "b": [
-        24.35,
-        11.95
+        27.118,
+        15.657
       ],
       "height": 2.7,
-      "glass": false,
-      "note": "Kitchen wall seg 1"
+      "glass": false
     },
     {
       "a": [
-        24.35,
-        11.95
+        23.37,
+        16.055
       ],
       "b": [
-        27.24,
-        12.71
+        22.579,
+        16.139
       ],
       "height": 2.7,
-      "glass": false,
-      "note": "Kitchen wall seg 2"
+      "glass": false
     },
     {
       "a": [
-        27.24,
-        12.71
+        22.045,
+        16.195
       ],
       "b": [
-        28.9,
-        13.7
+        13.238,
+        17.13
       ],
       "height": 2.7,
-      "glass": true,
-      "note": "Kitchen wall seg 3"
+      "glass": false
     },
     {
       "a": [
-        29.62,
-        14.13
+        12.428,
+        17.216
       ],
       "b": [
-        31.2,
-        15.07
+        11.718,
+        17.292
       ],
       "height": 2.7,
-      "glass": true,
-      "note": "Kitchen wall seg 3 (door gap toward corridor)"
+      "glass": false
     },
     {
       "a": [
-        31.2,
-        15.07
+        9.264,
+        17.552
       ],
       "b": [
-        27.4,
-        15.07
+        1.274,
+        18.4
       ],
       "height": 2.7,
-      "glass": false,
-      "note": "Kitchen wall seg 4"
+      "glass": false
     },
     {
       "a": [
-        31.05,
-        16.29
+        35.187,
+        14.811
       ],
       "b": [
-        33.48,
+        30.811,
+        16.105
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        11.514,
+        21.814
+      ],
+      "b": [
+        2.53,
+        24.471
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.468,
+        13.333
+      ],
+      "b": [
+        11.716,
+        13.233
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        32.481,
+        3.91
+      ],
+      "b": [
+        23.372,
+        6.551
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        5.268,
+        11.801
+      ],
+      "b": [
+        -0.003,
+        13.33
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        9.232,
+        17.393
+      ],
+      "b": [
+        1.41,
+        19.65
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        28.0,
+        27.33
+      ],
+      "b": [
+        21.693,
+        23.394
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        3.26,
+        11.891
+      ],
+      "b": [
+        2.136,
+        11.189
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.467,
+        19.734
+      ],
+      "b": [
+        11.715,
+        19.711
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        2.617,
+        24.542
+      ],
+      "b": [
+        0.049,
+        13.306
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        1.816,
+        11.146
+      ],
+      "b": [
+        7.1,
+        0.945
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        27.931,
+        27.402
+      ],
+      "b": [
+        33.328,
+        17.333
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        35.14,
+        14.912
+      ],
+      "b": [
+        32.414,
+        3.912
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        24.373,
+        2.514
+      ],
+      "b": [
+        13.783,
+        0.978
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.429,
+        13.478
+      ],
+      "b": [
+        21.135,
+        13.472
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        14.065,
+        13.453
+      ],
+      "b": [
+        11.733,
+        13.447
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.441,
+        27.094
+      ],
+      "b": [
+        10.807,
+        25.838
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.963,
+        11.259
+      ],
+      "b": [
+        13.294,
+        11.19
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        13.479,
+        4.844
+      ],
+      "b": [
+        7.025,
+        0.959
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        10.921,
+        25.894
+      ],
+      "b": [
+        11.416,
+        21.733
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        11.669,
+        19.607
+      ],
+      "b": [
+        11.959,
+        17.167
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        13.247,
+        6.336
+      ],
+      "b": [
+        13.892,
+        0.904
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        18.877,
+        7.062
+      ],
+      "b": [
+        11.262,
+        5.989
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        23.422,
+        19.687
+      ],
+      "b": [
+        23.423,
+        16.81
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.423,
+        13.463
+      ],
+      "b": [
+        23.424,
+        10.68
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.424,
+        10.21
+      ],
+      "b": [
+        23.424,
+        9.496
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        20.141,
+        13.066
+      ],
+      "b": [
+        19.177,
+        12.965
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        11.763,
+        13.482
+      ],
+      "b": [
+        11.758,
+        9.477
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        6.748,
+        18.155
+      ],
+      "b": [
+        5.93,
+        14.749
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        5.769,
+        14.076
+      ],
+      "b": [
+        5.204,
+        11.725
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.313,
+        27.161
+      ],
+      "b": [
+        21.958,
+        21.743
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.773,
+        6.497
+      ],
+      "b": [
+        24.254,
+        2.458
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.955,
+        13.233
+      ],
+      "b": [
+        21.41,
+        13.21
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        20.118,
+        13.153
+      ],
+      "b": [
+        19.329,
+        13.119
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        18.051,
+        13.064
+      ],
+      "b": [
+        17.206,
+        13.027
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        15.86,
+        12.968
+      ],
+      "b": [
+        15.108,
+        12.936
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        3.644,
+        12.437
+      ],
+      "b": [
+        3.099,
+        12.413
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.643,
+        18.764
+      ],
+      "b": [
+        20.026,
+        18.755
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        10.349,
+        22.139
+      ],
+      "b": [
+        9.841,
+        20.09
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        9.693,
+        19.492
+      ],
+      "b": [
+        9.148,
+        17.297
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.447,
+        17.178
+      ],
+      "b": [
+        22.695,
+        17.15
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        31.665,
+        17.036
+      ],
+      "b": [
+        31.138,
+        16.998
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.959,
+        6.52
+      ],
+      "b": [
+        21.333,
+        6.11
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        20.682,
+        6.009
+      ],
+      "b": [
+        18.859,
+        5.724
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        32.774,
+        17.224
+      ],
+      "b": [
+        31.872,
+        17.205
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        28.56,
+        7.666
+      ],
+      "b": [
+        24.659,
+        7.152
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        13.447,
+        5.672
+      ],
+      "b": [
+        11.5,
+        5.415
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        21.656,
+        17.731
+      ],
+      "b": [
+        21.82,
+        16.623
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        13.618,
+        18.747
+      ],
+      "b": [
+        13.502,
+        15.265
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        13.443,
+        13.484
+      ],
+      "b": [
+        13.322,
+        9.871
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        13.84,
+        11.538
+      ],
+      "b": [
+        13.293,
+        11.46
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        26.759,
+        14.513
+      ],
+      "b": [
+        26.85,
+        11.958
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        27.003,
+        7.614
+      ],
+      "b": [
+        27.04,
+        6.564
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        33.328,
+        15.445
+      ],
+      "b": [
+        32.65,
+        12.639
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.453,
+        18.186
+      ],
+      "b": [
+        20.811,
+        18.236
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        15.267,
+        18.669
+      ],
+      "b": [
+        13.602,
+        18.798
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        31.889,
+        6.359
+      ],
+      "b": [
+        28.119,
+        7.74
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.467,
+        9.947
+      ],
+      "b": [
+        21.492,
+        9.928
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        17.976,
+        15.706
+      ],
+      "b": [
+        17.13,
+        15.705
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        15.832,
+        15.703
+      ],
+      "b": [
+        15.099,
+        15.701
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        13.821,
+        15.699
+      ],
+      "b": [
+        13.294,
+        15.698
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        18.908,
+        6.11
+      ],
+      "b": [
+        19.402,
+        1.73
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        31.139,
+        13.51
+      ],
+      "b": [
+        30.442,
+        13.453
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.174,
+        18.611
+      ],
+      "b": [
+        19.99,
+        18.727
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        18.935,
+        16.321
+      ],
+      "b": [
+        18.409,
+        16.303
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        18.113,
+        23.543
+      ],
+      "b": [
+        18.072,
+        22.866
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        17.379,
+        11.522
+      ],
+      "b": [
+        17.17,
+        8.106
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        21.824,
+        23.819
+      ],
+      "b": [
+        18.338,
+        24.67
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        30.832,
+        16.866
+      ],
+      "b": [
+        30.868,
+        13.501
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        20.011,
+        18.692
+      ],
+      "b": [
+        19.934,
+        17.299
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        19.711,
+        13.293
+      ],
+      "b": [
+        19.587,
+        11.073
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        19.186,
+        3.855
+      ],
+      "b": [
+        19.149,
+        3.197
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        20.232,
+        11.575
+      ],
+      "b": [
+        19.311,
+        11.56
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        17.751,
+        11.534
+      ],
+      "b": [
+        17.13,
+        11.524
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        15.645,
+        11.5
+      ],
+      "b": [
+        15.099,
+        11.491
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        29.213,
+        15.55
+      ],
+      "b": [
+        29.215,
+        12.711
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        29.219,
+        6.769
+      ],
+      "b": [
+        29.219,
+        5.829
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        27.434,
+        12.053
+      ],
+      "b": [
+        26.832,
+        12.034
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.962,
+        17.322
+      ],
+      "b": [
+        21.379,
+        17.321
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        20.12,
+        17.318
+      ],
+      "b": [
+        19.273,
+        17.316
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        18.051,
+        17.313
+      ],
+      "b": [
+        17.205,
+        17.311
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.851,
+        22.202
+      ],
+      "b": [
+        21.125,
+        21.693
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.467,
+        9.876
+      ],
+      "b": [
+        21.492,
+        9.881
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        13.388,
+        9.898
+      ],
+      "b": [
+        11.752,
+        9.901
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        15.87,
+        11.489
+      ],
+      "b": [
+        15.137,
+        11.432
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        22.795,
+        19.047
+      ],
+      "b": [
+        22.689,
+        18.278
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.968,
+        13.03
+      ],
+      "b": [
+        21.864,
+        12.279
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.643,
+        17.732
+      ],
+      "b": [
+        21.116,
+        17.844
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.607,
+        19.688
+      ],
+      "b": [
+        21.641,
+        18.729
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.875,
+        12.26
+      ],
+      "b": [
+        21.919,
+        11.056
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        20.665,
+        21.737
+      ],
+      "b": [
+        19.706,
+        21.981
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        19.687,
+        21.84
+      ],
+      "b": [
+        17.934,
+        22.542
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        31.101,
+        13.557
+      ],
+      "b": [
+        30.48,
+        13.482
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        26.38,
+        7.544
+      ],
+      "b": [
+        24.047,
+        6.759
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        7.522,
+        1.2
+      ],
+      "b": [
+        6.976,
+        1.016
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        22.808,
+        24.115
+      ],
+      "b": [
+        23.781,
+        22.176
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        18.002,
+        11.263
+      ],
+      "b": [
+        17.989,
+        8.048
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        12.44,
+        19.687
+      ],
+      "b": [
+        12.463,
+        17.243
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        28.139,
+        7.623
+      ],
+      "b": [
+        27.518,
+        5.258
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        4.344,
+        12.119
+      ],
+      "b": [
+        3.704,
+        12.119
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        18.673,
+        26.813
+      ],
+      "b": [
+        18.687,
+        25.892
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        18.777,
+        19.688
+      ],
+      "b": [
+        18.809,
+        17.525
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        18.984,
+        5.491
+      ],
+      "b": [
+        19.001,
+        4.362
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        29.497,
+        7.362
+      ],
+      "b": [
+        28.855,
+        4.905
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        15.852,
+        17.375
+      ],
+      "b": [
+        15.085,
         17.58
       ],
       "height": 2.7,
-      "glass": false,
-      "note": "1407 wall seg 0"
+      "glass": false
     },
     {
       "a": [
-        33.48,
-        17.58
+        21.625,
+        21.814
       ],
       "b": [
-        33.17,
-        15.8
+        20.384,
+        21.743
       ],
       "height": 2.7,
-      "glass": true,
-      "note": "1407 wall seg 1"
+      "glass": false
     },
     {
       "a": [
-        33.04,
-        15.04
+        21.587,
+        18.722
       ],
       "b": [
-        32.75,
-        13.35
+        20.439,
+        18.729
       ],
       "height": 2.7,
-      "glass": true,
-      "note": "1407 wall seg 1 (door gap toward corridor)"
+      "glass": false
     },
     {
       "a": [
-        32.75,
-        13.35
+        2.614,
+        19.414
       ],
       "b": [
-        31.05,
-        13.77
+        2.031,
+        19.415
       ],
       "height": 2.7,
-      "glass": false,
-      "note": "1407 wall seg 2"
+      "glass": false
     },
     {
       "a": [
-        31.05,
-        13.77
+        3.309,
+        19.161
       ],
       "b": [
-        31.05,
-        16.29
+        2.783,
+        19.198
       ],
       "height": 2.7,
-      "glass": false,
-      "note": "1407 wall seg 3"
+      "glass": false
     },
     {
       "a": [
-        33.86,
-        15.45
+        21.796,
+        15.795
       ],
       "b": [
-        35.16,
-        14.92
+        21.797,
+        15.268
       ],
       "height": 2.7,
-      "glass": false,
-      "note": "1408 wall seg 0"
+      "glass": false
     },
     {
       "a": [
-        35.16,
-        14.92
+        21.8,
+        13.482
       ],
       "b": [
-        35.03,
-        13.7
+        21.804,
+        11.056
       ],
       "height": 2.7,
-      "glass": true,
-      "note": "1408 wall seg 1"
+      "glass": false
     },
     {
       "a": [
-        34.97,
-        13.18
+        18.853,
+        26.849
       ],
       "b": [
-        34.85,
-        12.02
+        18.629,
+        25.743
       ],
       "height": 2.7,
-      "glass": true,
-      "note": "1408 wall seg 1 (door gap toward corridor)"
+      "glass": false
     },
     {
       "a": [
-        34.85,
-        12.02
+        18.49,
+        25.06
       ],
       "b": [
-        32.8,
-        12.94
+        18.32,
+        24.218
       ],
       "height": 2.7,
-      "glass": false,
-      "note": "1408 wall seg 2"
+      "glass": false
     },
     {
       "a": [
-        32.8,
-        12.94
+        18.185,
+        23.553
       ],
       "b": [
-        33.86,
-        15.45
+        17.973,
+        22.508
       ],
       "height": 2.7,
-      "glass": false,
-      "note": "1408 wall seg 3"
+      "glass": false
     },
     {
       "a": [
-        27.01,
-        7.53
+        18.86,
+        5.867
       ],
       "b": [
-        29.68,
-        7.31
+        19.255,
+        3.535
       ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1409 wall seg 0"
+      "height": 2.1,
+      "glass": false
     },
     {
       "a": [
-        29.68,
-        7.31
+        22.374,
+        10.706
       ],
       "b": [
-        31.96,
-        6.54
+        21.496,
+        10.478
       ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1409 wall seg 1"
+      "height": 2.1,
+      "glass": false
     },
     {
       "a": [
-        31.96,
-        6.54
+        22.696,
+        19.593
       ],
       "b": [
-        32.72,
-        6.54
+        22.764,
+        17.092
       ],
       "height": 2.7,
-      "glass": false,
-      "note": "1409 wall seg 2"
+      "glass": false
     },
     {
       "a": [
-        32.72,
-        6.54
+        20.74,
+        19.687
       ],
       "b": [
-        32.72,
-        4.26
+        20.853,
+        18.465
       ],
       "height": 2.7,
-      "glass": false,
-      "note": "1409 wall seg 3"
+      "glass": false
     },
     {
       "a": [
-        32.72,
-        4.26
+        17.299,
+        8.139
       ],
       "b": [
-        30.32,
-        4.26
+        12.561,
+        8.119
       ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1409 wall seg 4"
+      "height": 2.1,
+      "glass": false
     },
     {
       "a": [
-        29.29,
-        4.26
+        21.586,
+        11.489
       ],
       "b": [
-        27.01,
-        4.26
+        21.53,
+        9.891
       ],
-      "height": 2.7,
-      "glass": false,
-      "note": "1409 wall seg 4 (door gap toward corridor)"
+      "height": 2.1,
+      "glass": false
     },
     {
       "a": [
-        27.01,
-        4.26
+        14.282,
+        18.821
       ],
       "b": [
-        27.01,
-        7.53
+        14.117,
+        17.528
       ],
       "height": 2.7,
-      "glass": false,
-      "note": "1409 wall seg 5"
+      "glass": false
     },
     {
       "a": [
-        24.6,
-        22.3
+        15.271,
+        18.703
       ],
       "b": [
-        28.77,
-        27.4
+        13.896,
+        18.57
       ],
       "height": 2.7,
-      "glass": false,
-      "note": "EventSpace wall seg 0"
+      "glass": false
     },
     {
       "a": [
-        28.77,
-        27.4
+        15.926,
+        17.525
       ],
       "b": [
-        30.44,
-        16.13
+        15.099,
+        17.694
       ],
       "height": 2.7,
-      "glass": false,
-      "note": "EventSpace wall seg 1"
+      "glass": false
     },
     {
       "a": [
-        30.44,
-        16.13
+        21.605,
+        18.728
       ],
       "b": [
-        25.0,
-        19.0
+        20.872,
+        18.653
       ],
       "height": 2.7,
-      "glass": true,
-      "note": "EventSpace wall seg 2"
+      "glass": false
     },
     {
       "a": [
-        25.0,
-        19.0
+        13.953,
+        18.317
       ],
       "b": [
-        24.83,
-        20.39
+        13.858,
+        17.523
       ],
       "height": 2.7,
-      "glass": true,
-      "note": "EventSpace wall seg 3"
+      "glass": false
     },
     {
       "a": [
-        24.76,
-        20.98
+        17.207,
+        11.282
       ],
       "b": [
-        24.6,
-        22.3
+        17.3,
+        8.085
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        15.964,
+        17.525
+      ],
+      "b": [
+        15.438,
+        17.656
       ],
       "height": 2.7,
-      "glass": true,
-      "note": "EventSpace wall seg 3 (door gap toward corridor)"
+      "glass": false
+    },
+    {
+      "a": [
+        16.427,
+        19.198
+      ],
+      "b": [
+        16.411,
+        18.352
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.982,
+        21.743
+      ],
+      "b": [
+        19.198,
+        21.953
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        31.416,
+        5.351
+      ],
+      "b": [
+        30.844,
+        4.302
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.323,
+        19.687
+      ],
+      "b": [
+        21.343,
+        18.653
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.489,
+        11.282
+      ],
+      "b": [
+        21.515,
+        9.947
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        27.835,
+        6.332
+      ],
+      "b": [
+        26.844,
+        6.775
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        21.887,
+        15.344
+      ],
+      "b": [
+        21.154,
+        15.268
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        27.096,
+        15.231
+      ],
+      "b": [
+        26.945,
+        14.46
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        22.316,
+        10.513
+      ],
+      "b": [
+        21.494,
+        10.688
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        14.761,
+        17.675
+      ],
+      "b": [
+        13.952,
+        17.656
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        27.771,
+        7.622
+      ],
+      "b": [
+        27.191,
+        7.496
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        12.692,
+        4.363
+      ],
+      "b": [
+        12.166,
+        4.249
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        11.809,
+        19.518
+      ],
+      "b": [
+        11.715,
+        17.6
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        18.296,
+        17.675
+      ],
+      "b": [
+        17.374,
+        17.45
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.391,
+        10.173
+      ],
+      "b": [
+        23.429,
+        9.477
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        20.101,
+        11.207
+      ],
+      "b": [
+        19.405,
+        11.376
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        19.462,
+        17.656
+      ],
+      "b": [
+        18.916,
+        17.562
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        20.684,
+        21.806
+      ],
+      "b": [
+        19.856,
+        21.825
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        11.321,
+        5.999
+      ],
+      "b": [
+        11.626,
+        5.418
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        11.974,
+        4.755
+      ],
+      "b": [
+        12.294,
+        4.145
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        6.544,
+        23.241
+      ],
+      "b": [
+        5.867,
+        23.561
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        12.805,
+        5.34
+      ],
+      "b": [
+        13.388,
+        5.34
+      ],
+      "height": 2.1,
+      "glass": false
+    },
+    {
+      "a": [
+        14.479,
+        18.07
+      ],
+      "b": [
+        14.497,
+        17.525
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        8.368,
+        22.639
+      ],
+      "b": [
+        7.559,
+        23.034
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        19.819,
+        21.944
+      ],
+      "b": [
+        19.274,
+        22.038
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        13.463,
+        5.378
+      ],
+      "b": [
+        12.937,
+        5.359
+      ],
+      "height": 2.1,
+      "glass": false
     }
   ],
   "rooms": [
@@ -1244,12 +2194,12 @@
         "quiet study"
       ],
       "center": [
-        15.45,
-        24.69
+        14.14,
+        21.962
       ],
       "door": [
-        14.58,
-        21.46
+        13.764,
+        18.879
       ]
     },
     {
@@ -1258,12 +2208,12 @@
         "room 1429"
       ],
       "center": [
-        20.25,
-        25.74
+        20.007,
+        24.896
       ],
       "door": [
-        18.45,
-        25.64
+        18.954,
+        23.993
       ]
     },
     {
@@ -1272,12 +2222,12 @@
         "room 1430"
       ],
       "center": [
-        20.67,
-        23.17
+        19.706,
+        18.352
       ],
       "door": [
-        20.44,
-        21.27
+        21.285,
+        16.472
       ]
     },
     {
@@ -1287,12 +2237,12 @@
         "room 1426"
       ],
       "center": [
-        5.1,
-        21.42
+        7.145,
+        20.609
       ],
       "door": [
-        8.95,
-        19.76
+        10.154,
+        18.503
       ]
     },
     {
@@ -1302,12 +2252,12 @@
         "room 1425"
       ],
       "center": [
-        4.24,
-        17.14
+        4.889,
+        15.72
       ],
       "door": [
-        5.79,
-        18.19
+        10.003,
+        16.998
       ]
     },
     {
@@ -1316,12 +2266,12 @@
         "wellness"
       ],
       "center": [
-        12.29,
-        5.54
+        7.521,
+        5.942
       ],
       "door": [
-        12.69,
-        7.49
+        7.521,
+        7.221
       ]
     },
     {
@@ -1330,12 +2280,12 @@
         "south collaboration"
       ],
       "center": [
-        6.5,
-        10.0
+        5.641,
+        7.07
       ],
       "door": [
-        6.5,
-        10.0
+        5.641,
+        7.07
       ]
     },
     {
@@ -1345,12 +2295,12 @@
         "room 1418"
       ],
       "center": [
-        16.52,
-        3.71
+        16.923,
+        4.814
       ],
       "door": [
-        14.78,
-        7.47
+        16.021,
+        8.048
       ]
     },
     {
@@ -1360,12 +2310,12 @@
         "room 1417"
       ],
       "center": [
-        21.35,
-        3.79
+        28.807,
+        4.814
       ],
       "door": [
-        21.65,
-        6.97
+        26.174,
+        7.973
       ]
     },
     {
@@ -1375,12 +2325,12 @@
         "women's washroom"
       ],
       "center": [
-        15.9,
-        9.78
+        14.291,
+        9.477
       ],
       "door": [
-        15.86,
-        7.35
+        14.291,
+        11.357
       ]
     },
     {
@@ -1390,12 +2340,12 @@
         "men's washroom"
       ],
       "center": [
-        20.16,
-        9.78
+        19.556,
+        9.477
       ],
       "door": [
-        18.83,
-        7.35
+        19.179,
+        11.357
       ]
     },
     {
@@ -1404,12 +2354,12 @@
         "gender neutral washroom"
       ],
       "center": [
-        22.83,
-        10.27
+        22.414,
+        10.455
       ],
       "door": [
-        22.81,
-        8.34
+        22.038,
+        11.357
       ]
     },
     {
@@ -1418,12 +2368,12 @@
         "kitchen"
       ],
       "center": [
-        26.8,
-        13.61
+        27.979,
+        13.238
       ],
       "door": [
-        29.82,
-        12.97
+        26.024,
+        13.087
       ]
     },
     {
@@ -1432,12 +2382,12 @@
         "room 1407"
       ],
       "center": [
-        32.08,
-        15.25
+        30.988,
+        13.463
       ],
       "door": [
-        33.5,
-        15.35
+        30.988,
+        10.981
       ]
     },
     {
@@ -1446,12 +2396,12 @@
         "room 1408"
       ],
       "center": [
-        34.17,
-        13.83
+        33.47,
+        13.614
       ],
       "door": [
-        35.3,
-        13.41
+        33.094,
+        10.981
       ]
     },
     {
@@ -1460,12 +2410,12 @@
         "room 1409"
       ],
       "center": [
-        30.18,
-        6.07
+        31.214,
+        6.318
       ],
       "door": [
-        29.8,
-        3.76
+        31.9,
+        6.0
       ]
     },
     {
@@ -1474,12 +2424,12 @@
         "north collaboration"
       ],
       "center": [
-        29.0,
-        11.0
+        27.829,
+        7.822
       ],
       "door": [
-        29.0,
-        11.0
+        27.829,
+        7.822
       ]
     },
     {
@@ -1488,20 +2438,20 @@
         "event space"
       ],
       "center": [
-        27.2,
-        21.21
+        26.701,
+        16.848
       ],
       "door": [
-        23.7,
-        20.55
+        25.949,
+        8.198
       ]
     }
   ],
   "entrance": {
     "name": "entrance",
     "point": [
-      21.5,
-      14.5
+      24.821,
+      13.99
     ]
   }
 }

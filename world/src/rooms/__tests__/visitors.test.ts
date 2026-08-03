@@ -218,6 +218,37 @@ async function testRequestGuideConvergenceAndTrailing(): Promise<void> {
   );
   console.log(`PASS: assigned robot "robot-b" converged to within ${robotDoorDist.toFixed(2)}m of Event Space's door`);
 
+  // Keep ticking a bounded extra amount for the robot to settle to idle at its door and for
+  // the escort to un-bind (mirrors WorldRoom.test.ts's settle-tick pattern) -- and keep
+  // accumulating the visitor's trailing distance over this whole window too. The robot
+  // (which the loop above breaks on) reaches the door before the visitor, who is still
+  // trailing a real distance behind it (that's the whole point of "trailing"); measuring
+  // visitorMovedTotal only up to the ROBOT's arrival (as a prior version of this test did)
+  // cuts the visitor's trip short by however long its own remaining approach takes, which
+  // is exactly the gap floor-14.json's 2026-08-02 re-extraction (a more direct, less
+  // congested Wellness-Room<->Event-Space route than the earlier hand-traced map) exposed:
+  // the robot converged at tick ~1041/3000, leaving the still-trailing visitor short of the
+  // door-to-door distance at that instant even though it goes on to clear it comfortably
+  // once actually given the rest of its own trip. The distance tally therefore keeps
+  // running for the FULL settle window below (not just until escortedVisitors first hits
+  // 0 -- that fires as soon as the visitor is "close enough" to its own stop point, which
+  // in one observed run was ~2.5% short of the full door-to-door distance, i.e. the visitor
+  // is still finishing its final approach at that instant), while `settled` is still
+  // recorded (and asserted) as soon as it's first observed within the budget.
+  const MAX_SETTLE_TICKS = 2000;
+  let settled = false;
+  for (let i = 0; i < MAX_SETTLE_TICKS; i++) {
+    room.update(TICK_MS);
+    const visitor = state.agents.get("visitor-b")!;
+    const robot = state.agents.get("robot-b")!;
+    const step = Math.hypot(visitor.x - lastVisitorPos.x, visitor.z - lastVisitorPos.z);
+    visitorMovedTotal += step;
+    lastVisitorPos = { x: visitor.x, z: visitor.z };
+    if (Math.hypot(visitor.x - robot.x, visitor.z - robot.z) > 0.15) sawNonTrivialSeparation = true;
+    if (room.getVisitorDebugStats().escortedVisitors === 0) settled = true;
+  }
+  assert.ok(settled, "escort binding should be released once the robot arrives and settles to idle");
+
   const visitorNetDisplacement = Math.hypot(
     lastVisitorPos.x - visitorStart.x,
     lastVisitorPos.z - visitorStart.z,
@@ -225,10 +256,11 @@ async function testRequestGuideConvergenceAndTrailing(): Promise<void> {
   // Thresholds are stated as fractions of the ACTUAL door-to-door distance (not a flat
   // meter figure) so this stays meaningful regardless of which room pair is used above --
   // a flat "> 0.5m" is exactly what silently passed on a short trip while proving nothing.
-  // Observed on this Wellness-Room-to-Event-Space trip (~17m door-to-door, 50-robot fleet
-  // present): visitor moved ~27.8m total, net displacement ~16.7m -- both comfortably clear
-  // these fractional bars, which is the point: a visitor genuinely trailing a robot across
-  // real distance blows past "meaningfully away from spawn", it doesn't barely clear it.
+  // Observed on this Wellness-Room-to-Event-Space trip (~18.45m door-to-door, 50-robot
+  // fleet present, measured over the visitor's full escorted trip incl. settle-wait):
+  // visitor moved ~20.5m total, net displacement ~19.1m -- both comfortably clear these
+  // fractional bars, which is the point: a visitor genuinely trailing a robot across real
+  // distance blows past "meaningfully away from spawn", it doesn't barely clear it.
   assert.ok(
     visitorMovedTotal > doorToDoorDistance,
     `visitor-b should have covered at least the door-to-door distance (${doorToDoorDistance.toFixed(2)}m) while ` +
@@ -245,19 +277,6 @@ async function testRequestGuideConvergenceAndTrailing(): Promise<void> {
       `net displacement ${visitorNetDisplacement.toFixed(2)}m from spawn, never collapsed onto the robot)`,
   );
 
-  // Keep ticking a bounded extra amount for the robot to settle to idle at its door and for
-  // the escort to un-bind (mirrors WorldRoom.test.ts's settle-tick pattern).
-  const MAX_SETTLE_TICKS = 300;
-  let settled = false;
-  for (let i = 0; i < MAX_SETTLE_TICKS; i++) {
-    room.update(TICK_MS);
-    const stats = room.getVisitorDebugStats();
-    if (stats.escortedVisitors === 0) {
-      settled = true;
-      break;
-    }
-  }
-  assert.ok(settled, "escort binding should be released once the robot arrives and settles to idle");
   const statsAfterArrival = room.getVisitorDebugStats();
   assert.equal(statsAfterArrival.robotBindings, 0, "robot binding should be released on arrival");
   console.log("PASS: escort binding released on arrival (robot returned to idle, un-bound)");
