@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 
-import { Server } from "colyseus";
+import { Server, matchMaker } from "colyseus";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import express from "express";
 
@@ -25,12 +25,14 @@ const gameServer = new Server({
 const handler = gameServer.define("world", WorldRoom);
 
 // Task 2.3: the IoT bridge needs a live handle to "the" WorldRoom instance to call
-// moveAgentTo on, but Colyseus creates/disposes rooms on demand (first join / last leave)
-// rather than eagerly at boot -- there is no synchronous "get me the room" API. The
-// RegisteredHandler returned by define() emits create/dispose events for exactly this,
-// so this tracks the current instance without touching WorldRoom.ts itself. A navigate
-// command that arrives while no client has joined (activeRoom undefined) acks
-// failed/"world_not_ready" -- see bridge.ts's handleCommand.
+// moveAgentTo on. Colyseus's own room lifecycle (first join / last leave) doesn't give a
+// synchronous "get me the room" API, so this tracks the current instance itself, via the
+// RegisteredHandler create/dispose events, without touching WorldRoom.ts. A navigate
+// command that arrives while no room exists yet (activeRoom undefined) acks
+// failed/"world_not_ready" -- see bridge.ts's handleCommand. World-persistence fix: with
+// WorldRoom.onCreate() now setting `autoDispose = false`, this window shrinks to "before
+// the eager matchMaker.createRoom() call below resolves at boot" -- it no longer reopens
+// every time the browser's last tab closes.
 let activeRoom: WorldRoomLike | undefined;
 handler.on("create", (room) => {
   activeRoom = room;
@@ -49,6 +51,27 @@ try {
   console.error("[iot-bridge] failed to start -- world-server continues without it:", err);
 }
 
-gameServer.listen(port).then(() => {
+gameServer.listen(port).then(async () => {
   console.log(`World-server listening on ws://localhost:${port}`);
+
+  // World-persistence fix: pre-create the "world" room at boot instead of waiting for the
+  // first browser join, so a Moses `assign`/`navigate` arriving before anyone has opened
+  // the big screen doesn't hit the world_not_ready window at all. matchMaker.createRoom()
+  // is the same low-level entry point client.joinOrCreate() uses internally (see the
+  // installed colyseus 0.17.10's node_modules/@colyseus/core/build/MatchMaker.mjs:
+  // handleCreateRoom() emits the handler's "create" event exactly like a client-triggered
+  // creation does), so the existing handler.on("create", ...) wiring above picks this room
+  // up as activeRoom with no further changes needed. Wrapped in try/catch, not awaited by
+  // the outer listen().then() chain's caller, so a failure here (e.g. a floor-plan/navmesh
+  // build error) is logged but degrades to the pre-existing lazy on-first-join behavior
+  // rather than crashing an otherwise-healthy WebSocket server.
+  try {
+    await matchMaker.createRoom("world", {});
+    console.log("[world-server] pre-created 'world' room at boot (eager, not waiting for first join)");
+  } catch (err) {
+    console.error(
+      "[world-server] eager room pre-creation failed -- falling back to lazy on-first-join creation:",
+      err,
+    );
+  }
 });

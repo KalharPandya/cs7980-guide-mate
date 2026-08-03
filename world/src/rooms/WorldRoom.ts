@@ -108,6 +108,27 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     disableSimulatedVisitors?: boolean;
     disableGuideRobots?: boolean;
   }): Promise<void> {
+    // The world-server is the authoritative simulation (per
+    // docs/superpowers/specs/2026-07-26-virtual-world-guide-fleet-design.md): Moses
+    // dispatches virtual robots over IoT Core independently of any browser client, and
+    // the demo runs unattended on a kiosk for hours. Colyseus's `autoDispose` defaults to
+    // true, which disposes this room (and every guide-robot/visitor agent in it) the
+    // moment the last WebSocket client disconnects -- a browser refresh, a projector
+    // hiccup, or simply nobody currently watching the big screen. The next join then pays
+    // the ~30s simulated-visitor ramp-up from zero AND, worse, world/src/index.ts's
+    // `activeRoom` tracking (see its doc comment) goes undefined for that whole window, so
+    // a `navigate`/`assign` command arriving from the IoT bridge acks
+    // failed/"world_not_ready" even though nothing is actually wrong -- just that no
+    // browser tab happened to be open. Disabling autoDispose here (verified against the
+    // installed colyseus 0.17.10's typings, node_modules/@colyseus/core/build/
+    // Room.d.ts's `autoDispose: boolean` property) makes the simulation persist for the
+    // life of the process regardless of viewers; the room is still disposed correctly on
+    // a real server shutdown because `Server.gracefullyShutdown()` -> `matchMaker.
+    // gracefullyShutdown()` -> `disconnectAll()` calls `Room.disconnect()`, which force-sets
+    // `autoDispose = true` before disposing (node_modules/@colyseus/core/build/Room.mjs's
+    // `disconnect()`) -- so onDispose()'s native WASM cleanup below is never orphaned.
+    this.autoDispose = false;
+
     this.setState(new WorldState());
     console.log("WorldRoom created");
 
@@ -424,12 +445,20 @@ export class WorldRoom extends Room<{ state: WorldState }> {
 
   /**
    * Frees the WASM-backed native allocations this room owns: the Detour Crowd, then the
-   * NavMesh/NavMeshQuery it steps on. Colyseus's `autoDispose` defaults to true, meaning
-   * this room IS disposed the moment its last client disconnects -- a browser refresh, a
-   * dropped WS, a kiosk reboot -- so this has to actually run reliably, not just exist for
-   * an explicit shutdown path. This also closes the NavMesh/NavMeshQuery disposal gap
-   * Task 1.1's review flagged: WorldRoom is the sole owner of all three native objects, so
-   * one onDispose here resolves both.
+   * NavMesh/NavMeshQuery it steps on. This also closes the NavMesh/NavMeshQuery disposal
+   * gap Task 1.1's review flagged: WorldRoom is the sole owner of all three native
+   * objects, so one onDispose here resolves both.
+   *
+   * `onCreate()` now sets `autoDispose = false` (world persistence fix, see that method's
+   * doc comment), so a client disconnecting -- even the last one -- no longer triggers
+   * this on its own; the room and its native resources now live for the process lifetime.
+   * This still has to run reliably on an ACTUAL server shutdown though:
+   * `Server.gracefullyShutdown()` calls `Room.disconnect()`, which force-sets
+   * `autoDispose = true` before disposing regardless of what onCreate() set it to (see
+   * node_modules/@colyseus/core/build/Room.mjs's `disconnect()`), so this is never
+   * orphaned. A test harness that constructs `WorldRoom` directly (`WorldRoom.test.ts`,
+   * `visitors.test.ts`) and calls `onDispose()` explicitly is also unaffected -- this
+   * method doesn't care how/why it was invoked.
    *
    * Guarded so it's safe to call more than once (a native double-free would be a crash,
    * not a soft failure) and safe to call even if onCreate() never finished setting up
