@@ -19,12 +19,15 @@
     "test:visitors": "tsx src/rooms/__tests__/visitors.test.ts",
     "test:iot": "tsx src/iot/__tests__/bridge.test.ts",
     "test:iot:integration": "tsx src/iot/__tests__/bridge.integration.test.ts",
+    "test:wire-conformance": "tsx src/iot/__tests__/wireConformance.test.ts",
     "test:assign-chain": "tsx src/test/assignChain.test.ts",
     "test:load": "tsx scripts/loadtest.ts",
     "test:frame": "tsx scripts/frametest.ts",
     "test:soak": "tsx --expose-gc scripts/soaktest.ts",
     "test:pool": "tsx scripts/pooltest.ts",
-    "test:all": "npm run test && npm run test:persistence && npm run test:nav && npm run test:crowd && npm run test:visitors && npm run test:iot && npm run test:assign-chain"
+    "test:reconnect": "tsx scripts/reconnecttest.ts",
+    "generate:conformance-fixture": "python ../shared/guidemate_msgs/scripts/generate_conformance_fixture.py",
+    "test:all": "npm run test && npm run test:persistence && npm run test:nav && npm run test:crowd && npm run test:visitors && npm run test:iot && npm run test:wire-conformance && npm run test:assign-chain"
   },
   "dependencies": {
     "@colyseus/schema": "4.0.30",

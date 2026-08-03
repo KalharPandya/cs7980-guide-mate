@@ -1,0 +1,868 @@
+{
+  "_comment": "GENERATED FILE -- do not hand-edit. Regenerate with: python shared/guidemate_msgs/scripts/generate_conformance_fixture.py (see that script's module doc for the full two-hop generation flow).",
+  "pydanticVersion": "2.13.4",
+  "commandCases": [
+    {
+      "name": "emote_valid_happy",
+      "payload": {
+        "cmd_id": "fixture-emote_valid_happy",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "emote",
+        "name": "happy",
+        "params": {}
+      },
+      "pythonAccepted": true
+    },
+    {
+      "name": "emote_valid_yes",
+      "payload": {
+        "cmd_id": "fixture-emote_valid_yes",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "emote",
+        "name": "yes",
+        "params": {}
+      },
+      "pythonAccepted": true
+    },
+    {
+      "name": "emote_valid_no",
+      "payload": {
+        "cmd_id": "fixture-emote_valid_no",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "emote",
+        "name": "no",
+        "params": {}
+      },
+      "pythonAccepted": true
+    },
+    {
+      "name": "emote_invalid_bad_name",
+      "payload": {
+        "cmd_id": "fixture-emote_invalid_bad_name",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "emote",
+        "name": "sad",
+        "params": {}
+      },
+      "pythonAccepted": false
+    },
+    {
+      "name": "motion_valid_circle",
+      "payload": {
+        "cmd_id": "fixture-motion_valid_circle",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "motion",
+        "name": "circle",
+        "params": {}
+      },
+      "pythonAccepted": true
+    },
+    {
+      "name": "motion_valid_spin",
+      "payload": {
+        "cmd_id": "fixture-motion_valid_spin",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "motion",
+        "name": "spin",
+        "params": {}
+      },
+      "pythonAccepted": true
+    },
+    {
+      "name": "motion_valid_dock",
+      "payload": {
+        "cmd_id": "fixture-motion_valid_dock",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "motion",
+        "name": "dock",
+        "params": {}
+      },
+      "pythonAccepted": true
+    },
+    {
+      "name": "motion_valid_undock",
+      "payload": {
+        "cmd_id": "fixture-motion_valid_undock",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "motion",
+        "name": "undock",
+        "params": {}
+      },
+      "pythonAccepted": true
+    },
+    {
+      "name": "motion_valid_forward",
+      "payload": {
+        "cmd_id": "fixture-motion_valid_forward",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "motion",
+        "name": "forward",
+        "params": {}
+      },
+      "pythonAccepted": true
+    },
+    {
+      "name": "motion_invalid_bad_name",
+      "payload": {
+        "cmd_id": "fixture-motion_invalid_bad_name",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "motion",
+        "name": "teleport",
+        "params": {}
+      },
+      "pythonAccepted": false
+    },
+    {
+      "name": "stop_valid",
+      "payload": {
+        "cmd_id": "fixture-stop_valid",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "stop",
+        "name": "stop",
+        "params": {}
+      },
+      "pythonAccepted": true
+    },
+    {
+      "name": "stop_invalid_bad_name",
+      "payload": {
+        "cmd_id": "fixture-stop_invalid_bad_name",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "stop",
+        "name": "halt",
+        "params": {}
+      },
+      "pythonAccepted": false
+    },
+    {
+      "name": "navigate_valid_room_only",
+      "payload": {
+        "cmd_id": "fixture-navigate_valid_room_only",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "navigate",
+        "name": "goto",
+        "params": {
+          "room": "1425"
+        }
+      },
+      "pythonAccepted": true
+    },
+    {
+      "name": "navigate_valid_xz_only",
+      "payload": {
+        "cmd_id": "fixture-navigate_valid_xz_only",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "navigate",
+        "name": "goto",
+        "params": {
+          "x": 1.5,
+          "z": -2.0
+        }
+      },
+      "pythonAccepted": true
+    },
+    {
+      "name": "navigate_valid_xz_ints",
+      "payload": {
+        "cmd_id": "fixture-navigate_valid_xz_ints",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "navigate",
+        "name": "goto",
+        "params": {
+          "x": 1,
+          "z": 2
+        }
+      },
+      "pythonAccepted": true
+    },
+    {
+      "name": "navigate_valid_room_and_xz_both",
+      "payload": {
+        "cmd_id": "fixture-navigate_valid_room_and_xz_both",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "navigate",
+        "name": "goto",
+        "params": {
+          "room": "1425",
+          "x": 1.0,
+          "z": 2.0
+        }
+      },
+      "pythonAccepted": true
+    },
+    {
+      "name": "navigate_invalid_neither_room_nor_xz",
+      "payload": {
+        "cmd_id": "fixture-navigate_invalid_neither_room_nor_xz",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "navigate",
+        "name": "goto",
+        "params": {}
+      },
+      "pythonAccepted": false
+    },
+    {
+      "name": "navigate_invalid_x_only",
+      "payload": {
+        "cmd_id": "fixture-navigate_invalid_x_only",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "navigate",
+        "name": "goto",
+        "params": {
+          "x": 1.0
+        }
+      },
+      "pythonAccepted": false
+    },
+    {
+      "name": "navigate_invalid_z_only",
+      "payload": {
+        "cmd_id": "fixture-navigate_invalid_z_only",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "navigate",
+        "name": "goto",
+        "params": {
+          "z": 1.0
+        }
+      },
+      "pythonAccepted": false
+    },
+    {
+      "name": "navigate_invalid_non_string_room",
+      "payload": {
+        "cmd_id": "fixture-navigate_invalid_non_string_room",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "navigate",
+        "name": "goto",
+        "params": {
+          "room": 1425
+        }
+      },
+      "pythonAccepted": false
+    },
+    {
+      "name": "navigate_invalid_bad_name",
+      "payload": {
+        "cmd_id": "fixture-navigate_invalid_bad_name",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "navigate",
+        "name": "warp",
+        "params": {
+          "room": "1425"
+        }
+      },
+      "pythonAccepted": false
+    },
+    {
+      "name": "assign_valid_both_params",
+      "payload": {
+        "cmd_id": "fixture-assign_valid_both_params",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "assign",
+        "name": "assign",
+        "params": {
+          "visitor_id": "visitor-1",
+          "room": "Classroom 1425"
+        }
+      },
+      "pythonAccepted": true
+    },
+    {
+      "name": "assign_invalid_missing_visitor_id",
+      "payload": {
+        "cmd_id": "fixture-assign_invalid_missing_visitor_id",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "assign",
+        "name": "assign",
+        "params": {
+          "room": "Classroom 1425"
+        }
+      },
+      "pythonAccepted": false
+    },
+    {
+      "name": "assign_invalid_missing_room",
+      "payload": {
+        "cmd_id": "fixture-assign_invalid_missing_room",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "assign",
+        "name": "assign",
+        "params": {
+          "visitor_id": "visitor-1"
+        }
+      },
+      "pythonAccepted": false
+    },
+    {
+      "name": "assign_invalid_empty_params",
+      "payload": {
+        "cmd_id": "fixture-assign_invalid_empty_params",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "assign",
+        "name": "assign",
+        "params": {}
+      },
+      "pythonAccepted": false
+    },
+    {
+      "name": "assign_invalid_non_string_visitor_id",
+      "payload": {
+        "cmd_id": "fixture-assign_invalid_non_string_visitor_id",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "assign",
+        "name": "assign",
+        "params": {
+          "visitor_id": 123,
+          "room": "Classroom 1425"
+        }
+      },
+      "pythonAccepted": false
+    },
+    {
+      "name": "assign_invalid_non_string_room",
+      "payload": {
+        "cmd_id": "fixture-assign_invalid_non_string_room",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "assign",
+        "name": "assign",
+        "params": {
+          "visitor_id": "visitor-1",
+          "room": 1425
+        }
+      },
+      "pythonAccepted": false
+    },
+    {
+      "name": "assign_invalid_bad_name",
+      "payload": {
+        "cmd_id": "fixture-assign_invalid_bad_name",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "assign",
+        "name": "dispatch",
+        "params": {
+          "visitor_id": "visitor-1",
+          "room": "Classroom 1425"
+        }
+      },
+      "pythonAccepted": false
+    },
+    {
+      "name": "unknown_type",
+      "payload": {
+        "cmd_id": "fixture-unknown_type",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "teleport",
+        "name": "goto",
+        "params": {}
+      },
+      "pythonAccepted": false
+    }
+  ],
+  "ackCases": [
+    {
+      "name": "minimal_received",
+      "partial": {
+        "cmd_id": "ack-1",
+        "state": "received"
+      },
+      "tsOutput": {
+        "cmd_id": "ack-1",
+        "state": "received",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      },
+      "pythonAccepted": true,
+      "pythonRoundTrip": {
+        "cmd_id": "ack-1",
+        "state": "received",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      }
+    },
+    {
+      "name": "state_running",
+      "partial": {
+        "cmd_id": "ack-2",
+        "state": "running"
+      },
+      "tsOutput": {
+        "cmd_id": "ack-2",
+        "state": "running",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      },
+      "pythonAccepted": true,
+      "pythonRoundTrip": {
+        "cmd_id": "ack-2",
+        "state": "running",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      }
+    },
+    {
+      "name": "state_done",
+      "partial": {
+        "cmd_id": "ack-3",
+        "state": "done"
+      },
+      "tsOutput": {
+        "cmd_id": "ack-3",
+        "state": "done",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      },
+      "pythonAccepted": true,
+      "pythonRoundTrip": {
+        "cmd_id": "ack-3",
+        "state": "done",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      }
+    },
+    {
+      "name": "state_failed",
+      "partial": {
+        "cmd_id": "ack-4",
+        "state": "failed"
+      },
+      "tsOutput": {
+        "cmd_id": "ack-4",
+        "state": "failed",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      },
+      "pythonAccepted": true,
+      "pythonRoundTrip": {
+        "cmd_id": "ack-4",
+        "state": "failed",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      }
+    },
+    {
+      "name": "reason_set",
+      "partial": {
+        "cmd_id": "ack-5",
+        "state": "failed",
+        "reason": "target_unresolved"
+      },
+      "tsOutput": {
+        "cmd_id": "ack-5",
+        "state": "failed",
+        "reason": "target_unresolved",
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      },
+      "pythonAccepted": true,
+      "pythonRoundTrip": {
+        "cmd_id": "ack-5",
+        "state": "failed",
+        "reason": "target_unresolved",
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      }
+    },
+    {
+      "name": "reason_explicit_null",
+      "partial": {
+        "cmd_id": "ack-6",
+        "state": "done",
+        "reason": null
+      },
+      "tsOutput": {
+        "cmd_id": "ack-6",
+        "state": "done",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      },
+      "pythonAccepted": true,
+      "pythonRoundTrip": {
+        "cmd_id": "ack-6",
+        "state": "done",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      }
+    },
+    {
+      "name": "simulated_true",
+      "partial": {
+        "cmd_id": "ack-7",
+        "state": "done",
+        "simulated": true
+      },
+      "tsOutput": {
+        "cmd_id": "ack-7",
+        "state": "done",
+        "reason": null,
+        "simulated": true,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      },
+      "pythonAccepted": true,
+      "pythonRoundTrip": {
+        "cmd_id": "ack-7",
+        "state": "done",
+        "reason": null,
+        "simulated": true,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      }
+    },
+    {
+      "name": "simulated_false",
+      "partial": {
+        "cmd_id": "ack-8",
+        "state": "done",
+        "simulated": false
+      },
+      "tsOutput": {
+        "cmd_id": "ack-8",
+        "state": "done",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      },
+      "pythonAccepted": true,
+      "pythonRoundTrip": {
+        "cmd_id": "ack-8",
+        "state": "done",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      }
+    },
+    {
+      "name": "battery_set",
+      "partial": {
+        "cmd_id": "ack-9",
+        "state": "running",
+        "battery": 0.73
+      },
+      "tsOutput": {
+        "cmd_id": "ack-9",
+        "state": "running",
+        "reason": null,
+        "simulated": false,
+        "battery": 0.73,
+        "gates": null,
+        "assigned_robot_id": null
+      },
+      "pythonAccepted": true,
+      "pythonRoundTrip": {
+        "cmd_id": "ack-9",
+        "state": "running",
+        "reason": null,
+        "simulated": false,
+        "battery": 0.73,
+        "gates": null,
+        "assigned_robot_id": null
+      }
+    },
+    {
+      "name": "battery_zero",
+      "partial": {
+        "cmd_id": "ack-10",
+        "state": "running",
+        "battery": 0
+      },
+      "tsOutput": {
+        "cmd_id": "ack-10",
+        "state": "running",
+        "reason": null,
+        "simulated": false,
+        "battery": 0,
+        "gates": null,
+        "assigned_robot_id": null
+      },
+      "pythonAccepted": true,
+      "pythonRoundTrip": {
+        "cmd_id": "ack-10",
+        "state": "running",
+        "reason": null,
+        "simulated": false,
+        "battery": 0.0,
+        "gates": null,
+        "assigned_robot_id": null
+      }
+    },
+    {
+      "name": "battery_explicit_null",
+      "partial": {
+        "cmd_id": "ack-11",
+        "state": "running",
+        "battery": null
+      },
+      "tsOutput": {
+        "cmd_id": "ack-11",
+        "state": "running",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      },
+      "pythonAccepted": true,
+      "pythonRoundTrip": {
+        "cmd_id": "ack-11",
+        "state": "running",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      }
+    },
+    {
+      "name": "gates_set",
+      "partial": {
+        "cmd_id": "ack-12",
+        "state": "failed",
+        "reason": "docked",
+        "gates": {
+          "docked": true,
+          "motion_enabled": false,
+          "dry_run": true
+        }
+      },
+      "tsOutput": {
+        "cmd_id": "ack-12",
+        "state": "failed",
+        "reason": "docked",
+        "simulated": false,
+        "battery": null,
+        "gates": {
+          "docked": true,
+          "motion_enabled": false,
+          "dry_run": true
+        },
+        "assigned_robot_id": null
+      },
+      "pythonAccepted": true,
+      "pythonRoundTrip": {
+        "cmd_id": "ack-12",
+        "state": "failed",
+        "reason": "docked",
+        "simulated": false,
+        "battery": null,
+        "gates": {
+          "docked": true,
+          "motion_enabled": false,
+          "dry_run": true
+        },
+        "assigned_robot_id": null
+      }
+    },
+    {
+      "name": "gates_explicit_null",
+      "partial": {
+        "cmd_id": "ack-13",
+        "state": "done",
+        "gates": null
+      },
+      "tsOutput": {
+        "cmd_id": "ack-13",
+        "state": "done",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      },
+      "pythonAccepted": true,
+      "pythonRoundTrip": {
+        "cmd_id": "ack-13",
+        "state": "done",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      }
+    },
+    {
+      "name": "assigned_robot_id_set",
+      "partial": {
+        "cmd_id": "ack-14",
+        "state": "done",
+        "assigned_robot_id": "virtual/3"
+      },
+      "tsOutput": {
+        "cmd_id": "ack-14",
+        "state": "done",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": "virtual/3"
+      },
+      "pythonAccepted": true,
+      "pythonRoundTrip": {
+        "cmd_id": "ack-14",
+        "state": "done",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": "virtual/3"
+      }
+    },
+    {
+      "name": "assigned_robot_id_set_slash_id",
+      "partial": {
+        "cmd_id": "ack-15",
+        "state": "done",
+        "assigned_robot_id": "virtual/12"
+      },
+      "tsOutput": {
+        "cmd_id": "ack-15",
+        "state": "done",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": "virtual/12"
+      },
+      "pythonAccepted": true,
+      "pythonRoundTrip": {
+        "cmd_id": "ack-15",
+        "state": "done",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": "virtual/12"
+      }
+    },
+    {
+      "name": "assigned_robot_id_explicit_null",
+      "partial": {
+        "cmd_id": "ack-16",
+        "state": "failed",
+        "assigned_robot_id": null
+      },
+      "tsOutput": {
+        "cmd_id": "ack-16",
+        "state": "failed",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      },
+      "pythonAccepted": true,
+      "pythonRoundTrip": {
+        "cmd_id": "ack-16",
+        "state": "failed",
+        "reason": null,
+        "simulated": false,
+        "battery": null,
+        "gates": null,
+        "assigned_robot_id": null
+      }
+    },
+    {
+      "name": "all_fields_set_together",
+      "partial": {
+        "cmd_id": "ack-17",
+        "state": "done",
+        "reason": "ok",
+        "simulated": true,
+        "battery": 0.42,
+        "gates": {
+          "docked": false,
+          "motion_enabled": true,
+          "dry_run": false
+        },
+        "assigned_robot_id": "virtual/7"
+      },
+      "tsOutput": {
+        "cmd_id": "ack-17",
+        "state": "done",
+        "reason": "ok",
+        "simulated": true,
+        "battery": 0.42,
+        "gates": {
+          "docked": false,
+          "motion_enabled": true,
+          "dry_run": false
+        },
+        "assigned_robot_id": "virtual/7"
+      },
+      "pythonAccepted": true,
+      "pythonRoundTrip": {
+        "cmd_id": "ack-17",
+        "state": "done",
+        "reason": "ok",
+        "simulated": true,
+        "battery": 0.42,
+        "gates": {
+          "docked": false,
+          "motion_enabled": true,
+          "dry_run": false
+        },
+        "assigned_robot_id": "virtual/7"
+      }
+    }
+  ],
+  "topicCases": {
+    "perRobot": [
+      {
+        "robotId": "turtlebot468",
+        "cmdTopic": "guidemate/turtlebot468/cmd",
+        "statusTopic": "guidemate/turtlebot468/status"
+      },
+      {
+        "robotId": "virtual/1",
+        "cmdTopic": "guidemate/virtual/1/cmd",
+        "statusTopic": "guidemate/virtual/1/status"
+      },
+      {
+        "robotId": "virtual/12",
+        "cmdTopic": "guidemate/virtual/12/cmd",
+        "statusTopic": "guidemate/virtual/12/status"
+      }
+    ],
+    "fleetCmdTopic": "guidemate/virtual/fleet/cmd",
+    "fleetStatusTopic": "guidemate/virtual/fleet/status"
+  }
+}
