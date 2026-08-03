@@ -113,6 +113,56 @@ def test_motion_impl_offline():
     assert result == "robot did not respond — I'm probably napping offline"
 
 
+# --- run_motion must only accept the trick vocabulary it advertises to the
+# model (circle/spin), even though "dock"/"undock"/"forward" are valid names
+# in the wire schema's _MOTION_NAMES for the separate admin/assignment
+# dock-undock flow. Without this check those names pass Command's validator
+# and get dispatched to the registry -- a chat-LLM path to real robot motion
+# the tool's own contract (MOTION_INSTRUCTION) says it can't do. ---
+def test_motion_impl_rejects_undock_never_sent():
+    reg = ScriptedRegistry()
+    result = _agent(reg)._motion_impl("undock", target="turtlebot468",
+                                      captured=_captured())
+    assert result == "unknown trick — I only know 'circle' and 'spin'"
+    assert reg.sent == []
+
+
+def test_motion_impl_rejects_dock_never_sent():
+    reg = ScriptedRegistry()
+    result = _agent(reg)._motion_impl("dock", target="turtlebot468",
+                                      captured=_captured())
+    assert result == "unknown trick — I only know 'circle' and 'spin'"
+    assert reg.sent == []
+
+
+def test_motion_impl_rejects_forward_never_sent():
+    reg = ScriptedRegistry()
+    result = _agent(reg)._motion_impl("forward", target="turtlebot468",
+                                      captured=_captured())
+    assert result == "unknown trick — I only know 'circle' and 'spin'"
+    assert reg.sent == []
+
+
+def test_motion_impl_still_dispatches_circle():
+    acks = [Ack(cmd_id="c", state="done", simulated=True)]
+    reg = ScriptedRegistry(acks=acks)
+    result = _agent(reg)._motion_impl("circle", target="turtlebot468",
+                                      captured=_captured())
+    assert reg.sent[0][1].type == "motion"
+    assert reg.sent[0][1].name == "circle"
+    assert result == "delivered (simulated — dry-run, the robot stayed still)"
+
+
+def test_motion_impl_still_dispatches_spin():
+    acks = [Ack(cmd_id="c", state="done", simulated=True)]
+    reg = ScriptedRegistry(acks=acks)
+    result = _agent(reg)._motion_impl("spin", target="turtlebot468",
+                                      captured=_captured())
+    assert reg.sent[0][1].type == "motion"
+    assert reg.sent[0][1].name == "spin"
+    assert result == "delivered (simulated — dry-run, the robot stayed still)"
+
+
 def test_stop_impl_sends_stop_command():
     acks = [Ack(cmd_id="c", state="done", simulated=True)]
     reg = ScriptedRegistry(acks=acks)

@@ -9,10 +9,16 @@ from pydantic import BaseModel, Field, model_validator
 
 _EMOTE_NAMES = ("happy", "yes", "no")
 # "dock"/"undock" added for the assignment-triggered dock/undock flow (spec delta,
-# commit 91d9bcb). The choreography library has NO dock/undock sequence — the bridge
-# executor's build() raises ValueError for them, acking `failed` ("unknown
-# choreography"), and the Phase 2 safety layer refuses them as motion while locked.
-# Bridge-side EXECUTION (Create 3 dock actions + dock-guard exemption) is Phase 8.
+# commit 91d9bcb). The choreography library has NO dock/undock sequence, so build()
+# still raises ValueError for them (acking `failed`, "unknown choreography") -- but
+# that path only fires on the legacy Phase-2 safety=<SafetyState> runner. Phase 8 has
+# landed: production bridge.py never passes safety= to ChoreographyRunner, so it
+# always takes the real-drive path (executor._handle_realdrive), which dispatches
+# dock/undock as real Create 3 ROS actions via run_action (see executor.py's
+# _ACTION_NAMES / _handle_realdrive) and never reaches build()'s ValueError.
+# NOTE: the chat-facing run_motion LLM tool (agent_service/guidemate_agent/dog_agent.py)
+# deliberately does NOT expose "dock"/"undock"/"forward" -- those names exist here only
+# for the admin/assignment-triggered flow (sessions.py), not for the LLM tool.
 _MOTION_NAMES = ("circle", "spin", "dock", "undock", "forward")
 # "navigate" targets are open-ended (room numbers/labels/coordinates), not a fixed
 # short enum like emotes/motions, so `name` is a stable constant (mirrors `stop`'s

@@ -59,6 +59,18 @@ PERSONA = PERSONA_BASE + " " + EMOTE_INSTRUCTION + " " + MOTION_INSTRUCTION
 
 _OFFLINE = "robot did not respond — I'm probably napping offline"
 
+# The trick vocabulary run_motion actually advertises to the model (see
+# MOTION_INSTRUCTION above and the run_motion tool docstring in _build_tools).
+# Deliberately NOT the same set as guidemate_msgs.messages._MOTION_NAMES: the
+# wire schema also allows "dock"/"undock"/"forward" for the separate admin/
+# assignment-triggered dock/undock flow (sessions.py), which legitimately
+# needs them. run_motion's contract is narrower on purpose -- the chat LLM
+# must never be able to trigger real dock/undock/forward motion just because
+# those names happen to validate against the wire schema. Checked in
+# _motion_impl BEFORE constructing a Command, so an allowed-by-schema-but-
+# not-a-trick name never reaches the registry.
+_ALLOWED_TRICKS = ("circle", "spin")
+
 
 def _emote_mirror_robot_id() -> Optional[str]:
     """Physical robot id to mirror virtual emotes onto, or None (feature off).
@@ -313,9 +325,20 @@ class DogAgent:
     def _motion_impl(self, name: str, target: Optional[str], captured: dict) -> str:
         if target is None:
             return _OFFLINE
+        # Enforce the tool's own advertised contract BEFORE building a Command:
+        # the wire schema (_MOTION_NAMES) also validates "dock"/"undock"/
+        # "forward" for the unrelated admin/assignment dock-undock flow, so
+        # relying on ValidationError alone would let the chat LLM dispatch
+        # real motion just by naming one of those. See _ALLOWED_TRICKS.
+        if name not in _ALLOWED_TRICKS:
+            return "unknown trick — I only know 'circle' and 'spin'"
         try:
             cmd = Command(type="motion", name=name)
         except ValidationError:
+            # Backstop only -- every name in _ALLOWED_TRICKS is also valid
+            # against _MOTION_NAMES, so this should be unreachable in
+            # practice, but keep it as defence in depth if the schemas ever
+            # diverge the other way.
             return "unknown trick — I only know 'circle' and 'spin'"
         t0 = time.perf_counter()
         acks = self._registry.send_command(target, cmd)
