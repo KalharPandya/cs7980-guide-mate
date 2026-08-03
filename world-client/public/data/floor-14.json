@@ -2,7 +2,7 @@
   "units": "meters",
   "floor": 14,
   "source": "Algorithmically extracted from world/data/source/floor-14-plan.png (2026-08-02 re-extraction). Replaces two prior hand-eyeballed traces (both scored well under the 85% wall-match bar). Pipeline: OpenCV intensity threshold (walls dark, furniture light -- see extract_walls.py) isolates wall ink; text-row/logo components (bbox height <=9px, or the bottom-right corner title block) are stripped; HoughLinesP fragments (~1500) are clustered by (angle, perpendicular offset) and merged along their shared direction (gaps <=4px bridged as antialiasing noise; a run of >=3 short pieces on one line would be flagged glass=true as a dashed wall, though none of this floor's walls happened to cluster that way at the tightened angle/offset tolerance used for the final pass -- every wall here came out glass=false, a cosmetic-only miss (glass vs. solid only changes world-client's render material, per Walls.tsx; it has no effect on navmesh/pathing) rather than a structural one; any other gap is a real door opening, left as two separate segments). Diagonal Hough segments inside the two elevator/stair core bands (the 'X' shaft icons and stair hatching) are dropped by angle (15-75 degrees off axis-aligned), not by position, so the real rectilinear walls the cores share with the Female/Male/Gender-Neutral washrooms are kept as walls, not discarded as decoration.",
-  "note": "Transform: world_x = px * s, world_z = (H_px - py) * s -- ONE uniform scale s = 0.075214 m/px applied to every point (H_px = 364, the trimmed source canvas height; s is calibrated so the building's long (x) axis is 35.2m). Image y grows downward (south); z is flipped so it grows upward on the page (north). 2026-08-02 precision pass (this note replaces an earlier version that documented a two-vertex bbox-calibration nudge -- REMOVED, see below): the outline's two outermost vertices (index 11, the z-min corner near the Wellness Room; index 15, the x-max corner near the building's east tip) had each been pushed out by <1m to touch the source canvas's own edge (473x364px), to compensate for a scoring verifier that fitted this file's geometry bbox against the whole trimmed canvas -- which is a few px bigger than the real building footprint (468x352px) because the canvas trim also captures the Northeastern University logo and a north-arrow graphic past the building's south-east corner. That nudge inflated this file's own geometry bbox, which under a corrected verifier (scoring against the real building footprint instead of the full canvas) does the opposite of what it was meant to do -- it reintroduces the same stretch, just from the traced-geometry side instead of the reference side. Fix: both vertices restored to their true traced pixel positions (index 11 [13.839, 0.0] -> [13.839, 0.978]; index 15 [35.576, 14.892] -> [35.125, 14.892] -- i.e. exactly undoing the two edits, nothing else). No compensating global scale/offset was applied on top: swept a scale x0.97-1.03 and an x/z shift of +/-0.3m in 0.1m steps against the corrected verifier and the unmodified transform (scale=1, shift=0) already scored best, so the geometry needed no further correction once the verifier's own reference stopped being the thing that was actually stretched. Also removed two wall entries that had no supporting wall ink in the source image: a stray near-horizontal segment floating over Classroom 1425's furniture/text (old walls[8], a=[9.264,17.552] b=[1.274,18.4] -- visually confirmed against the source crop, a genuine real diagonal wall runs close by but this segment was a separate, parallel, unsupported line) and a shallow diagonal that cut straight through the four elevator-shaft 'X' icons in the upper core band (old walls[6], a=[22.045,16.195] b=[13.238,17.13] -- an artifact of the Hough-segment merge picking up a shallow-angle chain across the X-mark decoration; its low angle relative to the shaft row put it outside the 15-75 degree diagonal-decoration exclusion the rest of the core-band cleanup uses). walls[] now has 160 entries (was 162). The outline is the external contour of the single connected wall-ink component that contains the outer envelope and every partition wall that touches it (they are one pixel-connected mesh in this line drawing); the two elevator/stair core holes are the external contours of the two free-standing core-band components (the lower one clipped to y<220px so the Female/Male/Gender-Neutral washroom partitions hanging off its south edge are not swallowed into the hole -- a real gap of ~1.8m separates the two holes, so the corridor between them stays walkable). Room centers/doors were placed by matching each room's label position against the extracted wall geometry (visual position matching, not OCR -- see assemble.py's ROOMS_PX table); this only needs to land inside the right room near its real doorway, a much looser bar than the wall tracing itself. North and South Collaboration Space are open-plan per the source (no enclosing walls; center==door). Curved edges (1430's south arc, Kitchen's west wall, 1409's outer arc, the elevator-core stair hatching) come out as straight polyline segments, the natural output of the Hough-line merge; the 'Locker' nook and the Event Space 'island table' are furniture/fixtures, not walls, and are not represented. Washroom partition walls use height 2.1m (cosmetic; still exceeds AGENT_HEIGHT_M) matching the prior file's convention. Room 1409's door was manually corrected after the initial extraction (commit 7e4fe67) to [31.9, 6.0]; that fix is untouched by this pass.",
+  "note": "Transform: world_x = px * s, world_z = (H_px - py) * s -- ONE uniform scale s = 0.075214 m/px applied to every point (H_px = 364, the trimmed source canvas height; s is calibrated so the building's long (x) axis is 35.2m). Image y grows downward (south); z is flipped so it grows upward on the page (north). 2026-08-02 precision pass (this note replaces an earlier version that documented a two-vertex bbox-calibration nudge -- REMOVED, see below): the outline's two outermost vertices (index 11, the z-min corner near the Wellness Room; index 15, the x-max corner near the building's east tip) had each been pushed out by <1m to touch the source canvas's own edge (473x364px), to compensate for a scoring verifier that fitted this file's geometry bbox against the whole trimmed canvas -- which is a few px bigger than the real building footprint (468x352px) because the canvas trim also captures the Northeastern University logo and a north-arrow graphic past the building's south-east corner. That nudge inflated this file's own geometry bbox, which under a corrected verifier (scoring against the real building footprint instead of the full canvas) does the opposite of what it was meant to do -- it reintroduces the same stretch, just from the traced-geometry side instead of the reference side. Fix: both vertices restored to their true traced pixel positions (index 11 [13.839, 0.0] -> [13.839, 0.978]; index 15 [35.576, 14.892] -> [35.125, 14.892] -- i.e. exactly undoing the two edits, nothing else). No compensating global scale/offset was applied on top: swept a scale x0.97-1.03 and an x/z shift of +/-0.3m in 0.1m steps against the corrected verifier and the unmodified transform (scale=1, shift=0) already scored best, so the geometry needed no further correction once the verifier's own reference stopped being the thing that was actually stretched. Also removed two wall entries that had no supporting wall ink in the source image: a stray near-horizontal segment floating over Classroom 1425's furniture/text (old walls[8], a=[9.264,17.552] b=[1.274,18.4] -- visually confirmed against the source crop, a genuine real diagonal wall runs close by but this segment was a separate, parallel, unsupported line) and a shallow diagonal that cut straight through the four elevator-shaft 'X' icons in the upper core band (old walls[6], a=[22.045,16.195] b=[13.238,17.13] -- an artifact of the Hough-segment merge picking up a shallow-angle chain across the X-mark decoration; its low angle relative to the shaft row put it outside the 15-75 degree diagonal-decoration exclusion the rest of the core-band cleanup uses). walls[] now has 160 entries (was 162). The outline is the external contour of the single connected wall-ink component that contains the outer envelope and every partition wall that touches it (they are one pixel-connected mesh in this line drawing); the two elevator/stair core holes are the external contours of the two free-standing core-band components (the lower one clipped to y<220px so the Female/Male/Gender-Neutral washroom partitions hanging off its south edge are not swallowed into the hole -- a real gap of ~1.8m separates the two holes, so the corridor between them stays walkable). Room centers/doors were placed by matching each room's label position against the extracted wall geometry (visual position matching, not OCR -- see assemble.py's ROOMS_PX table); this only needs to land inside the right room near its real doorway, a much looser bar than the wall tracing itself. North and South Collaboration Space are open-plan per the source (no enclosing walls; center==door). Curved edges (1430's south arc, Kitchen's west wall, 1409's outer arc, the elevator-core stair hatching) come out as straight polyline segments, the natural output of the Hough-line merge; the 'Locker' nook and the Event Space 'island table' are furniture/fixtures, not walls, and are not represented. Washroom partition walls use height 2.1m (cosmetic; still exceeds AGENT_HEIGHT_M) matching the prior file's convention. Room 1409's door was manually corrected after the initial extraction (commit 7e4fe67) to [31.9, 6.0]; that fix is untouched by this pass. 2026-08-02 room-recenter pass (appended, not a rewrite): the controller measured Wellness Room's center 67px (5.0m) from its own label -- confirmed by mapping raw-image label '~(288,320)' and the old center [7.521, 5.942] (-> raw px (221, 315)) onto the source crop: the old center sat inside South Collaboration Space, not Wellness Room. Re-derived Wellness Room's true quadrilateral from its four bounding walls (the long top wall, the shared east wall with Classroom 1418, the long south/southwest wall, and the west wall) -- center moved to [12.512, 5.344]; door moved to [11.8, 5.087], the real ~0.75m gap in the west wall (visually confirmed as a genuine break in the wall ink, not merely obscured by the room's own label text). Also removed four wall entries (old walls[53], [145], [155], [159]) that had no real wall ink behind them -- pixel-checked against the source crop, they retrace the 'Wellness'/'Room' label glyphs themselves, and one duplicates a stretch of the room's own south wall; walls[] now has 156 entries (was 160). The same label-vs-center check was swept over all 18 rooms: room 1430 was also clearly wrong -- its center [22.3, 23.0] sat in the small unlabeled triangular alcove east of 1430 (between 1430 and Event Space), not inside 1430 itself. Re-derived from 1430's own traced boundary (its straight north/east walls plus its multi-segment south arc) -- center moved to [19.963, 23.191]; its door [21.6, 21.9] already sits on/near the room's true south arc and was left unchanged. All other 16 rooms' centers land inside their own room polygon (several, e.g. the Collaboration Spaces and Event Space, well away from their text label, which is expected for large open-plan rooms per the note above); no other changes made.",
   "walkableOutline": [
     [
       27.904,
@@ -880,18 +880,6 @@
         7.152
       ],
       "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        13.447,
-        5.672
-      ],
-      "b": [
-        11.5,
-        5.415
-      ],
-      "height": 2.1,
       "glass": false
     },
     {
@@ -1989,18 +1977,6 @@
     },
     {
       "a": [
-        12.692,
-        4.363
-      ],
-      "b": [
-        12.166,
-        4.249
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
         11.809,
         19.518
       ],
@@ -2109,18 +2085,6 @@
     },
     {
       "a": [
-        12.805,
-        5.34
-      ],
-      "b": [
-        13.388,
-        5.34
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
         14.479,
         18.07
       ],
@@ -2153,18 +2117,6 @@
         22.038
       ],
       "height": 2.7,
-      "glass": false
-    },
-    {
-      "a": [
-        13.463,
-        5.378
-      ],
-      "b": [
-        12.937,
-        5.359
-      ],
-      "height": 2.1,
       "glass": false
     }
   ],
@@ -2203,8 +2155,8 @@
         "room 1430"
       ],
       "center": [
-        22.3,
-        23.0
+        19.963,
+        23.191
       ],
       "door": [
         21.6,
@@ -2247,12 +2199,12 @@
         "wellness"
       ],
       "center": [
-        7.521,
-        5.942
+        12.512,
+        5.344
       ],
       "door": [
-        7.521,
-        7.221
+        11.8,
+        5.087
       ]
     },
     {
