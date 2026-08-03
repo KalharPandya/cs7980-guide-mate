@@ -102,6 +102,15 @@ export class AgentCrowd {
     return this.byId.has(id);
   }
 
+  /** Count of agents this wrapper is currently tracking (`byId.size`) -- for soak/leak
+   * tests (world/scripts/soaktest.ts) to verify this map returns to baseline after many
+   * spawn/despawn cycles, not just that `addAgent`/`removeAgent` are individually called.
+   * Since `lastHeading` is always written/deleted in lockstep with `byId` (see addAgent/
+   * removeAgent above), this one number stands in for both maps' sizes. */
+  get size(): number {
+    return this.byId.size;
+  }
+
   /**
    * Requests the named agent move toward `target` (nav-space; pass `y: 0`). Returns
    * `false` if `id` isn't tracked, or if the underlying `requestMoveTarget` call itself

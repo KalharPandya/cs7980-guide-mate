@@ -10,7 +10,7 @@ import { AgentCrowd } from "../nav/crowd.js";
 import type { AgentParams } from "../nav/crowd.js";
 import { AGENT_HEIGHT_M, AGENT_RADIUS_M } from "../nav/agentProfile.js";
 import { VisitorManager } from "./visitors.js";
-import type { VisitorDebugStats, VisitorHost } from "./visitors.js";
+import type { VisitorDebugStats, VisitorHost, VisitorManagerOptions } from "./visitors.js";
 import { computeGuideFleetSpawns } from "./guideFleetSpawns.js";
 
 /**
@@ -89,6 +89,16 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   private visitors!: VisitorManager;
   private disposed = false;
 
+  /**
+   * Free-list of previously-used `Agent` schema instances, reused across spawn/despawn
+   * cycles by `addAgent`/`removeAgent` below INSTEAD of `new Agent()` on every spawn --
+   * see `addAgent`'s doc comment for the full memory-leak story this closes. Bounded by
+   * construction: an instance only ever enters this pool via `removeAgent` (so its count
+   * can never exceed the historical peak of `state.agents.size`, itself capped at
+   * `MAX_AGENTS`), and `addAgent` always drains it before ever calling `new Agent()` again.
+   */
+  private readonly agentPool: Agent[] = [];
+
   /** Task 5.2: fleet-wide kill switch state -- see pause()/resume() below. */
   private paused = false;
 
@@ -103,10 +113,21 @@ export class WorldRoom extends Room<{ state: WorldState }> {
    * hand-placed test robots") would otherwise have to account for the real
    * `GUIDE_ROBOT_COUNT`-sized fleet this method seeds by default; production room creation
    * passes no options and gets the real fleet.
+   *
+   * `options.visitorManagerOptions` exists purely so `world/scripts/soaktest.ts` (the
+   * persistent-world memory-leak soak harness) can compress the simulated-visitor
+   * spawn-stagger/dwell timings to get far more spawn/despawn cycles per wall-clock minute
+   * than the real demo ever would, WITHOUT touching the shipped defaults in
+   * `simulatedVisitorSpawner.ts` -- production room creation passes no options and gets
+   * those real defaults untouched. Deliberately a passthrough of the whole
+   * `VisitorManagerOptions` bag (not individual named params) so a future option added to
+   * that type is automatically injectable here too. `simulatedTarget` inside it is still
+   * overridden by `disableSimulatedVisitors` below, same as before this option existed.
    */
   async onCreate(options?: {
     disableSimulatedVisitors?: boolean;
     disableGuideRobots?: boolean;
+    visitorManagerOptions?: VisitorManagerOptions;
   }): Promise<void> {
     // The world-server is the authoritative simulation (per
     // docs/superpowers/specs/2026-07-26-virtual-world-guide-fleet-design.md): Moses
@@ -164,7 +185,10 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       requestMoveTarget: (id, target) => this.crowd.requestMoveTarget(id, { x: target.x, y: 0, z: target.z }),
     };
     this.visitors = new VisitorManager(visitorHost, {
-      simulatedTarget: options?.disableSimulatedVisitors ? 0 : undefined,
+      ...options?.visitorManagerOptions,
+      simulatedTarget: options?.disableSimulatedVisitors
+        ? 0
+        : options?.visitorManagerOptions?.simulatedTarget,
     });
 
     this.setSimulationInterval((deltaMs) => this.update(deltaMs));
@@ -193,6 +217,27 @@ export class WorldRoom extends Room<{ state: WorldState }> {
    * failed/"world_at_capacity"; the simulated-visitor spawner just skips that spawn
    * attempt for the tick (its own `simulatedTarget` cap keeps it well under 128, so this
    * is not expected to actually fire there).
+   *
+   * Soak-test finding (world/scripts/soaktest.ts, the persistent-world memory-leak audit):
+   * this used to construct a brand-new `new Agent()` on every call. That leaks, at the
+   * @colyseus/schema layer, NOT anywhere in this room's own bookkeeping -- verified by a
+   * churn-isolation diagnostic (same tick count/duration, spawner enabled vs. disabled):
+   * +2.83MB heapUsed over 20,000 simulated seconds with the simulated-visitor spawner
+   * cycling agents through this method, vs. -0.03MB (pure GC noise) over the identical
+   * window with a static, never-added-to-after-boot population. Root cause (verified
+   * against the installed @colyseus/schema 4.0.30's
+   * node_modules/@colyseus/schema/build/index.mjs): the encoder-side `Root.remove()`
+   * deletes a removed reference's entry from its `changeTrees` map but only ZEROES (never
+   * deletes) its entry in `refCount`, a plain object keyed by an ever-incrementing integer
+   * `refId` that every `new Agent()` (and its nested `route` ArraySchema) consumes a fresh
+   * one of -- so every historical spawn leaves a permanently-dangling zero-count property
+   * behind, growing with total LIFETIME spawn count, not live population. `Root.add()`
+   * explicitly supports re-adding the SAME instance without minting a new refId (`if
+   * (ref[$refId] === undefined)` only assigns one the first time), so reusing Agent
+   * instances via `agentPool` (instead of fighting this inside a pinned third-party
+   * dependency) sidesteps the leak entirely: once the pool has been primed up to this
+   * room's peak concurrent agent count, `new Agent()` is never called again for the rest
+   * of the process's life.
    */
   addAgent(id: string, kind: "robot" | "visitor", spawn: { x: number; z: number }): boolean {
     if (this.state.agents.size >= MAX_AGENTS) {
@@ -210,12 +255,14 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       return false;
     }
 
-    const agent = new Agent();
+    const agent = this.agentPool.pop() ?? new Agent();
     agent.id = id;
     agent.kind = kind;
     agent.state = "idle";
     agent.x = spawn.x;
     agent.z = spawn.z;
+    agent.heading = 0;
+    if (agent.route.length > 0) agent.route.clear();
     this.state.agents.set(id, agent);
     return true;
   }
@@ -226,10 +273,18 @@ export class WorldRoom extends Room<{ state: WorldState }> {
    * it has walked back to the entrance, freeing its spawn slot. No-op if `id` isn't
    * tracked (mirrors `AgentCrowd.removeAgent`'s own no-op-on-unknown-id behavior, so a
    * double-despawn attempt can't throw).
+   *
+   * Returns the removed `Agent` instance to `agentPool` instead of letting it become
+   * garbage -- see `addAgent`'s doc comment for why reusing the instance (not just letting
+   * it get GC'd and constructing a fresh one next time) is what actually closes the
+   * @colyseus/schema refId leak this method's caller (the simulated-visitor spawner's
+   * despawn/respawn cycle) would otherwise trigger continuously for the life of the room.
    */
   removeAgent(id: string): void {
     this.crowd.removeAgent(id);
+    const agent = this.state.agents.get(id);
     this.state.agents.delete(id);
+    if (agent) this.agentPool.push(agent);
   }
 
   /**
@@ -266,6 +321,15 @@ export class WorldRoom extends Room<{ state: WorldState }> {
    * meant to let a caller check (e.g. `escortedVisitors === robotBindings`). */
   getVisitorDebugStats(): VisitorDebugStats {
     return this.visitors.getDebugStats();
+  }
+
+  /** Read-only crowd-side agent count, for `world/scripts/soaktest.ts` to check that
+   * `AgentCrowd`'s internal `byId`/`lastHeading` maps (crowd.ts) track `state.agents.size`
+   * 1:1 over many spawn/despawn cycles -- a divergence between the two would itself be
+   * evidence of a leak (an agent removed from one side but not the other), which
+   * `state.agents.size` alone can't reveal since it only ever sees the schema side. */
+  getCrowdAgentCount(): number {
+    return this.crowd.size;
   }
 
   /**

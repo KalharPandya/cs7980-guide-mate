@@ -54,6 +54,12 @@ function randomBetween(min: number, max: number): number {
   return min + Math.random() * (max - min);
 }
 
+/** Prefix for a slot-pooled simulated-visitor id (see `freeSlotIds`'s doc comment above) --
+ * shared between `tickSpawner` (mints `${SIM_VISITOR_ID_PREFIX}${slotId}`) and `despawn`
+ * (parses the slot id back out to release it), so the two stay in sync by construction
+ * instead of duplicating the format. */
+const SIM_VISITOR_ID_PREFIX = "sim-visitor-";
+
 /**
  * Maintains ~`simulatedTarget` concurrent simulated visitors and drives each one's
  * lifecycle end to end, delegating all guide-assignment/escort-binding/trailing work to
@@ -68,7 +74,50 @@ export class SimulatedVisitorSpawner {
   private readonly dwellMaxS: number;
 
   private spawnCooldownSeconds: number;
-  private nextSimulatedId = 0;
+
+  /**
+   * Soak-test finding (world/scripts/soaktest.ts, the persistent-world memory-leak audit):
+   * this used to be a single ever-incrementing `nextSimulatedId`, minting a BRAND NEW,
+   * NEVER-REUSED id string (`sim-visitor-0`, `sim-visitor-1`, ...) on every spawn for the
+   * life of the process. That leaks, at the @colyseus/schema layer: verified against the
+   * installed @colyseus/schema 4.0.30's node_modules/@colyseus/schema/build/index.mjs,
+   * `MapSchema#set()` allocates a fresh, ever-incrementing internal `index` for any key
+   * string it has never seen before (`changeTree.indexes[key] = index`), and only reclaims
+   * a deleted key's entry in `[$onEncodeEnd]()` -- which is called from inside
+   * `Encoder#encode()`, which `SchemaSerializer#applyPatches()`
+   * (node_modules/@colyseus/core/build/serializer/SchemaSerializer.mjs) SKIPS entirely
+   * whenever zero clients are connected (`if (numClients === 0) { ...; discardChanges();
+   * return false; }` -- `encode()` is never called on that path at all). So every
+   * spawn/despawn cycle that happens while nobody is watching the big screen (explicitly a
+   * scenario this room's persistence is meant to survive -- see WorldRoom.ts's
+   * `onCreate()` doc comment: "a browser refresh, a projector hiccup, or simply nobody
+   * currently watching") permanently grows `agents`'s (WorldState.ts) internal
+   * `changeTree.indexes` bookkeeping, keyed by the ever-unique visitor id string, for as
+   * long as the room runs.
+   *
+   * The fix: stop minting an unbounded id space for an inherently bounded resource (at
+   * most `simulatedTarget` concurrent simulated visitors exist at once, by
+   * `tickSpawner`'s own gate below). `freeSlotIds`/`nextSlotId` recycle a small, bounded
+   * pool of integer slot ids instead -- once the pool has been primed up to
+   * `simulatedTarget` (the initial ramp-up), every subsequent spawn reuses an id string a
+   * previously-despawned visitor already used, so `MapSchema#set()` takes its REPLACE path
+   * (reusing the existing `changeTree.indexes[key]` entry) instead of its ADD path (which
+   * is what mints a new one) -- no growth, independent of whether `$onEncodeEnd()` ever
+   * runs. Mirrors `WorldRoom.ts`'s `agentPool` (same soak test, same root cause category --
+   * @colyseus/schema leaking per NEW identity rather than per LIVE identity), just at the
+   * id-string layer instead of the schema-instance layer.
+   */
+  private readonly freeSlotIds: number[] = [];
+  private nextSlotId = 0;
+
+  private allocateSlotId(): number {
+    const reused = this.freeSlotIds.pop();
+    return reused ?? this.nextSlotId++;
+  }
+
+  private releaseSlotId(slotId: number): void {
+    this.freeSlotIds.push(slotId);
+  }
 
   constructor(host: VisitorHost, escorts: EscortManager, options: SimulatedVisitorSpawnerOptions = {}) {
     this.host = host;
@@ -123,7 +172,8 @@ export class SimulatedVisitorSpawner {
 
     if (this.countActiveSimulated() >= this.simulatedTarget) return;
 
-    const id = `sim-visitor-${this.nextSimulatedId++}`;
+    const slotId = this.allocateSlotId();
+    const id = `${SIM_VISITOR_ID_PREFIX}${slotId}`;
     const spawn = { x: this.host.plan.entrance.point[0], z: this.host.plan.entrance.point[1] };
     const added = this.host.addAgent(id, "visitor", spawn);
     if (!added) {
@@ -131,7 +181,10 @@ export class SimulatedVisitorSpawner {
       // well under MAX_AGENTS, so this isn't expected to fire in practice. Just skip
       // this spawn attempt for the tick rather than registering a visitor record for an
       // agent that was never actually added to the Crowd/schema; the next tickSpawner
-      // call (after spawnStaggerS) will retry.
+      // call (after spawnStaggerS) will retry. Release the slot id back to the pool first
+      // -- addAgent failing means this id was never actually claimed, so holding onto the
+      // slot would strand it forever.
+      this.releaseSlotId(slotId);
       console.warn(
         `SimulatedVisitorSpawner: addAgent refused "${id}" (world at capacity); skipping this spawn attempt`,
       );
@@ -229,9 +282,15 @@ export class SimulatedVisitorSpawner {
 
   /** Removes a simulated visitor entirely (both the Crowd/schema agent via the host, and
    * EscortManager's bookkeeping), freeing its spawn slot for a fresh visitor on a later
-   * `tickSpawner` call. */
+   * `tickSpawner` call. Also releases the id's numeric slot back to `freeSlotIds` -- see
+   * that field's doc comment for why recycling the id string (not just the Crowd/schema
+   * slot) is what actually closes the underlying @colyseus/schema leak. */
   private despawn(visitorId: string): void {
     this.escorts.removeVisitor(visitorId);
     this.host.removeAgent(visitorId);
+    if (visitorId.startsWith(SIM_VISITOR_ID_PREFIX)) {
+      const slotId = Number(visitorId.slice(SIM_VISITOR_ID_PREFIX.length));
+      if (Number.isInteger(slotId)) this.releaseSlotId(slotId);
+    }
   }
 }
