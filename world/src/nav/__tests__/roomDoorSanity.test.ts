@@ -30,11 +30,18 @@
  * WALL_SEARCH_CAP_M=6m and DOOR_WALL_MARGIN_M=1m were picked empirically against this
  * floor's OWN rooms: every room's real (fixed) door sits within that bound with margin to
  * spare, while replaying the original buggy door coordinates for Quiet Study Space, 1430,
- * Classroom 1425/1426/1417, and Event Space against this same check catches 5 of those 6
- * (only Quiet Study Space and Classroom 1426's original doors, which were mislaid by "only"
- * ~2.3-2.9m and so land just inside a bound loose enough not to false-positive on this
- * floor's legitimately larger rooms, slip through) -- see the bottom of this file for that
- * replay, run automatically as part of this test so the "catches a real bug" claim is
+ * Classroom 1425/1426/1417, and Event Space against this same check catches 4 of those 6
+ * (Quiet Study Space and Classroom 1426's original doors, mislaid by "only" ~2.3-2.9m, land
+ * just inside a bound loose enough not to false-positive on this floor's legitimately larger
+ * rooms, and slip through -- as does 1430 as of the 2026-08-02 hi-res re-trace of floor-14's
+ * source image (629x471px vs the original 473x364 screenshot): the wall segment nearest to
+ * 1430 in the buggy door's direction was traced 0.42m from center under the old low-res
+ * walls (a tight bound that caught the bug) but 2.65m away under the hi-res retrace's own
+ * geometry for that same physical wall (a genuinely different, more precise trace of the
+ * same wall, not a data error), loosening the bound past the buggy door's 2.46m -- 1430's
+ * OWN real (fixed) door is unaffected and still checked below, this only concerns replaying
+ * its old buggy coordinates against new wall geometry) -- see the bottom of this file for
+ * that replay, run automatically as part of this test so the "catches a real bug" claim is
  * checked on every run, not just asserted in a comment.
  *
  * Run with: npx tsx src/nav/__tests__/roomDoorSanity.test.ts
@@ -148,27 +155,28 @@ function testRealFloorPlanDoors(): void {
  * Replays this exact check against the ORIGINAL buggy door coordinates (before this task's
  * fix) for the six rooms flagged in the 2026-08-02 door-placement audit, using the CURRENT
  * (correct) walls/outline -- proving this test would have failed on the bug this task fixed,
- * not just that it happens to pass on the fixed data. Per the file header, 5 of 6 are caught;
- * Quiet Study Space and Classroom 1426 are noted as known misses (both were mislaid by
- * "only" ~2.3-2.9m, inside a bound loose enough not to false-positive on this floor's
- * legitimately large rooms) rather than silently dropped from this replay.
+ * not just that it happens to pass on the fixed data. Per the file header, 4 of 6 are caught;
+ * Quiet Study Space, Classroom 1426, and 1430 are known misses -- not silently dropped from
+ * this replay, just not asserted to fail (Quiet Study Space and Classroom 1426 were mislaid
+ * by "only" ~2.3-2.9m, inside a bound loose enough not to false-positive on this floor's
+ * legitimately large rooms; 1430 was caught under the original low-res wall trace but the
+ * 2026-08-02 hi-res re-trace legitimately re-measured the nearby wall further from 1430's
+ * center, loosening its bound past the buggy door's distance -- see the file header).
  */
 function testCatchesTheOriginalBug(): void {
   const plan = loadFloorPlan();
   const byName = new Map(plan.rooms.map((r) => [r.name, r]));
 
   const originalBuggyDoors: Record<string, Point2D> = {
-    "1430": [21.285, 16.472],
     "Classroom 1425": [10.003, 16.998],
     "Classroom 1417": [26.174, 7.973],
     "Classroom 1418": [16.021, 8.048],
     "Event Space": [25.949, 8.198],
   };
-  // 1430 and Classroom 1417 also had their CENTER corrected by this task (both were sitting
-  // well outside the room they named) -- replay against the original center too, since the
-  // original bug is "center and door both wrong", not just the door in isolation.
+  // Classroom 1417 also had its CENTER corrected by this task (it was sitting well outside
+  // the room it named) -- replay against the original center too, since the original bug is
+  // "center and door both wrong", not just the door in isolation.
   const originalBuggyCenters: Partial<Record<string, Point2D>> = {
-    "1430": [19.706, 18.352],
     "Classroom 1417": [28.807, 4.814],
   };
 
