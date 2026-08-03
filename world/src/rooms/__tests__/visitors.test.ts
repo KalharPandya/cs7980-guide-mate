@@ -133,17 +133,36 @@ async function testRequestGuideConvergenceAndTrailing(): Promise<void> {
   room.setSimulationInterval();
 
   const plan = loadFloorPlan();
-  const room1425 = plan.rooms.find((r) => r.name === "Classroom 1425");
-  const room1426 = plan.rooms.find((r) => r.name === "Classroom 1426");
-  assert.ok(room1425, "floor-14.json should contain 'Classroom 1425'");
-  assert.ok(room1426, "floor-14.json should contain 'Classroom 1426'");
-  const [doorX, doorZ] = room1425!.door;
+  // Origin/destination picked to be a genuinely LONG trip, not a short hop. floor-14.json
+  // was re-traced from the recovered original floor-plan image (commits 50bb024, 7e4fe67)
+  // and came out architecturally accurate -- Classroom 1425's and 1426's doors, which this
+  // test used to escort between, turned out to be only ~3.5m apart in the real geometry
+  // (vs. the old eyeballed map's much bigger gap). A ~3.5m trip is mostly spent untangling
+  // the robot and visitor from their shared spawn point (Detour local avoidance takes
+  // ~1.3s to separate two agents spawned on top of each other) before the robot even
+  // arrives, which starved the net-displacement assertion below of any real trip to
+  // measure -- not a trailing-logic bug (verified: over THIS long trip the visitor trails
+  // properly, stays behind, and never collapses onto the robot; see the escort-manager
+  // investigation notes in docs/superpowers/plans/2026-07-26-virtual-world-progress.md).
+  // Wellness Room and Event Space sit on opposite sides of the building core, ~17m apart
+  // door-to-door (measured below), giving the escort a real trip to trail over.
+  const originRoom = plan.rooms.find((r) => r.name === "Wellness Room");
+  const destRoom = plan.rooms.find((r) => r.name === "Event Space");
+  assert.ok(originRoom, "floor-14.json should contain 'Wellness Room'");
+  assert.ok(destRoom, "floor-14.json should contain 'Event Space'");
+  const [doorX, doorZ] = destRoom!.door;
+  const doorToDoorDistance = Math.hypot(doorX - originRoom!.door[0], doorZ - originRoom!.door[1]);
+  assert.ok(
+    doorToDoorDistance > 10,
+    `test setup: Wellness Room -> Event Space should be a genuinely long trip (>10m); ` +
+      `got ${doorToDoorDistance.toFixed(2)}m door-to-door -- pick a farther-apart pair if floor-14.json changed`,
+  );
 
   // Spawn robot-b/visitor-b together near a DIFFERENT room's door (not the entrance, where
   // WorldRoom's own seeded TEST_AGENT_ID robot sits) so robot-b is unambiguously the
   // nearest idle robot to visitor-b -- proving the "nearest idle robot" selection, not just
   // "the only robot that exists".
-  const spawnPoint = { x: room1426!.door[0], z: room1426!.door[1] };
+  const spawnPoint = { x: originRoom!.door[0], z: originRoom!.door[1] };
   room.addAgent("robot-b", "robot", spawnPoint);
   room.addAgent("visitor-b", "visitor", spawnPoint);
 
@@ -151,10 +170,10 @@ async function testRequestGuideConvergenceAndTrailing(): Promise<void> {
     agents: Map<string, { x: number; z: number; state: string }>;
   };
 
-  const result = room.requestGuide("visitor-b", "Classroom 1425");
+  const result = room.requestGuide("visitor-b", "Event Space");
   assert.ok(result, "requestGuide should succeed when an idle robot is available");
-  assert.equal(result!.robotId, "robot-b", "requestGuide should pick the nearest idle robot (robot-b, not the distant seeded test robot)");
-  console.log(`PASS: requestGuide("visitor-b", "Classroom 1425") assigned robot "${result!.robotId}"`);
+  assert.equal(result!.robotId, "robot-b", "requestGuide should pick the nearest idle robot (robot-b, not one of the 50 seeded fleet robots)");
+  console.log(`PASS: requestGuide("visitor-b", "Event Space") assigned robot "${result!.robotId}"`);
 
   let statsAfterBind = room.getVisitorDebugStats();
   assert.equal(statsAfterBind.escortedVisitors, 1, "exactly one visitor should be escorted right after a successful requestGuide");
@@ -162,7 +181,13 @@ async function testRequestGuideConvergenceAndTrailing(): Promise<void> {
 
   const visitorStart = { ...state.agents.get("visitor-b")! };
 
-  const MAX_TICKS = 2000; // matches WorldRoom.test.ts's convergence budget
+  // 3000 ticks * 16.6ms = ~49.8s simulated. The full 50-robot guide fleet (seeded by this
+  // scenario's onCreate, not disabled) is scattered across the floor per guideFleetSpawns.ts
+  // and adds real local-avoidance congestion along the way -- measured at ~25.9s to converge
+  // over this Wellness-Room-to-Event-Space trip with that fleet present, so this budget
+  // keeps ~90% headroom rather than the ~7s WorldRoom.test.ts's shorter-trip 2000-tick
+  // budget would leave.
+  const MAX_TICKS = 3000;
   let robotDoorDist = Infinity;
   let visitorMovedTotal = 0;
   let sawNonTrivialSeparation = false;
@@ -189,21 +214,30 @@ async function testRequestGuideConvergenceAndTrailing(): Promise<void> {
 
   assert.ok(
     robotDoorDist <= DOOR_TOLERANCE_M,
-    `assigned robot did not converge within ${DOOR_TOLERANCE_M}m of Classroom 1425's door; last distance ${robotDoorDist.toFixed(2)}m`,
+    `assigned robot did not converge within ${DOOR_TOLERANCE_M}m of Event Space's door; last distance ${robotDoorDist.toFixed(2)}m`,
   );
-  console.log(`PASS: assigned robot "robot-b" converged to within ${robotDoorDist.toFixed(2)}m of Classroom 1425's door`);
+  console.log(`PASS: assigned robot "robot-b" converged to within ${robotDoorDist.toFixed(2)}m of Event Space's door`);
 
   const visitorNetDisplacement = Math.hypot(
     lastVisitorPos.x - visitorStart.x,
     lastVisitorPos.z - visitorStart.z,
   );
+  // Thresholds are stated as fractions of the ACTUAL door-to-door distance (not a flat
+  // meter figure) so this stays meaningful regardless of which room pair is used above --
+  // a flat "> 0.5m" is exactly what silently passed on a short trip while proving nothing.
+  // Observed on this Wellness-Room-to-Event-Space trip (~17m door-to-door, 50-robot fleet
+  // present): visitor moved ~27.8m total, net displacement ~16.7m -- both comfortably clear
+  // these fractional bars, which is the point: a visitor genuinely trailing a robot across
+  // real distance blows past "meaningfully away from spawn", it doesn't barely clear it.
   assert.ok(
-    visitorMovedTotal > 1.0,
-    `visitor-b should have covered real distance while trailing the robot (moved ${visitorMovedTotal.toFixed(2)}m total) -- not stationary`,
+    visitorMovedTotal > doorToDoorDistance,
+    `visitor-b should have covered at least the door-to-door distance (${doorToDoorDistance.toFixed(2)}m) while ` +
+      `trailing the robot (moved ${visitorMovedTotal.toFixed(2)}m total) -- not stationary`,
   );
   assert.ok(
-    visitorNetDisplacement > 0.5,
-    `visitor-b's net displacement (${visitorNetDisplacement.toFixed(2)}m) should be meaningfully away from its spawn point`,
+    visitorNetDisplacement > doorToDoorDistance * 0.5,
+    `visitor-b's net displacement (${visitorNetDisplacement.toFixed(2)}m) should be a meaningful fraction of the ` +
+      `${doorToDoorDistance.toFixed(2)}m trip (> ${(doorToDoorDistance * 0.5).toFixed(2)}m), not stuck near its spawn point`,
   );
   assert.ok(sawNonTrivialSeparation, "visitor-b should stay a real trailing distance behind robot-b, not overlap it");
   console.log(
