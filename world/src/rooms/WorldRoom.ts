@@ -103,6 +103,25 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   private paused = false;
 
   /**
+   * Optional per-section timing hook, set ONLY by scripts/frametest.ts's harness (the
+   * true full-frame-cost measurement task) -- no production code path ever sets this.
+   * `undefined` on every real request (world/src/index.ts never touches it), and update()
+   * below pays exactly one falsy property read per section boundary when it's unset --
+   * zero `process.hrtime.bigint()` calls happen at all in that case, so this is a no-op on
+   * the production path, not a permanent instrumentation cost.
+   *
+   * This exists because crowd.tick() / the schema sync loop / visitors.tick() run as three
+   * back-to-back sections of ONE method with no external seam a caller could time
+   * separately without either duplicating update()'s body outside this class (real drift
+   * risk: a later change to update() would silently desync the copy) or reaching into
+   * private fields to hand-reconstruct it (same drift risk, worse -- it could also silently
+   * desync from update()'s actual control flow, e.g. the pause() early return above). A
+   * tiny opt-in hook inside the real method avoids both failure modes: the code path
+   * measured is always the exact code path production runs.
+   */
+  onUpdateSectionTiming?: (section: "crowdTick" | "schemaSync" | "visitorsTick", ms: number) => void;
+
+  /**
    * `options.disableSimulatedVisitors` exists purely for test isolation (Task 4.1's
    * requestGuide/no-double-assignment tests want to bind specific known robots without the
    * background simulated-visitor spawner also competing for them); production room
@@ -473,8 +492,13 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     if (this.paused) return;
 
     const dtSeconds = Math.min(deltaMs / 1000, MAX_TICK_SECONDS);
-    const snapshots = this.crowd.tick(dtSeconds);
+    const timingHook = this.onUpdateSectionTiming;
 
+    const crowdStartNs = timingHook ? process.hrtime.bigint() : 0n;
+    const snapshots = this.crowd.tick(dtSeconds);
+    if (timingHook) timingHook("crowdTick", Number(process.hrtime.bigint() - crowdStartNs) / 1e6);
+
+    const syncStartNs = timingHook ? process.hrtime.bigint() : 0n;
     for (const snap of snapshots) {
       const agent = this.state.agents.get(snap.id);
       if (!agent) continue;
@@ -492,11 +516,14 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       }
       agent.state = nextState;
     }
+    if (timingHook) timingHook("schemaSync", Number(process.hrtime.bigint() - syncStartNs) / 1e6);
 
     // Task 4.1: escort trailing/arrival + the simulated-visitor spawner. Must run AFTER
     // the crowd tick + schema sync above -- see VisitorManager.tick's doc comment for why
     // that ordering is load-bearing for arrival detection, not just a style choice.
+    const visitorsStartNs = timingHook ? process.hrtime.bigint() : 0n;
     this.visitors.tick(dtSeconds);
+    if (timingHook) timingHook("visitorsTick", Number(process.hrtime.bigint() - visitorsStartNs) / 1e6);
   }
 
   onJoin(client: Client): void {

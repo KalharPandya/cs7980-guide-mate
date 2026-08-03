@@ -411,6 +411,28 @@ Task 1.3's actual 95-agent load test, `node --import tsx scripts/loadtest.ts` in
     At real 60Hz pacing (16.6ms between ticks, not back-to-back), that's roughly
     **0.58/16.6 ≈ 3.5% of one core**, sustained, for the crowd-sim work alone; the 100%-of-one-core
     figure above is the unpaced-benchmark ceiling, not what production pacing would show.
+  - **CORRECTED, 2026-08-03: that per-tick figure is `AgentCrowd.tick()` ALONE, not the real
+    per-frame server cost.** `loadtest.ts`'s own doc comment always scoped it that way (for
+    comparability with `crowd.test.ts`'s 1-agent baseline), but it had been quoted here and in
+    the risk register as if it were what `WorldRoom.update()` costs every tick -- it isn't.
+    `update()` also runs the per-agent Colyseus schema sync loop and `VisitorManager.tick()`
+    (escort trailing + the simulated-visitor spawner, including any off-tick
+    `moveAgentTo`/`computePath` route-recomputation calls). Measured directly with a new
+    harness, `world/scripts/frametest.ts` (`npm run test:frame`), at the real 95-agent steady
+    state (50 guide robots + the real, uncompressed 45-visitor spawner target), on this same
+    dev machine: true full-frame `WorldRoom.update()` cost was **avg 0.534ms, max 1.482ms, p95
+    0.640ms, 0/7500 ticks over the 16.6ms budget** -- breakdown: crowdTick ~88% of that
+    (avg 0.471ms, matching the crowd-only figure above), schemaSync ~8% (avg 0.043ms),
+    visitorsTick ~4% (avg 0.020ms). Route recomputation (`computePath`, off-tick, fires from
+    `moveAgentTo`): ~0.02ms/call in isolation, ~3.8 calls/sim-second organically at steady
+    state, and a deliberate worst-case burst (all 50 guide robots re-tasked back to back in one
+    synchronous block, simulating every escort ending and re-assigning in the same tick) cost
+    **+1.85ms total** -- still well under the 16.6ms budget even stacked on top of a normal
+    tick's cost. Verdict: the true per-frame cost is materially different from the crowd-only
+    figure (0.53ms vs. 0.48-0.58ms is close in absolute terms here, but is a different quantity
+    covering strictly more work), and it remains comfortably under budget on this machine. See
+    `world/scripts/frametest.ts`'s own doc comment and printed output for the full breakdown
+    and methodology.
   - **Combined idle RSS** (`agent_service` + `world-server`, excluding Caddy/OS): **~166 MB**,
     a small fraction of the t3.large's 8 GB, comfortable headroom on memory.
 - **Compared against the existing 85% CPU alarm threshold** (`guidemate-poc-ec2-cpu`,

@@ -23,6 +23,20 @@
  * ticks, as a sanity check that this is measuring real crowd steering/avoidance work and
  * not 95 no-op agents.
  *
+ * IMPORTANT SCOPING NOTE, added after this number got quoted around the project as if it
+ * were the per-frame server cost (it was not, and `docs/agent-poc/access-ground-truth.md`
+ * plus the risk register have been corrected accordingly): the ~0.47-0.49ms/tick avg this
+ * script reports is `AgentCrowd.tick()` ALONE. The real per-frame cost is the whole of
+ * `WorldRoom.update()`, which also runs the per-agent Colyseus schema sync loop and
+ * `VisitorManager.tick()` (escort trailing + the simulated-visitor spawner, including any
+ * off-tick `moveAgentTo`/`computePath` route-recomputation calls that happen to fire that
+ * tick) -- none of which this script touches. See `scripts/frametest.ts` for that
+ * full-frame measurement, broken down section by section, plus the route-recomputation
+ * worst-case burst cost. On the dev machine both scripts were run on, the true full-frame
+ * `WorldRoom.update()` average was ~0.53ms/tick (vs. this script's ~0.47-0.49ms/tick
+ * crowd-only figure) -- still comfortably under the 16.6ms budget, but a materially
+ * different number from what this script alone reports.
+ *
  * Run with: npx tsx scripts/loadtest.ts
  */
 import assert from "node:assert/strict";
