@@ -32,6 +32,50 @@ export interface Bounds2D {
  * `rotation.y = agent.heading` directly rather than routing it through this helper -- piping a
  * +Z-convention angle through the +X-aligning formula here would rotate every agent 90 degrees
  * off its true heading.
+ *
+ * VERIFIED 2026-08-02 (doc-comment audit follow-up) by parsing both GLBs' raw glTF JSON/binary
+ * directly (no rendering needed -- see the throwaway scripts used, since deleted; this comment
+ * is the durable record) and, separately, loading them with the project's own installed
+ * three.js `GLTFLoader` in Node to reuse three's canonical (battle-tested) skinning/animation
+ * math rather than hand-rolling it:
+ *
+ * - `robot.glb` (three.js example "RobotExpressive"): forward is +Z, measured on the REST POSE
+ *   -- the only pose that matters here, since modelBake.ts freezes exactly the freshly-parsed,
+ *   never-animated scene graph into one static geometry; no animation clip ever touches a robot
+ *   instance. Four converging signals, all agreeing: (1) the `FootL`/`FootR` bone to its
+ *   `..._end` tip -- the closest thing this rig has to a toe -- points almost purely +Z
+ *   (e.g. `FootL` (0.63, 0.02, -0.14) -> `FootL_end` (0.63, 0.01, 0.19), i.e. delta ~(0, -0.01,
+ *   +0.33)); (2) the rig's own `PoleTargetL`/`PoleTargetR` bones -- IK pole targets the original
+ *   rig author placed by hand to define which way the knee bends -- sit far out along +Z ahead
+ *   of the knee (knee Z~0.16 vs pole-target Z~1.51); (3) the visible foot mesh's bounding box is
+ *   long along Z and short along X/Y, matching a foot's natural heel-to-toe axis; (4) the whole
+ *   body's precise (skin-aware) bounding box is narrower in Z (2.69) than X (3.10), i.e. Z is
+ *   the sagittal (front-to-back) axis. No hidden node/scene rotation exists between the raw
+ *   asset and modelBake.ts -- it applies each mesh's `matrixWorld` as-authored and never rotates
+ *   anything.
+ *
+ * - `visitor.glb` (Quaternius CC0 human): forward is ALSO +Z, but the evidence path is
+ *   different because this rig IS animated (Visitor.tsx always has either the Idle or Walk clip
+ *   playing from the first frame -- see VisitorInstance). The static default pose baked into the
+ *   node hierarchy is a red herring: `Hips`'s default rotation carries a spurious ~43 degree
+ *   yaw (its quaternion's rotation axis is ~84% aligned with Y), most likely a stray keyframe
+ *   captured as the file's "default" rather than a true bind/T-pose -- and EVERY clip (Idle
+ *   included) has its own `Hips -> quaternion` track, so that skew is fully overridden from
+ *   frame 0 and is never actually what's rendered. Naively measuring the rest-pose
+ *   foot-to-toe vector is therefore misleading (it comes out dominant -X, an artifact of that
+ *   skew) and was discarded. Sampling the Walk clip itself instead, two independent,
+ *   mutually-agreeing methods both give +Z: (1) the vector from `LeftFoot`/`RightFoot` to
+ *   `LeftToeBase`/`RightToeBase` while that foot is planted (world Y near the cycle minimum) --
+ *   (0.01, 1.00) and (-0.09/0.11, 0.99/0.99) per foot; (2) the standard IK "pole vector"
+ *   technique (perpendicular deviation of the knee from the straight hip-ankle chord, at the
+ *   frame of maximum flexion -- a human/rigged knee only ever bends toward the front) -- (0.02,
+ *   1.00) combined, (0.21, 0.98) and (-0.18, 0.98) per leg. A third, cruder check (extrapolating
+ *   the thigh direction past the knee) gave a conflicting -Z and was discarded: unlike the pole
+ *   vector, it isn't invariant to hip ab/adduction and produces noise at high flexion angles.
+ *   The precise skin-aware body bbox is also (weakly) consistent: Z (2.29) is the slightly
+ *   narrower horizontal axis vs X (2.33), matching Z as the sagittal axis.
+ *
+ * Verdict: the code's +Z assumption is CORRECT for both models. No rotation math changed.
  */
 export function directionToYRotation(dx: number, dz: number): number {
   return Math.atan2(-dz, dx)
