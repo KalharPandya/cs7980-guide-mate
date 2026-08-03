@@ -1,0 +1,10 @@
+{
+  "cmd_id": "fixture-assign-cmd-001",
+  "type": "assign",
+  "name": "assign",
+  "params": {
+    "visitor_id": "moses-assign-chain-test-visitor",
+    "room": "1408"
+  },
+  "ts": "2026-08-03T00:00:00+00:00"
+}
