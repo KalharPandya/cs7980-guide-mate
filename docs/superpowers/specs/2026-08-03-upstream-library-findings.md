@@ -41,7 +41,7 @@ after the pool warms to peak concurrent agent count, `new Agent()` is never call
 **Severity for us: real, and specifically nasty because it only fires when nobody is watching.**
 
 `MapSchema#set()` allocates a fresh internal index for any key string it has not seen before.
-That index is reclaimed by `$onEncodeEnd()` — but `SchemaSerializer#applyPatches()` skips
+That index is reclaimed by `$onEncodeEnd()`, but `SchemaSerializer#applyPatches()` skips
 `$onEncodeEnd()` entirely when there are **no connected clients**.
 
 So a room that keeps simulating while unobserved accumulates map indexes forever. This is exactly
@@ -66,7 +66,7 @@ hits this.
 
 ## 3. `@react-three/drei` `useAnimations`: cleanup calls `uncacheAction` with the wrong argument type
 
-**Severity for us: none. Reporting is optional and low-value — see below.**
+**Severity for us: none. Reporting is optional and low-value, see below.**
 
 `useAnimations`' unmount cleanup (`node_modules/@react-three/drei/core/useAnimations.js`) calls:
 
@@ -76,7 +76,7 @@ mixer.uncacheAction(action, currentRoot)
 
 passing an `AnimationAction`. three.js's `AnimationMixer#uncacheAction(clip, root)`
 (`node_modules/three/src/animation/AnimationMixer.js`) expects an `AnimationClip`. `AnimationAction`
-has no `.uuid`, so `existingAction()` cannot resolve it and the call is a **silent no-op** — no
+has no `.uuid`, so `existingAction()` cannot resolve it and the call is a **silent no-op**, no
 error, no warning.
 
 **Evidence (empirical, against `three@0.185.1`):** after the drei-style call,
@@ -100,7 +100,7 @@ a plausible enough usage to be worth a drive-by issue, but it is not our bug and
 ## If reporting these
 
 Each section above has the file path, the approximate location, the mechanism, and reproducible
-evidence at the pinned version. Worth checking the projects' current `main` first — all three were
+evidence at the pinned version. Worth checking the projects' current `main` first, all three were
 found against the versions this repo pins (`@colyseus/schema` 4.0.30, `three` 0.185.1, and drei as
 pinned in `world-client/package.json`), and any of them may already be fixed upstream.
 
