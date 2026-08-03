@@ -288,7 +288,8 @@
         15.508
       ],
       "height": 2.7,
-      "glass": false
+      "glass": true,
+      "note": "Design judgment, not surveyed fact: the source line drawing does not distinguish glass from solid (checked, no dash/line-style difference found here or on any other wall this floor). Glassed to match the spec's 'glass walls' requirement and the previous hand-authored map's intent (98831ba: '1408 - north wall, glass toward Event Space'). In the corrected geometry this wall (with walls[7], the near-parallel outer face, and the short corner-jog walls[48]/[51]) is the Kitchen/1407/1408 cluster's front against Event Space -- the interior-facing side, not the exterior facade."
     },
     {
       "a": [
@@ -336,7 +337,8 @@
         16.105
       ],
       "height": 2.7,
-      "glass": false
+      "glass": true,
+      "note": "Design judgment, not surveyed fact (see walls[3]'s note for the full rationale). This is the outer/near-parallel face of the same Kitchen/1407/1408-vs-Event-Space wall run as walls[3] -- glassed together with it (plus the corner-jog walls[48]/[51]) so the front reads as one continuous glass wall rather than alternating glass/solid strips."
     },
     {
       "a": [
@@ -828,7 +830,8 @@
         16.998
       ],
       "height": 2.7,
-      "glass": false
+      "glass": true,
+      "note": "Design judgment, not surveyed fact (see walls[3]'s note). Short corner-jog cap connecting walls[3]/[7]'s two offset faces where the Event-Space-facing wall steps out; glassed with them so the run has no solid gap."
     },
     {
       "a": [
@@ -864,7 +867,8 @@
         17.205
       ],
       "height": 2.7,
-      "glass": false
+      "glass": true,
+      "note": "Design judgment, not surveyed fact (see walls[3]'s note). Short corner-jog cap connecting walls[3]/[7]'s two offset faces where the Event-Space-facing wall steps out; glassed with them so the run has no solid gap."
     },
     {
       "a": [
@@ -948,7 +952,8 @@
         11.958
       ],
       "height": 2.7,
-      "glass": false
+      "glass": true,
+      "note": "Design judgment, not surveyed fact: the source line drawing does not distinguish glass from solid (checked, no dash/line-style difference found here or on any other wall this floor). Glassed to match the spec's 'glass walls' requirement and the previous hand-authored map's intent (98831ba: 'Kitchen - east wall, glass front toward North Collaboration Space'). In the corrected geometry Kitchen's distinguishing wall is this curved west arc, which faces the open central corridor by the building entrance, not North Collaboration Space (that space sits on Kitchen/1407/1408's south side, which per the source has no enclosing wall at all -- open-plan, like North/South Collaboration Space generally -- so there is nothing to glass on that side)."
     },
     {
       "a": [
