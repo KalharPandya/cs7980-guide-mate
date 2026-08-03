@@ -4,7 +4,7 @@ import type { Agent } from "./schema/WorldState.js";
 import type { BuiltNavMesh, RoomTarget } from "../nav/buildNavMesh.js";
 import type { FloorPlan } from "../nav/loadFloorPlan.js";
 import { EscortManager } from "./escortManager.js";
-import type { RequestGuideResult } from "./escortManager.js";
+import type { EscortOutcome, RequestGuideResult } from "./escortManager.js";
 import { SimulatedVisitorSpawner } from "./simulatedVisitorSpawner.js";
 import type { SimulatedVisitorSpawnerOptions } from "./simulatedVisitorSpawner.js";
 
@@ -58,6 +58,9 @@ export interface VisitorHost {
 
 export interface VisitorManagerOptions extends SimulatedVisitorSpawnerOptions {
   escortTimeoutSeconds?: number;
+  /** See `EscortOutcome`'s doc comment in escortManager.ts -- passthrough to
+   * `EscortManager`'s constructor option of the same name. */
+  onEscortOutcome?: (outcome: EscortOutcome) => void;
 }
 
 export interface VisitorDebugStats {
@@ -72,6 +75,11 @@ export interface VisitorDebugStats {
    * `escortedVisitors` -- if it doesn't, the two sides of the binding have drifted, which
    * would mean a robot is (or isn't) escorting without a matching visitor-side record. */
   robotBindings: number;
+  /** See `EscortDebugStats.completedEscorts`'s doc comment (escortManager.ts) -- lifetime
+   * running counter, cheap to read, not a per-completion log line. */
+  completedEscorts: number;
+  /** See `EscortDebugStats.timedOutEscorts`'s doc comment (escortManager.ts). */
+  timedOutEscorts: number;
 }
 
 /**
@@ -88,6 +96,7 @@ export class VisitorManager {
       escortTimeoutSeconds: options.escortTimeoutSeconds,
       dwellMinSeconds: options.dwellMinSeconds,
       dwellMaxSeconds: options.dwellMaxSeconds,
+      onEscortOutcome: options.onEscortOutcome,
     });
     this.spawner = new SimulatedVisitorSpawner(host, this.escorts, {
       simulatedTarget: options.simulatedTarget,
@@ -114,6 +123,8 @@ export class VisitorManager {
       simulatedActive: this.spawner.countActiveSimulated(),
       escortedVisitors: escortStats.escortedVisitors,
       robotBindings: escortStats.robotBindings,
+      completedEscorts: escortStats.completedEscorts,
+      timedOutEscorts: escortStats.timedOutEscorts,
     };
   }
 

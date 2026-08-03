@@ -25,6 +25,7 @@
     "test:frame": "tsx scripts/frametest.ts",
     "test:soak": "tsx --expose-gc scripts/soaktest.ts",
     "test:pool": "tsx scripts/pooltest.ts",
+    "test:escort": "tsx scripts/escorttest.ts",
     "test:reconnect": "tsx scripts/reconnecttest.ts",
     "generate:conformance-fixture": "python ../shared/guidemate_msgs/scripts/generate_conformance_fixture.py",
     "test:all": "npm run test && npm run test:persistence && npm run test:nav && npm run test:crowd && npm run test:visitors && npm run test:iot && npm run test:wire-conformance && npm run test:assign-chain"

@@ -192,10 +192,44 @@ const TRAIL_HISTORY_SAMPLES = Math.max(
 const DWELL_MIN_S = 3;
 const DWELL_MAX_S = 8;
 
+/**
+ * Fires once per escort ending, right before the binding is released (`tick()` has the
+ * robot/visitor positions and the arrival/timeout verdict in hand at exactly that point --
+ * see `tick()`'s call site). Optional, no-op by default, same "opt-in instrumentation hook
+ * inside the real method" convention as `WorldRoom.ts`'s `onUpdateSectionTiming` -- no
+ * production code path sets this, so it costs one falsy-property check per escort ending on
+ * the real server. Exists so a measurement harness (see `scripts/escorttest.ts`) can collect
+ * the full completed-vs-timed-out distribution (durations, final separation) without
+ * per-completion `console.log` noise at ~45 concurrent visitors -- see that script's header
+ * for why this was needed: `EscortManager` used to log ONLY on timeout, so nobody could tell
+ * a healthy minority of timeouts apart from most escorts failing.
+ */
+export interface EscortOutcome {
+  readonly visitorId: string;
+  readonly robotId: string;
+  readonly outcome: "completed" | "timed_out";
+  /** `visitor.escortElapsedSeconds` at the moment the binding ended -- simulated time, so
+   * this is correct-by-construction across a pause (see `tick()`'s doc comment). */
+  readonly durationSeconds: number;
+  /** Robot-to-visitor distance at the moment the binding ended. For a completed escort this
+   * is by definition `<= VISITOR_ARRIVAL_DISTANCE_M`; for a timeout it's whatever the gap
+   * genuinely was, which is the number that answers "did the visitor almost make it, or was
+   * it never following at all". */
+  readonly separationM: number;
+  /** Whether the ROBOT half of `arrived` (`robotIdleAtDestination`) was true at the moment
+   * the binding ended -- lets a caller tell "robot arrived, visitor just didn't catch up in
+   * time" apart from "robot itself never finished its own trip either". Always `true` for a
+   * completed escort (both halves of `arrived` are required); may be `true` or `false` for a
+   * timeout. */
+  readonly robotIdleAtDestination: boolean;
+}
+
 export interface EscortManagerOptions {
   escortTimeoutSeconds?: number;
   dwellMinSeconds?: number;
   dwellMaxSeconds?: number;
+  /** See `EscortOutcome`'s doc comment. */
+  onEscortOutcome?: (outcome: EscortOutcome) => void;
 }
 
 /** The subset of `VisitorDebugStats` (see visitors.ts) this module can answer on its own --
@@ -210,6 +244,19 @@ export interface EscortDebugStats {
    * `escortedVisitors` -- if it doesn't, the two sides of the binding have drifted, which
    * would mean a robot is (or isn't) escorting without a matching visitor-side record. */
   robotBindings: number;
+  /** Lifetime count (since this `EscortManager` was constructed) of escorts that ended via
+   * genuine arrival (`arrived` in `tick()`) -- a cheap running counter, not a per-completion
+   * log line, so it stays safe to read cheaply from ops tooling/tests without flooding the
+   * log at ~45 concurrent visitors. Pairs with `timedOutEscorts` below to answer "what
+   * fraction of escorts actually complete" without needing to reconstruct it from log lines
+   * (the old `console.warn`-on-timeout-only behavior this replaces made that fraction
+   * unanswerable -- see `scripts/escorttest.ts`'s header for the investigation this closed). */
+  completedEscorts: number;
+  /** Lifetime count (since this `EscortManager` was constructed) of escorts that ended via
+   * the `ESCORT_TIMEOUT_S` safety valve. Still logged once per occurrence via
+   * `console.warn` (unchanged -- a timeout is an anomaly worth a log line on its own), but
+   * this counter is what lets a caller see the RATE without grepping/counting log lines. */
+  timedOutEscorts: number;
 }
 
 function randomBetween(min: number, max: number): number {
@@ -250,6 +297,12 @@ export class EscortManager {
   private readonly escortTimeoutS: number;
   private readonly dwellMinS: number;
   private readonly dwellMaxS: number;
+  private readonly onEscortOutcome?: (outcome: EscortOutcome) => void;
+
+  /** Lifetime running counters backing `EscortDebugStats.completedEscorts`/`timedOutEscorts`
+   * -- see those fields' doc comments. */
+  private completedEscorts = 0;
+  private timedOutEscorts = 0;
 
   /** Every visitor this subsystem knows about, keyed by visitor id. Single source of truth
    * per visitor (see VisitorRecord's doc comment). Shared with simulatedVisitorSpawner.ts
@@ -267,6 +320,7 @@ export class EscortManager {
     this.escortTimeoutS = options.escortTimeoutSeconds ?? ESCORT_TIMEOUT_S;
     this.dwellMinS = options.dwellMinSeconds ?? DWELL_MIN_S;
     this.dwellMaxS = options.dwellMaxSeconds ?? DWELL_MAX_S;
+    this.onEscortOutcome = options.onEscortOutcome;
   }
 
   /**
@@ -398,6 +452,8 @@ export class EscortManager {
       totalVisitors: this.visitors.size,
       escortedVisitors: escorted,
       robotBindings: this.robotToVisitor.size,
+      completedEscorts: this.completedEscorts,
+      timedOutEscorts: this.timedOutEscorts,
     };
   }
 
@@ -469,7 +525,22 @@ export class EscortManager {
             `EscortManager: escort timeout for visitor "${visitor.id}" / robot "${visitor.robotId}" ` +
               `after ${visitor.escortElapsedSeconds.toFixed(1)}s -- releasing binding`,
           );
+          this.timedOutEscorts++;
+        } else {
+          this.completedEscorts++;
         }
+        // Deliberately fires BEFORE endEscort() below -- endEscort() nulls visitor.robotId
+        // and resets escortElapsedSeconds, and this hook's whole point (see EscortOutcome's
+        // doc comment) is to report the state the escort actually ended in, not the reset
+        // state right after.
+        this.onEscortOutcome?.({
+          visitorId: visitor.id,
+          robotId: visitor.robotId,
+          outcome: timedOut ? "timed_out" : "completed",
+          durationSeconds: visitor.escortElapsedSeconds,
+          separationM: Math.hypot(visitorAgent.x - robotAgent.x, visitorAgent.z - robotAgent.z),
+          robotIdleAtDestination,
+        });
         this.endEscort(visitor);
         continue;
       }
