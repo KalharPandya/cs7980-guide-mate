@@ -21,6 +21,7 @@
     "test:iot:integration": "tsx src/iot/__tests__/bridge.integration.test.ts",
     "test:load": "tsx scripts/loadtest.ts",
     "test:soak": "tsx --expose-gc scripts/soaktest.ts",
+    "test:pool": "tsx scripts/pooltest.ts",
     "test:all": "npm run test && npm run test:persistence && npm run test:nav && npm run test:crowd && npm run test:visitors && npm run test:iot"
   },
   "dependencies": {
