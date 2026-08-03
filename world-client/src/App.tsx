@@ -5,7 +5,7 @@ import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import type { MapControls as MapControlsImpl } from 'three-stdlib'
 
-import { useWorldRoom } from './net/useWorldRoom'
+import { useWorldRoom, type ConnectionStatus } from './net/useWorldRoom'
 import { useFloorPlan } from './net/useFloorPlan'
 import { AgentInstances } from './scene/AgentInstances'
 import { RouteLines } from './scene/RouteLine'
@@ -66,8 +66,74 @@ const SHADOW_MARGIN_M = 6
  */
 const SHADOW_HEIGHT_PAD_M = 3
 
+/**
+ * Task 5.5: labels/colors for useWorldRoom()'s `status` (see net/useWorldRoom.ts's
+ * ConnectionStatus doc comment for what each value means and why it exists at all -- the short
+ * version: agent positions live in a mutable ref, not React state, so the scene keeps LOOKING
+ * alive even after the connection has actually died, and this badge is the only thing that
+ * tells a human glancing at the screen otherwise).
+ */
+const CONNECTION_STATUS_LABEL: Record<ConnectionStatus, string> = {
+  connecting: 'Connecting…',
+  connected: 'Connected',
+  reconnecting: 'Reconnecting…',
+  failed: 'Connection lost',
+}
+const CONNECTION_STATUS_COLOR: Record<ConnectionStatus, string> = {
+  connecting: '#f5a623',
+  connected: '#2ecc71',
+  reconnecting: '#f5a623',
+  failed: '#e74c3c',
+}
+
+/**
+ * Small, unobtrusive connection-status badge, top-right, DOM-level (a sibling of <Canvas>, not
+ * inside the 3D scene). Deliberately hidden in kiosk mode while status is 'connected' -- kiosk
+ * mode's whole point (KioskMode.ts) is a clean, chrome-free presentation view for an unattended
+ * big screen, so this must not show up as long as everything is healthy. It reappears the
+ * instant kiosk's connection stops being healthy, because THAT is exactly the situation this
+ * badge exists for: a frozen-but-alive-looking scene on a screen nobody is actively watching.
+ * Outside kiosk mode (plain dev/rehearsal) it's always shown, healthy or not, since a developer
+ * driving the app benefits from seeing connection state at a glance too.
+ */
+function ConnectionBadge({ status, isKiosk }: { status: ConnectionStatus; isKiosk: boolean }) {
+  if (isKiosk && status === 'connected') return null
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 10,
+        right: 10,
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '4px 10px',
+        borderRadius: 999,
+        background: 'rgba(0, 0, 0, 0.55)',
+        color: '#fff',
+        fontFamily: 'sans-serif',
+        fontSize: 12,
+        lineHeight: 1,
+        pointerEvents: 'none',
+      }}
+    >
+      <span
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: '50%',
+          background: CONNECTION_STATUS_COLOR[status],
+          flexShrink: 0,
+        }}
+      />
+      {CONNECTION_STATUS_LABEL[status]}
+    </div>
+  )
+}
+
 function App() {
-  const { agentIds, agents } = useWorldRoom()
+  const { agentIds, agents, status } = useWorldRoom()
   const { floorPlan, error } = useFloorPlan()
   // Stable target the directional light aims at (see the <primitive>/`target` prop below). A
   // THREE.DirectionalLight's `target` is itself an Object3D that three.js reads `matrixWorld`
@@ -85,14 +151,22 @@ function App() {
 
   if (error) {
     return (
-      <div style={{ padding: 16, color: '#b00020', fontFamily: 'sans-serif' }}>
-        Failed to load floor plan: {error.message}
-      </div>
+      <>
+        <ConnectionBadge status={status} isKiosk={isKiosk} />
+        <div style={{ padding: 16, color: '#b00020', fontFamily: 'sans-serif' }}>
+          Failed to load floor plan: {error.message}
+        </div>
+      </>
     )
   }
 
   if (!floorPlan) {
-    return <div style={{ padding: 16, fontFamily: 'sans-serif' }}>Loading floor plan...</div>
+    return (
+      <>
+        <ConnectionBadge status={status} isKiosk={isKiosk} />
+        <div style={{ padding: 16, fontFamily: 'sans-serif' }}>Loading floor plan...</div>
+      </>
+    )
   }
 
   // floor-14.json's real footprint is NOT centered on the origin (roughly x:[0,36] z:[0,21],
@@ -132,52 +206,55 @@ function App() {
   const shadowFar = LIGHT_OFFSET_DISTANCE + shadowCornerDistance
 
   return (
-    <Canvas
-      shadows
-      camera={{ position: cameraPosition, fov: 50 }}
-      style={{ width: '100vw', height: '100vh', display: 'block' }}
-    >
-      <ambientLight intensity={0.6} />
-      <directionalLight
-        position={lightPosition}
-        target={lightTarget}
-        intensity={1.2}
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-shadowHalfExtent}
-        shadow-camera-right={shadowHalfExtent}
-        shadow-camera-top={shadowHalfExtent}
-        shadow-camera-bottom={-shadowHalfExtent}
-        shadow-camera-near={shadowNear}
-        shadow-camera-far={shadowFar}
-      />
-      {/* Aims the directional light above (world space, at the floor's actual center) -- must be
-          mounted in the scene graph, not just referenced, so its matrixWorld is real. */}
-      <primitive object={lightTarget} position={target} />
+    <>
+      <ConnectionBadge status={status} isKiosk={isKiosk} />
+      <Canvas
+        shadows
+        camera={{ position: cameraPosition, fov: 50 }}
+        style={{ width: '100vw', height: '100vh', display: 'block' }}
+      >
+        <ambientLight intensity={0.6} />
+        <directionalLight
+          position={lightPosition}
+          target={lightTarget}
+          intensity={1.2}
+          castShadow
+          shadow-mapSize={[2048, 2048]}
+          shadow-camera-left={-shadowHalfExtent}
+          shadow-camera-right={shadowHalfExtent}
+          shadow-camera-top={shadowHalfExtent}
+          shadow-camera-bottom={-shadowHalfExtent}
+          shadow-camera-near={shadowNear}
+          shadow-camera-far={shadowFar}
+        />
+        {/* Aims the directional light above (world space, at the floor's actual center) -- must be
+            mounted in the scene graph, not just referenced, so its matrixWorld is real. */}
+        <primitive object={lightTarget} position={target} />
 
-      <Floor floorPlan={floorPlan} />
-      <Walls walls={floorPlan.walls} />
-      <RoomLabels rooms={floorPlan.rooms} />
+        <Floor floorPlan={floorPlan} />
+        <Walls walls={floorPlan.walls} />
+        <RoomLabels rooms={floorPlan.rooms} />
 
-      <AgentInstances agentIds={agentIds} agents={agents} />
-      <RouteLines agentIds={agentIds} agents={agents} />
+        <AgentInstances agentIds={agentIds} agents={agents} />
+        <RouteLines agentIds={agentIds} agents={agents} />
 
-      <MapControls
-        ref={mapControlsRef}
-        target={target}
-        onStart={onInteractionStart}
-        onEnd={onInteractionEnd}
-      />
+        <MapControls
+          ref={mapControlsRef}
+          target={target}
+          onStart={onInteractionStart}
+          onEnd={onInteractionEnd}
+        />
 
-      {/* Task 3.3: scene-wide bloom so RouteLine.tsx's overdriven-color ribbon actually
-          glows instead of just being a flat bright line -- see RouteLine.tsx's
-          ROUTE_LINE_COLOR comment for why the color itself is pushed past 1.0. Low
-          luminanceThreshold + mipmapBlur keeps only genuinely bright things (the route
-          line) blooming, not the regular lit floor/walls/models. */}
-      <EffectComposer>
-        <Bloom luminanceThreshold={0.3} luminanceSmoothing={0.9} intensity={1.4} mipmapBlur />
-      </EffectComposer>
-    </Canvas>
+        {/* Task 3.3: scene-wide bloom so RouteLine.tsx's overdriven-color ribbon actually
+            glows instead of just being a flat bright line -- see RouteLine.tsx's
+            ROUTE_LINE_COLOR comment for why the color itself is pushed past 1.0. Low
+            luminanceThreshold + mipmapBlur keeps only genuinely bright things (the route
+            line) blooming, not the regular lit floor/walls/models. */}
+        <EffectComposer>
+          <Bloom luminanceThreshold={0.3} luminanceSmoothing={0.9} intensity={1.4} mipmapBlur />
+        </EffectComposer>
+      </Canvas>
+    </>
   )
 }
 
