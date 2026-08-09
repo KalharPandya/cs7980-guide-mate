@@ -1,7 +1,7 @@
 {
   "units": "meters",
   "floor": 14,
-  "source": "Algorithmically extracted from world/data/source/floor-14-plan-hires.png by world/data/tools/extract_furniture.py. The drawing is two-tone: structural ink (walls, doors, room labels, pictograms) is darker than 180, furniture is light-grey line work in [180, 247). The ink mask is dilated 3x before subtraction to remove antialiasing fringes around walls and text glyphs, which is also what excludes room labels and the university wordmark without any text-shape heuristic. Remaining line work is closed, connected-component labelled, and reduced to one oriented bounding box per component. Components are dropped if too small, sub-2px thin, longer than 8.0m, centred inside an elevator/stair core hole, or centred outside walkableOutline. RENDER-ONLY: this file is never fed to the navmesh build.",
+  "source": "Algorithmically extracted from world/data/source/floor-14-plan-hires.png by world/data/tools/extract_furniture.py. The drawing is two-tone: structural ink (walls, doors, room labels, pictograms) is darker than 180, furniture is light-grey line work in [180, 247). The ink mask is dilated 3x before subtraction to remove antialiasing fringes around walls and text glyphs, which is also what excludes room labels and the university wordmark without any text-shape heuristic. Remaining line work is closed, connected-component labelled, and reduced to one oriented bounding box per component. A component whose short axis exceeds 1.5m is too wide to be one piece of furniture, so it is cut apart at the density valleys visible along its own principal axes (a cut is only made where the drawing shows a real gap). Components are dropped if too small, sub-2px thin, longer than 8.0m, centred inside an elevator/stair core hole, or centred outside walkableOutline. RENDER-ONLY: this file is never fed to the navmesh build.",
   "note": "One oriented box per furniture component. `center` is [x, z] in floor-plan meters, `size` is [longSide, shortSide], `axis` is a unit vector along the long side in floor-plan coordinates (feed it to directionToYRotation), `height` is the rendered extrusion height.",
   "items": [
     {
@@ -16,6 +16,21 @@
       "axis": [
         -0.9701,
         0.2425
+      ],
+      "height": 0.75
+    },
+    {
+      "center": [
+        2.404,
+        14.56
+      ],
+      "size": [
+        3.021,
+        1.058
+      ],
+      "axis": [
+        -0.979,
+        0.204
       ],
       "height": 0.75
     },
@@ -36,21 +51,6 @@
     },
     {
       "center": [
-        2.782,
-        15.021
-      ],
-      "size": [
-        3.561,
-        2.155
-      ],
-      "axis": [
-        -0.9762,
-        0.2169
-      ],
-      "height": 0.75
-    },
-    {
-      "center": [
         2.786,
         19.692
       ],
@@ -61,6 +61,21 @@
       "axis": [
         -0.9648,
         0.2631
+      ],
+      "height": 0.75
+    },
+    {
+      "center": [
+        2.894,
+        15.54
+      ],
+      "size": [
+        3.569,
+        0.983
+      ],
+      "axis": [
+        -0.9666,
+        0.2564
       ],
       "height": 0.75
     },
@@ -351,6 +366,21 @@
     },
     {
       "center": [
+        7.081,
+        3.519
+      ],
+      "size": [
+        2.172,
+        0.82
+      ],
+      "axis": [
+        -0.6139,
+        0.7894
+      ],
+      "height": 0.75
+    },
+    {
+      "center": [
         7.189,
         4.735
       ],
@@ -396,16 +426,16 @@
     },
     {
       "center": [
-        8.378,
-        3.912
+        8.383,
+        3.924
       ],
       "size": [
-        3.756,
-        3.434
+        3.729,
+        1.684
       ],
       "axis": [
-        -0.5087,
-        0.8609
+        -0.4061,
+        0.9138
       ],
       "height": 0.75
     },
@@ -451,6 +481,21 @@
       "axis": [
         -0.9578,
         0.2873
+      ],
+      "height": 0.75
+    },
+    {
+      "center": [
+        9.491,
+        4.55
+      ],
+      "size": [
+        3.734,
+        0.808
+      ],
+      "axis": [
+        -0.5355,
+        0.8445
       ],
       "height": 0.75
     },
