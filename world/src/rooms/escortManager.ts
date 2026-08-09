@@ -168,6 +168,50 @@ const GREET_MAX_S = 15;
  */
 const ARRIVAL_GRACE_PERIOD_S = 0.3;
 
+/**
+ * How far (meters) SHORT of the waiting person the fetching robot is actually dispatched on
+ * the "approaching" leg. The robot is sent to a point this far from the person along the
+ * line from the person toward the robot -- i.e. on the robot's own side -- instead of to the
+ * person's exact coordinates.
+ *
+ * ---- why a standoff at all (this is a real defect, reproduced) ----
+ * The person's exact position is a point the robot can never occupy: the two agents are solid
+ * circles of AGENT_RADIUS_M (0.2m) each, so Detour's collision resolution holds them at least
+ * 0.4m apart no matter what the steering asks for. Dispatching the robot AT the person
+ * therefore sets a goal it can only ever fail to reach, and the fetch leg's arrival test needs
+ * the robot to settle to schema-idle (speed < IDLE_SPEED_THRESHOLD_MPS). Instrumented on the
+ * long entrance -> "South Collaboration Space" fetch at the production 16.6ms tick: the robot
+ * closed to exactly 0.40m and then ORBITED the person at that radius at a steady ~0.10 m/s --
+ * pinned out by collision resolution, pulled in by steering that never runs out of goal --
+ * so its state read "moving" forever, the "approaching" phase never ended, and the escort died
+ * on the 90s ESCORT_TIMEOUT_S with the robot standing right next to the person it had fetched.
+ *
+ * That orbit did not show up before because `WorldRoom.ts`'s old `separationWeight: 2` stalled
+ * the robot dead at ~1.37m (see SEPARATION_WEIGHT's doc comment there) before it ever got close
+ * enough to orbit -- a crowd deadlock was silently acting as this leg's brake. Removing the
+ * deadlock (which had to go: it also froze the GUIDE leg, the headline bug) exposed the missing
+ * standoff underneath it. A goal the robot can actually stand on is the fix, not a wider
+ * arrival tolerance: Detour decelerates into a reachable goal and stops there on its own.
+ *
+ * ---- why 1.2m ----
+ * Bounded on both sides, and 1.2 is comfortably inside both:
+ *  - FLOOR: must be outside the pair's combined footprint, 2 * AGENT_RADIUS_M = 0.4m, or the
+ *    goal is inside the person again and the orbit returns. 1.2m is 3x that.
+ *  - CEILING: must be inside PICKUP_RADIUS_M (2.5m), or the robot arrives at its goal and the
+ *    handover to "greeting" still never fires. 1.2m is under half of it, leaving room for the
+ *    robot to settle slightly wide (measured below) and still be well inside the pickup radius.
+ * It is also exactly TRAIL_DISTANCE_M + AGENT_RADIUS_M, i.e. the gap the pair will hold once
+ * they set off, so the robot stops where the person is about to be trailing anyway.
+ *
+ * Measured settling behaviour with this standoff (16.6ms tick, `separationWeight` 1.0): the
+ * robot does not stop exactly on the point -- separation from the person pushes it back out
+ * until the re-tightening steering toward the goal balances it -- and settles at ~1.4m from
+ * the person, which is both stable (speed decays to 0, so schema-idle latches) and well inside
+ * PICKUP_RADIUS_M. That ~1.4m is the same settled gap VISITOR_ARRIVAL_DISTANCE_M's doc comment
+ * records for a stopped pair, from the same two forces.
+ */
+const FETCH_STANDOFF_M = 1.2;
+
 /** Target trailing gap behind the escorting robot. AGENT_RADIUS_M is 0.2m, so 1.0m leaves
  * ~0.6m of clear space between the two agents' collision circles -- enough that the
  * visitor doesn't visually overlap/collide with the robot it's following, small enough to
@@ -633,11 +677,17 @@ export class EscortManager {
         : roomNameOrCoords;
     if (!destination) return { robotId: null, reason: "target_unresolved" };
 
-    // Phase 1 ("approaching"): send the ROBOT to the PERSON's current location. The person
-    // WAITS in place -- deliberately NOT seeding the visitor's trailing target here; trailing
-    // only begins when "leading" starts (see tick()). A move failure here is treated the
-    // same as an unresolvable target: bind nothing.
-    const moved = this.host.moveAgentTo(bestRobotId, { x: visitorAgent.x, z: visitorAgent.z });
+    // Phase 1 ("approaching"): send the ROBOT to a point FETCH_STANDOFF_M short of the PERSON
+    // (see that constant -- the person's exact position is a goal the robot can never occupy,
+    // and dispatching it there makes the robot orbit them forever instead of arriving). The
+    // person WAITS in place -- deliberately NOT seeding the visitor's trailing target here;
+    // trailing only begins when "leading" starts (see tick()). A move failure here is treated
+    // the same as an unresolvable target: bind nothing.
+    const bestRobot = this.host.agents.get(bestRobotId)!;
+    const moved = this.host.moveAgentTo(
+      bestRobotId,
+      this.fetchStandoffPoint(visitorAgent, bestRobot),
+    );
     if (!moved) return { robotId: null, reason: "target_unresolved" };
 
     this.robotToVisitor.set(bestRobotId, visitorId);
@@ -651,6 +701,51 @@ export class EscortManager {
     record.robotPositionHistory = [];
 
     return { robotId: bestRobotId };
+  }
+
+  /**
+   * The point the fetching robot is actually dispatched to on the "approaching" leg:
+   * FETCH_STANDOFF_M short of `person`, along the line from `person` toward `robot` (so on
+   * the robot's own side of the person, the side it is already approaching from). See
+   * FETCH_STANDOFF_M's doc comment for why the person's exact position is not a usable goal.
+   *
+   * Two cases fall back to the robot's CURRENT position rather than to the person's:
+   *  - the robot is already at or inside the standoff distance (it has nothing to travel), and
+   *  - the two are on top of each other, so there is no direction to offset along.
+   * Standing still is the correct instruction in both, and it still lets the fetch leg complete
+   * normally: the robot settles to idle where it is and the PICKUP_RADIUS_M test does the rest.
+   *
+   * The offset point is snapped onto the navmesh with the same `findClosestPoint` the trailing
+   * retarget uses. If the snap fails, or lands more than SNAP_TOLERANCE_M from where it was
+   * asked for (which means the straight person->robot segment cut through geometry, e.g. across
+   * a doorway jamb, and the "closest" walkable point is somewhere structurally different), the
+   * offset is abandoned and the robot is sent to the person's own position -- the pre-standoff
+   * behaviour, which is degraded but never worse than what shipped before.
+   */
+  private fetchStandoffPoint(
+    person: { x: number; z: number },
+    robot: { x: number; z: number },
+  ): RoomTarget {
+    /** How far the navmesh snap may move the offset point before it is no longer trustworthy
+     * as "a spot on the robot's side of the person". Half the standoff itself: a snap that
+     * large has left the segment the point was meant to sit on. */
+    const SNAP_TOLERANCE_M = FETCH_STANDOFF_M / 2;
+
+    const dx = robot.x - person.x;
+    const dz = robot.z - person.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance <= FETCH_STANDOFF_M) return { x: robot.x, z: robot.z };
+
+    const wanted = {
+      x: person.x + (dx / distance) * FETCH_STANDOFF_M,
+      z: person.z + (dz / distance) * FETCH_STANDOFF_M,
+    };
+    const snap = this.host.nav.navMeshQuery.findClosestPoint({ x: wanted.x, y: 0, z: wanted.z });
+    if (!snap.success) return { x: person.x, z: person.z };
+    if (Math.hypot(snap.point.x - wanted.x, snap.point.z - wanted.z) > SNAP_TOLERANCE_M) {
+      return { x: person.x, z: person.z };
+    }
+    return { x: snap.point.x, z: snap.point.z };
   }
 
   /** Inserts a visitor record simulatedVisitorSpawner.ts built itself (kind "simulated")

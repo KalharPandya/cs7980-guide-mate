@@ -45,15 +45,93 @@ const MAX_AGENT_RADIUS_M = 0.5;
  * - `pathOptimizationRange: 0` (baseline). Same reason; 0 is the tested value.
  * - The count reduction (GUIDE_ROBOT_COUNT down to 5, so a 5+5 scene), not this tuning,
  *   is what removed the crowd gridlock, so the tighter values are no longer needed.
- * - `separationWeight`/`maxSpeed`/`maxAcceleration` unchanged. */
+ * - `maxSpeed`/`maxAcceleration` unchanged.
+ * - `separationWeight`: see SEPARATION_WEIGHT below. */
+
+/** Top speed (m/s) every agent's corridor steering is scaled to. Detour computes the
+ * steering term as `maxSpeed * speedScale` in the direction of the next corridor corner,
+ * where `speedScale` is 1 for the whole trip and only tapers inside the last
+ * `radius * 2` = 0.4m before the goal -- so 1.4 is the magnitude of the "go to my
+ * destination" force for all but the final 0.4m. SEPARATION_WEIGHT is derived from it. */
+const AGENT_MAX_SPEED_MPS = 1.4;
+
+/**
+ * How hard an agent is pushed away from its neighbours (Detour's `DT_CROWD_SEPARATION`
+ * steering term). MUST stay strictly below AGENT_MAX_SPEED_MPS -- that is not a style
+ * preference, it is the condition that makes crowd deadlock structurally impossible, and
+ * violating it is a real defect this value was lowered from 2 to fix.
+ *
+ * ---- the defect (measured, not theorised) ----
+ * Detour sums two forces into an agent's desired velocity: corridor steering (magnitude
+ * `AGENT_MAX_SPEED_MPS`, pointing at the next corner) and separation. For a neighbour at
+ * distance `d` within `collisionQueryRange` R, recast's separation term (Detour/DetourCrowd.cpp,
+ * the `DT_CROWD_SEPARATION` block) has magnitude `separationWeight * (1 - (d/R)^2)`, pointing
+ * directly away from that neighbour; with several neighbours the contributions are AVERAGED,
+ * so `separationWeight` bounds the total no matter how many agents are nearby.
+ *
+ * At the old `separationWeight: 2` with `R = 2.5`, that magnitude reaches 1.4 -- exactly
+ * AGENT_MAX_SPEED_MPS -- at d = 2.5 * sqrt(1 - 1.4/2) = 1.369m, and exceeds it for anything
+ * closer. So a single neighbour standing roughly in the direction an agent wants to travel
+ * could CANCEL its steering completely, and d = 1.369m is a STABLE equilibrium of that
+ * cancellation: closer in, separation wins and pushes the agent back out; further out,
+ * steering wins and pulls it back in. The agent parks there permanently with a perfectly
+ * valid, fully-planned corridor it never walks.
+ *
+ * That is not a hypothetical. It was reproduced on this floor plan at the production 16.6ms
+ * tick with an escort from "Classroom 1425" to the "Kitchen": the fetch leg left the robot at
+ * (5.370, 12.993) just inside a doorway with the person it had collected at (5.375, 14.362),
+ * i.e. 1.369m away and almost exactly in line with the robot's own first corridor corner
+ * (5.40, 13.06). Instrumented, the two forces read steer = (0.005, 1.400) |1.400| and
+ * separation = (-0.005, -1.400) |1.400|, summing to (-0.000, -0.000): the robot's desired
+ * velocity was ZERO for the entire 90s ESCORT_TIMEOUT_S while its corridor still ran all the
+ * way to (26.02, 13.09). Neither agent moved again and the person was never taken anywhere.
+ * The same signature shows up on the FETCH leg in the aggregate harness
+ * (`scripts/escorttest.ts`), whose timeouts cluster at a robot-to-visitor separation of
+ * 1.21-1.24m -- the same equilibrium, reached from the other direction.
+ *
+ * ---- why 1.0 ----
+ * With `separationWeight < AGENT_MAX_SPEED_MPS`, the component of the desired velocity along
+ * the steering direction is at least `AGENT_MAX_SPEED_MPS - separationWeight` -- strictly
+ * positive, for ANY geometry, any neighbour count and any distance -- so an agent with a valid
+ * corridor always makes forward progress and this class of deadlock cannot form at all. 1.0
+ * leaves 0.4 m/s (29% of top speed) of guaranteed progress, which is real margin rather than
+ * the knife-edge 1.4 would be, while still holding a visible personal-space gap between agents.
+ *
+ * Measured on the single-escort harness across five `from_room` -> destination pairs at BOTH
+ * 16.6ms and 100ms ticks: `separationWeight` 2 fails to deliver 2 of 5 pairs at 16.6ms
+ * (Classroom 1425 -> Kitchen, Classroom 1425 -> Male Washroom); 1.4, 1.2 and 1.0 each deliver
+ * 5 of 5 at both tick rates. Going FURTHER down is not free: 0.7 and 0.5 each newly failed
+ * Kitchen -> Classroom 1425 (a different jam, where too little personal space lets the trailing
+ * visitor pack into the robot), so lower is not uniformly better and 1.0 is not a "turn it down
+ * until it works" number. Aggregate effect at real demo scale is in `scripts/escorttest.ts`'s
+ * own recorded before/after numbers.
+ *
+ * The tapering `speedScale` inside the last 0.4m of a route is the one place steering can drop
+ * below AGENT_MAX_SPEED_MPS, so the guarantee weakens there -- harmless, because an agent within
+ * 0.4m of its goal is already inside ROBOT_DESTINATION_RADIUS_M (1.0m, escortManager.ts) and has
+ * arrived.
+ */
+const SEPARATION_WEIGHT = 1.0;
+
+if (SEPARATION_WEIGHT >= AGENT_MAX_SPEED_MPS) {
+  // Fail loudly at import time rather than shipping a world where agents can stall forever
+  // in a doorway. See SEPARATION_WEIGHT's doc comment for why this is the load-bearing
+  // relationship between the two constants.
+  throw new Error(
+    `WorldRoom: SEPARATION_WEIGHT (${SEPARATION_WEIGHT}) must be strictly less than ` +
+      `AGENT_MAX_SPEED_MPS (${AGENT_MAX_SPEED_MPS}) -- at or above it, one neighbour standing in an ` +
+      "agent's path can cancel its steering completely and deadlock the crowd",
+  );
+}
+
 const DEFAULT_AGENT_PARAMS: AgentParams = {
   radius: AGENT_RADIUS_M,
   height: AGENT_HEIGHT_M,
   maxAcceleration: 8,
-  maxSpeed: 1.4,
+  maxSpeed: AGENT_MAX_SPEED_MPS,
   collisionQueryRange: 2.5,
   pathOptimizationRange: 0,
-  separationWeight: 2,
+  separationWeight: SEPARATION_WEIGHT,
 };
 
 /**

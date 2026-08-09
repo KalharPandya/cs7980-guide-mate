@@ -374,6 +374,20 @@ async function main(): Promise<void> {
   // ROBOT_DESTINATION_RADIUS_M did not convert genuine arrivals into timeouts. Worth noting
   // from those runs: robot-to-destination at completion reaches 0.98-0.99m, i.e. real arrivals
   // do use most of that 1.0m radius under crowding, so it is not over-generous.
+  //
+  // Re-measured either side of the crowd-deadlock fix (2026-08-09), same harness, same scale:
+  //   BEFORE (separationWeight 2, robot dispatched to the person's exact position): DELIVERED
+  //          98.7% (371/376) and 97.0% (357/368), with 5 and 11 ESCORT_TIMEOUT_S timeouts. The
+  //          timeouts' robot-to-visitor separations cluster at 1.21-1.24m -- the signature of
+  //          the separation-vs-steering deadlock described in WorldRoom.ts's SEPARATION_WEIGHT
+  //          doc comment, i.e. those escorts were stuck, not merely slow.
+  //   AFTER  (separationWeight 1.0 + FETCH_STANDOFF_M, escortManager.ts): DELIVERED 100.0%
+  //          (444/444) and 100.0% (441/441), ZERO timeouts in either run, and MORE escorts
+  //          driven in the same 6000s (441-444 vs 368-376) because no robot/visitor pair spends
+  //          90s wedged. Median time-to-completion fell from 13.6-14.0s to 12.1-12.3s.
+  // The floor below is deliberately left at 90 rather than ratcheted up to the new numbers: it
+  // is a regression guard against a broken system, not a high-water mark, and a guard that
+  // fires on ordinary crowd luck gets ignored.
   // 90% leaves ~8 points of margin below the lowest measured delivery rate for ordinary
   // Math.random()-driven run-to-run variance (dwell times, spawn stagger, which rooms get
   // picked) while still catching a real regression in the fetch/follow/arrival logic. It is

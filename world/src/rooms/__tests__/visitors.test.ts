@@ -863,22 +863,34 @@ async function testSimulatedSpawnerPauseFreezesLifecycle(): Promise<void> {
  * code this run reports `completed` with the person 20.78m away and fails; against the fixed
  * code the escort ends honestly.
  *
- * It deliberately does NOT assert `outcome === "completed"`. On the current crowd tuning this
- * particular geometry ALSO trips a separate, pre-existing navigation defect (the fetch leg
- * leaves the robot parked just inside a doorway with the person it collected 1.36m away on the
- * far side, and Detour's separation force then pins it on its own first corridor corner for the
- * rest of the leg -- robot idle at (5.38, 13.02) with `corners()` pointing at (5.40, 13.06),
- * neither agent moving again), so the escort correctly runs out the ESCORT_TIMEOUT_S clock and
- * is reported `timed_out`. That is the RIGHT behaviour for an escort that never delivered, and
- * it is what the old code was papering over by declaring victory at pickup. Pinning the outcome
- * string here would either bake that navigation defect in as expected, or make this regression
- * test fail for a reason it is not about; pinning the contract catches the false completion
- * either way and keeps passing once the navigation jam is fixed.
+ * ---- the SECOND defect this same scenario pinned, and now asserts against ----
+ * With the false completion closed, this geometry stopped lying and started failing honestly:
+ * the escort ran the full ESCORT_TIMEOUT_S and reported `timed_out` with the person still
+ * ~20.7m from the Kitchen, because the guide leg never moved at all. The cause was crowd
+ * tuning, not the escort logic: `WorldRoom.ts`'s `separationWeight` was 2 while `maxSpeed` was
+ * 1.4, and Detour's separation force reaches magnitude 1.4 at a neighbour distance of 1.369m --
+ * so the person the robot had just collected, standing 1.369m away almost exactly in line with
+ * the robot's own next corridor corner, cancelled the robot's steering to a measured
+ * (-0.000, -0.000) and pinned it there for the whole 90s. See `SEPARATION_WEIGHT`'s doc comment
+ * in WorldRoom.ts for the full measurement and why `separationWeight < maxSpeed` makes that
+ * class of deadlock structurally impossible.
+ *
+ * So this test now asserts the thing the user actually asked for end to end -- the person is
+ * DELIVERED -- rather than only that a non-delivery is reported honestly. Both claims are still
+ * checked: `outcome === "completed"` AND the person genuinely within DELIVERED_RADIUS_M of the
+ * Kitchen, with the honest-reporting branch kept for any future non-delivery.
+ *
+ * ---- run at BOTH tick rates ----
+ * Driven twice, at the production 16.6ms simulation interval AND at the coarse 100ms step the
+ * rest of this file uses. That is not redundancy: a previous attempt at this jam passed at
+ * 100ms and still deadlocked at 16.6ms (coarser integration steps can step straight over a
+ * narrow force-balance equilibrium that a fine step settles into), so a fix is only proven when
+ * both rates deliver.
  *
  * It also checks the two-phase fetch-then-lead behaviour survives the fix -- the robot comes to
  * the person first and the person waits in place while it does.
  */
-async function testEscortDoesNotCompleteAtThePickupPoint(): Promise<void> {
+async function testEscortDeliversFromAdjacentPickup(tickMs: number): Promise<void> {
   const outcomes: {
     outcome: string;
     phase: string;
@@ -909,6 +921,7 @@ async function testEscortDoesNotCompleteAtThePickupPoint(): Promise<void> {
       `'completed at the destination' would be the same place; got ${personToDestination.toFixed(2)}m`,
   );
 
+  console.log(`\n[tick rate] driving this scenario at ${tickMs}ms/tick`);
   room.addAgent("pickup-defect-visitor", "visitor", { x: fromPoint!.x, z: fromPoint!.z });
   const result = room.requestGuide("pickup-defect-visitor", "Kitchen");
   assert.ok(result.robotId, "requestGuide should bind an idle fleet robot");
@@ -935,15 +948,18 @@ async function testEscortDoesNotCompleteAtThePickupPoint(): Promise<void> {
 
   let robotReachedPerson = false;
   let personDriftWhileFetching = 0;
-  const MAX_TICKS = 18000; // ~299s simulated: far more than the ~38s the fixed flow takes, and
-  // more than the 90s ESCORT_TIMEOUT_S too, so a stalled escort ends here rather than the loop
+  // ~299s simulated at whichever tick rate this run uses: far more than the ~38s the fixed flow
+  // takes, and more than the 90s ESCORT_TIMEOUT_S too, so a stalled escort ends on the timeout
+  // rather than by running the loop out (which would report no outcome at all).
+  const MAX_TICKS = Math.ceil(299_000 / tickMs);
+  const settleTicks = Math.ceil(500 / tickMs); // ~0.5s of crowd warm-up before trusting "arrived"
   for (let i = 0; i < MAX_TICKS && outcomes.length === 0; i++) {
-    room.update(TICK_MS);
+    room.update(tickMs);
     const person = state.agents.get("pickup-defect-visitor")!;
     const robot = state.agents.get(robotId)!;
     if (!robotReachedPerson) {
       personDriftWhileFetching = Math.hypot(person.x - personStart.x, person.z - personStart.z);
-      if (Math.hypot(robot.x - person.x, robot.z - person.z) <= 2.5 && robot.state === "idle" && i > 30) {
+      if (Math.hypot(robot.x - person.x, robot.z - person.z) <= 2.5 && robot.state === "idle" && i > settleTicks) {
         robotReachedPerson = true;
       }
     }
@@ -959,8 +975,22 @@ async function testEscortDoesNotCompleteAtThePickupPoint(): Promise<void> {
       `(they started ${personToDestination.toFixed(2)}m away)`,
   );
 
-  // THE regression assertion. Against the pre-fix code this reads 20.78m and fails; the escort
-  // had reported "completed" while the person stood where they were picked up.
+  // THE delivery assertion. This is the user-facing claim the whole scenario exists for: the
+  // person asked to be taken to the Kitchen, so at the end of the escort they must BE at the
+  // Kitchen. It fails on both historical defects -- against the false-completion code the escort
+  // reported "completed" at the pickup point (caught by the contract checks below), and against
+  // the separationWeight-2 crowd tuning the guide leg never moved and this reported "timed_out"
+  // with the person 20.7m away (caught right here).
+  assert.equal(
+    outcome.outcome,
+    "completed",
+    `the escort must actually deliver this person: it ended "${outcome.outcome}" after ` +
+      `${outcome.durationSeconds.toFixed(1)}s in phase "${outcome.phase}" with them ${personToDestAtEnd.toFixed(2)}m ` +
+      `from the "Kitchen" they asked for`,
+  );
+
+  // The completion CONTRACT, checked against the reported record. Against the pre-fix
+  // false-completion code the first of these reads 20.78m and fails.
   if (outcome.outcome === "completed") {
     assert.ok(
       outcome.visitorDistanceToDestinationM !== null &&
@@ -986,20 +1016,14 @@ async function testEscortDoesNotCompleteAtThePickupPoint(): Promise<void> {
         `contract <= ${DELIVERED_RADIUS_M.toFixed(1)}m)`,
     );
   } else {
-    // Not delivered => the escort must say so. See this function's header for why the outcome
-    // string itself is not pinned: on the current crowd tuning this geometry hits a separate,
-    // pre-existing navigation jam in the doorway, and an honest "timed_out" is the correct
-    // report for it.
+    // Kept as the honest-reporting half of the contract even though the delivery assertion
+    // above already fails first on this path: if a future change makes this geometry stop
+    // delivering, the escort must at least still say so rather than inventing a completion.
     assert.equal(
       outcome.outcome,
       "timed_out",
       `an escort that did not deliver the person (${personToDestAtEnd.toFixed(2)}m from the destination) must be ` +
         `reported as a timeout, not as "${outcome.outcome}"`,
-    );
-    console.log(
-      `[note] this escort did not deliver, and correctly reported "timed_out" after ` +
-        `${outcome.durationSeconds.toFixed(1)}s in phase "${outcome.phase}" -- the pre-existing doorway jam ` +
-        "described in this test's header, no longer masked by a false completion",
     );
   }
 
@@ -1011,8 +1035,9 @@ async function testEscortDoesNotCompleteAtThePickupPoint(): Promise<void> {
   );
 
   console.log(
-    `PASS: no completion was declared at the pickup point -- the escort ended "${outcome.outcome}" with the person ` +
-      `${personToDestAtEnd.toFixed(2)}m from the "Kitchen" they asked for (fetch leg intact: the robot came to them, ` +
+    `PASS @ ${tickMs}ms/tick: the person was DELIVERED -- escort "${outcome.outcome}" with them ` +
+      `${personToDestAtEnd.toFixed(2)}m from the "Kitchen" they asked for (started ${personToDestination.toFixed(2)}m ` +
+      `away; guide leg took ${outcome.durationSeconds.toFixed(1)}s; fetch leg intact: the robot came to them and ` +
       `they waited ${personDriftWhileFetching.toFixed(2)}m in place)`,
   );
 
@@ -1020,7 +1045,10 @@ async function testEscortDoesNotCompleteAtThePickupPoint(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  await testEscortDoesNotCompleteAtThePickupPoint();
+  // Both tick rates, for the reason in this scenario's header: a previous attempt at the
+  // doorway deadlock passed at 100ms and still deadlocked at the production 16.6ms interval.
+  await testEscortDeliversFromAdjacentPickup(TICK_MS);
+  await testEscortDeliversFromAdjacentPickup(100);
   await testRequestGuideConvergenceAndTrailing();
   await testRequestGuideReturnsNullWhenNoRobotIdle();
   await testEscortWaitsForVisitorNotJustRobotArrival();
