@@ -60,6 +60,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import clean_floor_plan as clean  # noqa: E402  (path set up above)
+import widen_doorways as widen  # noqa: E402  (path set up above)
 
 Point = Tuple[float, float]
 Wall = Dict[str, Any]
@@ -79,6 +80,14 @@ WALL_HEIGHT_M = 2.7  # envelope + core walls; partitions keep their authored hei
 # prune_floating_shards() instead. Applied to the INPUT and re-applied to the OUTPUT, which is
 # what makes the partition set a fixpoint.
 PARTITION_MIN_LENGTH_M = 0.45
+
+# Step 11 (widen_doorways) trims jambs back, and a jamb trimmed below the admission floor would be
+# DELETED by this filter on the next run instead of merely shortened, which would make the script
+# stop being a fixpoint. The two floors are therefore asserted to agree rather than left to drift.
+assert widen.MIN_JAMB_LENGTH_M >= PARTITION_MIN_LENGTH_M, (
+    f"widen_doorways.MIN_JAMB_LENGTH_M ({widen.MIN_JAMB_LENGTH_M}) is below this pipeline's "
+    f"PARTITION_MIN_LENGTH_M ({PARTITION_MIN_LENGTH_M}): a widened jamb would vanish on re-run"
+)
 
 # "Near-duplicate of an envelope/core wall": the envelope and the core are already drawn once,
 # so a traced segment shadowing one of them is the trace's second copy of it, not a partition.
@@ -788,6 +797,52 @@ def span_clears_room_doors(start: Point, end: Point, rooms: Sequence[Dict[str, A
         segment_point_distance(door, span) >= ROOM_DOOR_KEEP_CLEAR_M
         for door in room_door_points(rooms)
     )
+
+
+def opening_mouths(walls: Sequence[Wall]) -> List[Tuple[Point, Point]]:
+    """The MOUTH of every opening on the floor: the straight span an agent walks through, from one
+    jamb tip to the other (or to the wall body the jamb faces). See widen_doorways.find_openings."""
+    mouths: List[Tuple[Point, Point]] = []
+    for opening in widen.find_openings(walls):
+        near = wall_points(walls[opening.near[0]])[opening.near[1]]
+        if opening.far_end is None:
+            far = widen._closest_point_on(near, walls[opening.far_wall])
+        else:
+            far = wall_points(walls[opening.far_wall])[opening.far_end]
+        mouths.append((near, far))
+    return mouths
+
+
+def span_clears_openings(start: Point, end: Point, mouths: Sequence[Tuple[Point, Point]]) -> bool:
+    """
+    May this span of NEW material be added? Only if it does not reach into the mouth of an opening
+    that is already there.
+
+    `span_clears_room_doors` above says the same thing about the doorways `rooms[]` declares
+    outright; this says it about the ones the geometry itself shows. The two are the same rule
+    (a stage that adds material may not draw a doorway shut) applied to the two kinds of evidence.
+
+    Without it, step 11's widening would be undone one run later: the material the widening takes
+    off a jamb sits ON the drawn line, so on the next run this stage reads that stretch as "wall
+    the drawing has and the trace does not" and draws it straight back in, and the script would
+    stop being a fixpoint. It is deliberately phrased about openings in general rather than about
+    the widening, because the defect is general: ink is not evidence that a gap should be closed
+    when the gap is a door.
+    """
+    span = {"a": [start[0], start[1]], "b": [end[0], end[1]]}
+    for mouth_start, mouth_end in mouths:
+        mouth = {"a": [mouth_start[0], mouth_start[1]], "b": [mouth_end[0], mouth_end[1]]}
+        if _segments_properly_cross(start, end, mouth_start, mouth_end):
+            return False
+        near = min(
+            segment_point_distance(start, mouth),
+            segment_point_distance(end, mouth),
+            segment_point_distance(mouth_start, span),
+            segment_point_distance(mouth_end, span),
+        )
+        if near < widen.SPAN_CLEAR_M:
+            return False
+    return True
 
 
 def wall_move_clears_room_doors(
@@ -1861,6 +1916,7 @@ def draw_missing_ink_runs(
             return index + len(fixed) if index < count else index - count
 
         points = endpoint_list(walls)
+        mouths = opening_mouths(walls)
         emitted = False
         for endpoint_index in free_endpoint_indices(walls):
             owner = endpoint_index // 2
@@ -1891,6 +1947,8 @@ def draw_missing_ink_runs(
             )
             if not span_clears_room_doors(start, finish, rooms):
                 continue  # the run the drawing has crosses a doorway the plan authored
+            if not span_clears_openings(start, finish, mouths):
+                continue  # ...or one the geometry shows, including one step 11 widened
             result.append(make_wall(start, finish))
             actions.append(
                 f"draw the {uncovered[1] - uncovered[0]:.2f} m of wall the source has and the "
@@ -3068,6 +3126,13 @@ def rebuild(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     # Runs AFTER provenance on purpose: a stub is only safe to delete once whatever it carries is
     # sitting on the wall it shadows, and that is only true after the flags have been placed.
     walls, absorbed = absorb_shadow_stubs(walls, rooms, pinned=len(fixed))
+    # Step 11. Every stage above answers "what does the drawing show"; this one answers "can the
+    # simulation walk through it". It runs after ALL of them, and in particular after every stage
+    # that reads the source raster, because the material it removes sits ON the drawn line: put
+    # earlier, step 6/6b/6c would immediately draw the widened doorway shut again. It runs BEFORE
+    # the arcs are re-derived so it only ever sees whole chords, never a polyline piece whose
+    # neighbours would then have to move with it. See widen_doorways.py.
+    walls, widenings, _ = widen.widen_doorways(walls, rooms, pinned=len(fixed))
     # Step 10. Last, so the pieces of an arc are never fed back through stages that would fuse
     # them, and so `glass`/`note` are already in place to be carried onto every piece.
     walls, curves = curve_chord_walls(walls, pinned=len(fixed))
@@ -3125,6 +3190,7 @@ def rebuild(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "closures": closures,
         "drawn": drawn,
         "refits": refits,
+        "widenings": widenings,
         "curves": curves,
         "dangling_after": len(dangling_ends(walls, plan["rooms"])),
     }
@@ -3224,7 +3290,29 @@ def rebuild_sentence(
         f"piece IS that wall. An arc in walls[] is therefore DERIVED, not stored: every run starts "
         f"by collapsing each polyline back into the one chord it was built from (recognised by "
         f"re-curving that chord and matching the result piece for piece) and re-derives it at the "
-        f"end, so the file is a fixpoint rather than a curve that gets re-cut on every pass."
+        f"end, so the file is a fixpoint rather than a curve that gets re-cut on every pass. "
+        f"One last pass then asks a question none of the above asks: not what the drawing shows, "
+        f"but whether the simulation can WALK through it. world/src/nav/agentProfile.ts erodes the "
+        f"navmesh by AGENT_RADIUS_M = 0.20 on both sides of every wall, so a traced 0.63 m doorway "
+        f"leaves 0.23 m of walkable corridor, narrower than the 0.40 m agent itself, and visitors "
+        f"queue at the door instead of going through it. Every opening under "
+        f"{widen.TARGET_CLEAR_M:.2f} m is therefore widened to it by pulling its jambs BACK ALONG "
+        f"THEIR OWN LINES, balanced about the opening, so a doorway grows without any wall leaving "
+        f"its line or changing its bearing; {widen.TARGET_CLEAR_M:.2f} m leaves "
+        f"{widen.TARGET_CLEAR_M - 0.40:.2f} m walkable, two whole agent diameters, which is what "
+        f"lets two agents pass in opposite directions. These openings are therefore WIDER than the "
+        f"source drawing's, deliberately: this is a simulation floor, not a construction document. "
+        f"The pass only ever REMOVES material, so it cannot contradict the door guardrails above "
+        f"(all of which forbid ADDING material near an opening) and a room's door anchor can only "
+        f"come out further from the nearest wall than it went in. It will not trim a jamb below "
+        f"{widen.MIN_JAMB_LENGTH_M:.3f} m (the admission floor above, plus a rounding margin, so a "
+        f"widened jamb is never deleted on the next run instead of shortened), past a point where "
+        f"another wall T-joins its body, or nearer than {widen.WELD_KEEP_M:.2f} m to a "
+        f"neighbouring endpoint the weld above would then drag it onto; and it never trims the "
+        f"envelope or the core at all. Where those floors bind, the opening is widened as far as "
+        f"is safe and left short rather than forced, which is why the washroom block's east wall "
+        f"keeps two narrow doors: 3.03 m of wall line cannot hold three jambs and two full width "
+        f"openings, and the widening will not delete a jamb to pretend otherwise."
     )
 
 
@@ -3277,6 +3365,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"  - {line}")
     print(f"walls beside a line : {len(info['refits'])} decision(s)")
     for line in info["refits"]:
+        print(f"  - {line}")
+    print(f"widened doorways    : {len(info['widenings'])} opening(s)")
+    for line in info["widenings"]:
         print(f"  - {line}")
     print(f"flattened arcs      : {len(info['curves'])} restored as polylines")
     for line in info["curves"]:
