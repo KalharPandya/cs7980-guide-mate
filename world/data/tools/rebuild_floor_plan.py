@@ -26,7 +26,14 @@ This script does not clean; it CONSTRUCTS:
   Step 5  Doors are preserved by never welding or snapping across a door-sized opening
           (guardrails inherited from clean_floor_plan.py). `cd world && npm run test:nav` is the
           objective gate: 18/18 rooms path-reachable, no PARTIAL paths.
-  Step 6  Carry `glass: true` and authored `note` fields from the pre-rebuild walls onto the
+  Step 6  Repair DANGLING partition ends against the source drawing (repair_dangling_ends).
+          Regularization lands an end on a neighbour only when the two are already close; an end
+          that stops in open space with nothing to land on stays loose, and at 0.15 m thickness a
+          loose end reads as a fragment rather than a room. Each dangling end is decided by
+          looking at the source raster: extend/retract it onto a neighbour, bridge a run the
+          trace broke, or leave it. An end that faces a door opening is left alone, and the
+          evidence for "door" is the source drawing itself, not a heuristic.
+  Step 7  Carry `glass: true` and authored `note` fields from the pre-rebuild walls onto the
           nearest surviving parallel descendant.
 
 Only `walls[]` and `holes[]` are written; `rooms`, `entrance`, `walkableOutline`, `units` and
@@ -121,7 +128,49 @@ DOOR_PROTECT_MIN_GAP_M = clean.DOOR_PROTECT_MIN_GAP_M  # 0.45
 DOOR_PROTECT_MAX_GAP_M = clean.DOOR_PROTECT_MAX_GAP_M  # 2.50
 DOOR_MAX_GAP_SHRINK_M = clean.DOOR_MAX_GAP_SHRINK_M    # 0.10
 
-# --- Step 6 provenance carry-over ------------------------------------------------------
+# --- Step 6 dangling-end repair --------------------------------------------------------
+# What counts as DANGLING. An end is ATTACHED if it sits on another wall's body; otherwise it
+# is still legitimate architecture when it faces a near-collinear wall end across a door-sized
+# gap (a jamb pair) or when a room's own `door` anchor is right there. Everything else is a
+# loose end in open space.
+DANGLE_ATTACHED_EPS_M = 0.03
+DANGLE_COLLINEAR_DEG = 12.0
+DANGLE_GAP_MIN_M = 0.50
+DANGLE_GAP_MAX_M = 1.80
+DANGLE_DOOR_NEAR_M = 1.20
+
+# Rule 1, "extend or retract to meet". A landing is another wall's endpoint, or the
+# perpendicular foot on another wall's body. It must be reachable essentially ALONG the dangling
+# wall's own axis: LAND_MAX_LATERAL_M bounds how far sideways the end may be dragged and
+# LAND_MAX_TURN_DEG bounds how far the wall's own bearing may swing, which together stop a wall
+# being bent onto a neighbour that merely happens to pass nearby.
+# Endpoints outrank bodies at equal reach, matching stage D running before stage F in
+# clean_floor_plan.py: meeting a neighbour at its corner is a better answer than landing part way
+# along it, and preferring the strictly nearer landing would pick the body every time.
+LAND_MAX_M = 0.90
+LAND_MAX_LATERAL_M = 0.35
+LAND_MAX_TURN_DEG = 10.0
+LAND_MIN_ANGLE_DEG = T_SNAP_MIN_ANGLE_DEG  # a body landing is a junction; near-parallel is a bundle
+
+# Rule 2, "bridge a run the trace broke": join the dangling end to a nearby wall endpoint.
+BRIDGE_MAX_M = 1.20
+
+# The source raster is the evidence for every extend and every bridge. A span is "on ink" when
+# EVERY sample along it is within INK_ON_MAX_M of a dark source pixel. Measured on this plan:
+# wall bodies that are certainly real run 0.07 to 0.13 m from ink (the trace's own error), and
+# the three door openings that must never be bridged run 0.37 to 0.69 m. 0.15 m separates them
+# with margin on both sides.
+INK_LEVEL = 130           # greyscale below this is drawn ink
+INK_STEP_M = 0.04         # sample spacing along a span
+INK_SEARCH_MAX_PX = 12    # give up looking for ink past this radius (~0.67 m)
+INK_ON_MAX_M = 0.15
+# Rule 3, "drop it". Only ever applied to a SHORT wall whose own body is off the drawing: a long
+# wall is real architecture even when one of its ends overshoots, and deleting one to make a
+# count go down is how this plan lost real walls once already.
+DROP_MAX_LENGTH_M = SHARD_MAX_LENGTH_M
+DROP_OFF_INK_MEAN_M = 0.35
+
+# --- Step 7 provenance carry-over ------------------------------------------------------
 CARRY_ANGLE_DEG = 20.0
 CARRY_PERP_M = 0.60
 CARRY_NOTE_MAX_M = 2.00  # a note falls back to the nearest wall within this if nothing parallel
@@ -133,6 +182,9 @@ NOTE_MARKER = "Geometry REBUILD pass (world/data/tools/rebuild_floor_plan.py):"
 
 SERVER_PLAN_PATH = clean.SERVER_PLAN_PATH
 CLIENT_PLAN_PATH = clean.CLIENT_PLAN_PATH
+SOURCE_IMAGE_PATH = os.path.join(
+    os.path.dirname(SERVER_PLAN_PATH), "source", "floor-14-plan-hires.png"
+)
 
 
 # ---------------------------------------------------------------------------------------
@@ -811,7 +863,378 @@ def regularize(partitions: List[Wall], fixed: Sequence[Wall]) -> List[Wall]:
 
 
 # ---------------------------------------------------------------------------------------
-# Step 6: carry glass flags and authored notes onto the rebuilt walls
+# Step 6: repair dangling partition ends, with the source drawing as the evidence
+# ---------------------------------------------------------------------------------------
+
+_SOURCE_CACHE: Dict[str, Any] = {}
+
+
+def _source_raster(path: str = SOURCE_IMAGE_PATH) -> Tuple[Any, int, int]:
+    """The source line drawing as a greyscale pixel accessor, loaded once."""
+    cached = _SOURCE_CACHE.get(path)
+    if cached is None:
+        from PIL import Image  # noqa: PLC0415  (optional at import time, required by this step)
+
+        image = Image.open(path).convert("L")
+        cached = (image.load(), image.width, image.height)
+        _SOURCE_CACHE[path] = cached
+    return cached
+
+
+def _world_to_source_px(point: Point) -> Tuple[float, float]:
+    """The transform recorded in the plan's own `note`, shared with render_floor_plan."""
+    import render_floor_plan  # noqa: PLC0415  (same directory; imported lazily like --render)
+
+    return render_floor_plan.world_to_source_px(point)
+
+
+def distance_to_ink(point: Point) -> float:
+    """Distance in metres from a world point to the nearest drawn pixel in the source."""
+    import render_floor_plan  # noqa: PLC0415
+
+    metres_per_px = render_floor_plan.SOURCE_SCALE_M_PER_PX
+    pixels, width, height = _source_raster()
+    px, py = _world_to_source_px(point)
+    cx, cy = int(round(px)), int(round(py))
+    for radius in range(INK_SEARCH_MAX_PX + 1):
+        best: Optional[float] = None
+        for dy in range(-radius, radius + 1):
+            for dx in range(-radius, radius + 1):
+                if max(abs(dx), abs(dy)) != radius:
+                    continue  # only the new ring; inner rings were searched already
+                ix, iy = cx + dx, cy + dy
+                if 0 <= ix < width and 0 <= iy < height and pixels[ix, iy] < INK_LEVEL:
+                    found = math.hypot(ix - px, iy - py)
+                    if best is None or found < best:
+                        best = found
+        if best is not None:
+            return best * metres_per_px
+    return INK_SEARCH_MAX_PX * metres_per_px
+
+
+def span_off_ink(start: Point, end: Point) -> float:
+    """The worst distance-to-ink over a span. Small means the drawing really has a line here."""
+    length = math.hypot(end[0] - start[0], end[1] - start[1])
+    steps = max(2, int(length / INK_STEP_M))
+    worst = 0.0
+    for index in range(steps + 1):
+        t = index / steps
+        sample = (start[0] + t * (end[0] - start[0]), start[1] + t * (end[1] - start[1]))
+        worst = max(worst, distance_to_ink(sample))
+    return worst
+
+
+def wall_mean_off_ink(wall: Wall) -> float:
+    a, b = wall_points(wall)
+    length = wall_length(wall)
+    steps = max(2, int(length / INK_STEP_M))
+    total = 0.0
+    for index in range(steps + 1):
+        t = index / steps
+        total += distance_to_ink((a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])))
+    return total / (steps + 1)
+
+
+def dangling_ends(walls: Sequence[Wall], rooms: Sequence[Dict[str, Any]]) -> List[Tuple[int, int]]:
+    """
+    Endpoint indices (into endpoint_list) that stop in open space.
+
+    An end is ATTACHED when it sits within DANGLE_ATTACHED_EPS_M of another wall's body. An
+    unattached end is still legitimate when it is one half of a door jamb: either a near-collinear
+    wall end faces it across a door-sized gap, or a room's own `door` anchor is right there.
+    Returns (wall index, endpoint index) pairs in ascending order.
+    """
+    points = endpoint_list(walls)
+    doors = [_pt(room["door"]) for room in rooms]
+    result: List[Tuple[int, int]] = []
+    for index, point in enumerate(points):
+        owner = index // 2
+        if any(
+            segment_point_distance(point, other) <= DANGLE_ATTACHED_EPS_M
+            for position, other in enumerate(walls)
+            if position != owner
+        ):
+            continue
+        if any(math.hypot(point[0] - d[0], point[1] - d[1]) <= DANGLE_DOOR_NEAR_M for d in doors):
+            continue
+        jamb = False
+        for other_index, other_point in enumerate(points):
+            if other_index // 2 == owner:
+                continue
+            gap = math.hypot(point[0] - other_point[0], point[1] - other_point[1])
+            if not (DANGLE_GAP_MIN_M <= gap <= DANGLE_GAP_MAX_M):
+                continue
+            if angle_diff_deg(
+                wall_angle_deg(walls[owner]), wall_angle_deg(walls[other_index // 2])
+            ) <= DANGLE_COLLINEAR_DEG:
+                jamb = True
+                break
+        if not jamb:
+            result.append((owner, index))
+    return result
+
+
+def _absolute_door_safe(
+    old_point: Point, new_point: Point, owner: int, walls: Sequence[Wall]
+) -> bool:
+    """A move may not bring an endpoint within a door width of a wall it used to be clear of.
+    This is the absolute half of the weld/T-snap door guard. The relative half (do not narrow a
+    protected endpoint gap) is deliberately NOT applied here: it reads every jamb pair as a
+    doorway, including the ones the source draws as an unbroken line, and the ink test below is
+    direct evidence about the same question."""
+    for index, other in enumerate(walls):
+        if index == owner:
+            continue
+        if segment_point_distance(old_point, other) < DOOR_MIN_GAP_M:
+            continue
+        if segment_point_distance(new_point, other) < DOOR_MIN_GAP_M:
+            return False
+    return True
+
+
+def _overshoot_landing(
+    walls: Sequence[Wall], owner: int, end_point: Point, other_end: Point
+) -> Optional[Tuple[float, int, Point]]:
+    """
+    The dangling end is an OVERSHOOT when another wall already ends ON this wall's body, short of
+    the dangling end: the junction is real and the material past it is the trace running on. The
+    end retracts to that junction, which both trims the overshoot and welds the two walls at a
+    shared corner.
+
+    This outranks the general landing search because the general search minimises the MOVE, and a
+    lateral snap onto the same neighbour's body is always a smaller move than trimming back to its
+    tip. Taking the smaller move there leaves the overshoot in place, and the neighbour's tip then
+    reads as dangling instead, so the two walls chase each other pass after pass.
+    """
+    best: Optional[Tuple[float, int, Point]] = None
+    for index, other in enumerate(walls):
+        if index == owner:
+            continue
+        for point in wall_points(other):
+            if segment_point_distance(point, walls[owner]) > DANGLE_ATTACHED_EPS_M:
+                continue  # not a junction on our body
+            distance = math.hypot(point[0] - end_point[0], point[1] - end_point[1])
+            if distance <= T_SNAP_EPS_M or distance > LAND_MAX_M:
+                continue
+            new_length = math.hypot(point[0] - other_end[0], point[1] - other_end[1])
+            if new_length < max(MIN_COLLAPSE_LENGTH_M, PARTITION_MIN_LENGTH_M):
+                continue
+            if new_length >= math.hypot(end_point[0] - other_end[0], end_point[1] - other_end[1]):
+                continue  # the junction is not between the two ends, so nothing overshoots it
+            landing = (round(point[0], COORD_DECIMALS), round(point[1], COORD_DECIMALS))
+            if best is None or (distance, index, landing) < (best[0], best[1], best[2]):
+                best = (distance, index, landing)
+    return best
+
+
+def _landing_candidates(
+    walls: Sequence[Wall], owner: int, end_point: Point, other_end: Point
+) -> List[Tuple[float, int, Point]]:
+    """
+    Places the dangling end could land: another wall's endpoint, or the perpendicular foot on
+    another wall's body. Sorted by move distance, then target index, so the choice is a pure
+    function of the wall list.
+    """
+    axis = math.hypot(end_point[0] - other_end[0], end_point[1] - other_end[1])
+    if axis <= 0.0:
+        return []
+    outward = ((end_point[0] - other_end[0]) / axis, (end_point[1] - other_end[1]) / axis)
+
+    bearing = wall_angle_deg(walls[owner])
+    found: List[Tuple[int, float, int, Point]] = []
+    for index, target in enumerate(walls):
+        if index == owner:
+            continue
+        options: List[Tuple[int, Point]] = [(0, point) for point in wall_points(target)]
+        if angle_diff_deg(bearing, wall_angle_deg(target)) >= LAND_MIN_ANGLE_DEG:
+            hit = foot_on_wall(end_point, target)
+            if hit is not None and T_SNAP_MIN_T <= hit[0] <= T_SNAP_MAX_T:
+                options.append((1, hit[1]))
+        for rank, option in options:
+            point = (round(option[0], COORD_DECIMALS), round(option[1], COORD_DECIMALS))
+            move = (point[0] - end_point[0], point[1] - end_point[1])
+            distance = math.hypot(move[0], move[1])
+            if distance > LAND_MAX_M or distance <= T_SNAP_EPS_M:
+                continue
+            lateral = abs(move[0] * outward[1] - move[1] * outward[0])
+            if lateral > LAND_MAX_LATERAL_M:
+                continue  # sideways, not along the wall's own axis: that would bend the wall
+            new_length = math.hypot(point[0] - other_end[0], point[1] - other_end[1])
+            if new_length < max(MIN_COLLAPSE_LENGTH_M, PARTITION_MIN_LENGTH_M):
+                continue  # a survivor has to clear the admission floor, or the next run drops it
+            new_vector = (point[0] - other_end[0], point[1] - other_end[1])
+            if new_vector[0] * outward[0] + new_vector[1] * outward[1] <= 0.0:
+                continue  # must not flip the wall end over end
+            landed = {"a": [point[0], point[1]], "b": [other_end[0], other_end[1]]}
+            if angle_diff_deg(bearing, wall_angle_deg(landed)) > LAND_MAX_TURN_DEG:
+                continue
+            found.append((rank, distance, index, point))
+    found.sort(key=lambda item: (item[0], round(item[1], 6), item[2], item[3]))
+    return [(distance, index, point) for _rank, distance, index, point in found]
+
+
+def _bridge_candidates(
+    walls: Sequence[Wall], owner: int, end_point: Point
+) -> List[Tuple[float, int, Point]]:
+    """Nearby endpoints of other walls that a missing segment could span to."""
+    found: List[Tuple[float, int, Point]] = []
+    for index, target in enumerate(walls):
+        if index == owner:
+            continue
+        for point in wall_points(target):
+            distance = math.hypot(point[0] - end_point[0], point[1] - end_point[1])
+            if distance > BRIDGE_MAX_M or distance < MIN_COLLAPSE_LENGTH_M:
+                continue
+            if segment_point_distance(point, walls[owner]) <= DANGLE_ATTACHED_EPS_M:
+                continue  # already on our own body: a bridge there would just overlap us
+            found.append((distance, index, point))
+    found.sort(key=lambda item: (round(item[0], 6), item[1], item[2]))
+    return found
+
+
+def _bridge_is_clean(start: Point, end: Point, walls: Sequence[Wall]) -> bool:
+    """A bridge may touch walls at its ends but may not cut through one."""
+    for wall in walls:
+        p, q = wall_points(wall)
+        if _segments_properly_cross(start, end, p, q):
+            return False
+    return True
+
+
+def repair_dangling_ends(
+    partitions: List[Wall], fixed: Sequence[Wall], rooms: Sequence[Dict[str, Any]]
+) -> Tuple[List[Wall], List[str]]:
+    """
+    Resolve every dangling PARTITION end, one per pass, in three priority orders.
+
+      1 EXTEND / RETRACT to meet. The end lands on a neighbour's endpoint or body, forming a
+        clean T or L, provided the landing is along the wall's own axis. Where the move ADDS
+        material the added span must be on ink, which is what keeps a doorway from being sealed;
+        where it only removes material no ink test is needed, because a trim can widen an opening
+        but never narrow one.
+      2 BRIDGE. Where the source draws an unbroken run that the trace chopped, the missing
+        segment is added so the run is continuous again. Gated on the same ink test.
+      3 DROP. Only a SHORT wall whose own body is off the drawing. A long wall is architecture
+        even when an end overshoots.
+
+    Ends that no rule fits are left exactly as they are; that is the honest answer for a jamb
+    facing a real door opening, and it is why the pass reports what it did rather than driving a
+    count to zero.
+
+    One change per pass with a restart keeps the result a pure function of the wall list, and the
+    pass is idempotent: every repair lands an end ON another wall, so on a re-run that end is
+    ATTACHED, is not dangling, and nothing fires again.
+    """
+    result = [dict(w) for w in partitions]
+    actions: List[str] = []
+
+    for _ in range(MAX_PASSES):
+        walls = result + list(fixed)
+        partition_count = len(result)
+
+        def name(index: int, count: int = partition_count) -> int:
+            """Index in the WRITTEN walls[] (fixed first, then partitions), for readable logs."""
+            return index + len(fixed) if index < count else index - count
+
+        loose = [item for item in dangling_ends(walls, rooms) if item[0] < len(result)]
+        if not loose:
+            return round_walls(result), actions
+
+        changed = False
+        for owner, endpoint_index in loose:
+            points = endpoint_list(walls)
+            end_point = points[endpoint_index]
+            other_end = points[endpoint_index + 1 if endpoint_index % 2 == 0 else endpoint_index - 1]
+            key = "a" if endpoint_index % 2 == 0 else "b"
+
+            overshoot = _overshoot_landing(walls, owner, end_point, other_end)
+            if overshoot is not None:
+                distance, target_index, point = overshoot
+                moved = dict(result[owner])
+                moved[key] = [point[0], point[1]]
+                result[owner] = round_wall(moved)
+                actions.append(
+                    f"retract wall {name(owner)} end {key} "
+                    f"[{end_point[0]:.3f}, {end_point[1]:.3f}] by {distance:.3f} m onto the "
+                    f"existing junction with wall {name(target_index)} at "
+                    f"[{point[0]:.3f}, {point[1]:.3f}] (overshoot past a real corner)"
+                )
+                changed = True
+                break
+
+            landing = None
+            for distance, target_index, point in _landing_candidates(
+                walls, owner, end_point, other_end
+            ):
+                axis = math.hypot(end_point[0] - other_end[0], end_point[1] - other_end[1])
+                outward = (
+                    (end_point[0] - other_end[0]) / axis,
+                    (end_point[1] - other_end[1]) / axis,
+                )
+                along = (point[0] - end_point[0]) * outward[0] + (point[1] - end_point[1]) * outward[1]
+                if along > 0.0:
+                    # The move ADDS material, so it is the move that could seal a doorway. The
+                    # source drawing answers that directly: if the line is unbroken here there is
+                    # no door here. The geometric door guard is not applied on top, because it
+                    # reads "this end moved closer to that end" as a closing doorway, which is
+                    # true of every joint being closed and would veto them all.
+                    if span_off_ink(end_point, point) > INK_ON_MAX_M:
+                        continue
+                elif not _absolute_door_safe(end_point, point, owner, walls):
+                    continue  # a sideways move adds no material, but may still crowd a gap
+                landing = (distance, target_index, point, along)
+                break
+            if landing is not None:
+                distance, target_index, point, along = landing
+                moved = dict(result[owner])
+                moved[key] = [point[0], point[1]]
+                result[owner] = round_wall(moved)
+                actions.append(
+                    f"{'extend' if along > 0.0 else 'retract'} wall {name(owner)} end {key} "
+                    f"[{end_point[0]:.3f}, {end_point[1]:.3f}] by {distance:.3f} m onto wall "
+                    f"{name(target_index)} at [{point[0]:.3f}, {point[1]:.3f}]"
+                )
+                changed = True
+                break
+
+            bridged = False
+            for distance, target_index, point in _bridge_candidates(walls, owner, end_point):
+                if span_off_ink(end_point, point) > INK_ON_MAX_M:
+                    continue
+                if not _bridge_is_clean(end_point, point, walls):
+                    continue
+                result.append(make_wall(end_point, point))
+                actions.append(
+                    f"bridge wall {name(owner)} end {key} [{end_point[0]:.3f}, {end_point[1]:.3f}] to "
+                    f"wall {name(target_index)} at [{point[0]:.3f}, {point[1]:.3f}] ({distance:.3f} m "
+                    f"of drawn line the trace lost)"
+                )
+                bridged = True
+                break
+            if bridged:
+                changed = True
+                break
+
+            if (
+                wall_length(result[owner]) < DROP_MAX_LENGTH_M
+                and wall_mean_off_ink(result[owner]) > DROP_OFF_INK_MEAN_M
+            ):
+                actions.append(
+                    f"drop wall {name(owner)} ({wall_length(result[owner]):.2f} m): the source drawing "
+                    f"has no line along it"
+                )
+                del result[owner]
+                changed = True
+                break
+
+        if not changed:
+            return round_walls(result), actions
+
+    raise RuntimeError("repair_dangling_ends did not converge; check the LAND_*/BRIDGE_* tolerances")
+
+
+# ---------------------------------------------------------------------------------------
+# Step 7: carry glass flags and authored notes onto the rebuilt walls
 # ---------------------------------------------------------------------------------------
 
 
@@ -990,9 +1413,12 @@ def count_tjunction_gaps(walls: Sequence[Wall]) -> int:
     return count
 
 
-def metrics(walls: Sequence[Wall]) -> Dict[str, Any]:
+def metrics(walls: Sequence[Wall], rooms: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """`rooms` is not optional: the dangling-end count needs the room door anchors, and defaulting
+    them to empty would silently over-report by counting every jamb."""
     return {
         "walls": len(walls),
+        "dangling_ends": len(dangling_ends(walls, rooms)),
         "total_length_m": sum(wall_length(w) for w in walls),
         "parallel_duplicate_pairs": count_parallel_duplicate_pairs(walls),
         "wall_crossings": count_wall_crossings(walls),
@@ -1012,6 +1438,7 @@ def print_metrics(before: Dict[str, Any], after: Dict[str, Any]) -> None:
         ("wall crossings", "wall_crossings", "{:.0f}"),
         ("walls under 1.2 m", "walls_under_1_2m", "{:.0f}"),
         ("free endpoints", "free_endpoints", "{:.0f}"),
+        ("dangling ends", "dangling_ends", "{:.0f}"),
         ("T-junction gaps (<= 0.35 m)", "tjunction_gaps", "{:.0f}"),
         ("glass walls", "glass_walls", "{:.0f}"),
         ("walls carrying a note", "walls_with_notes", "{:.0f}"),
@@ -1045,6 +1472,7 @@ def rebuild(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     # have become a duplicate of the envelope. Re-applying is also what makes the whole script
     # a fixpoint (a second run sees its own output and reproduces it).
     partitions, _ = admit_partitions(partitions, fixed, outline, hole_polygons)
+    partitions, repairs = repair_dangling_ends(partitions, fixed, plan["rooms"])
 
     walls = round_walls(fixed + partitions)
     walls, provenance = carry_provenance(walls, originals)
@@ -1065,7 +1493,7 @@ def rebuild(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     result["holes"] = holes
     result["walls"] = walls
     result["note"] = clean.strip_previous_sentence(strip_rebuild_sentence(plan["note"])) + rebuild_sentence(
-        len(envelope), len(core), len(partitions)
+        len(envelope), len(core), len(partitions), len(dangling_ends(walls, plan["rooms"]))
     )
 
     info = {
@@ -1075,11 +1503,15 @@ def rebuild(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "rejected": rejected,
         "repaired_holes": repaired_names,
         "provenance": provenance,
+        "repairs": repairs,
+        "dangling_after": len(dangling_ends(walls, plan["rooms"])),
     }
     return result, info
 
 
-def rebuild_sentence(envelope_count: int, core_count: int, partition_count: int) -> str:
+def rebuild_sentence(
+    envelope_count: int, core_count: int, partition_count: int, dangling_count: int
+) -> str:
     """
     Describes the RESULT, never what this particular run changed, so re-runs stay byte identical.
     (The core-repair clause is phrased as a fact about the file rather than as "this run repaired
@@ -1102,7 +1534,16 @@ def rebuild_sentence(envelope_count: int, core_count: int, partition_count: int)
         f"partitions were then merged where collinear, welded at ends within "
         f"{WELD_RADIUS_M:.2f} m, and landed on the perpendicular foot of any wall body within "
         f"{T_SNAP_MAX_M:.2f} m, with the envelope and core pinned so they keep matching "
-        f"walkableOutline and the holes exactly. Wall dimensions and angles are therefore "
+        f"walkableOutline and the holes exactly. Any partition end still stopping in open space "
+        f"afterwards, with no neighbour to land on and no door facing it, was then decided "
+        f"against the source raster in source/floor-14-plan-hires.png: an end whose own axis "
+        f"reaches a neighbour within {LAND_MAX_M:.2f} m is landed on it, a run the trace chopped "
+        f"is bridged, and an end is only ever closed where every point of the added span sits "
+        f"within {INK_ON_MAX_M:.2f} m of drawn ink, which is what distinguishes a joint the trace "
+        f"lost from a door opening the drawing leaves blank (measured on this plan: real wall "
+        f"bodies run 0.07 to 0.13 m from ink, the door openings 0.37 to 0.69 m). {dangling_count} "
+        f"such ends remain by design, each one a jamb facing an opening the drawing shows as a "
+        f"blank gap. Wall dimensions and angles are therefore "
         f"constructed, not surveyed. No weld or snap was allowed to narrow a door-sized opening, "
         f"and every room stays path-reachable (npm run test:nav, 18/18, no PARTIAL paths); glass "
         f"flags and authored per-wall notes are carried onto the nearest parallel rebuilt wall."
@@ -1128,10 +1569,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     plan, newline = clean.read_plan(SERVER_PLAN_PATH)
-    before = metrics([round_wall(w) for w in plan["walls"]])
+    before = metrics([round_wall(w) for w in plan["walls"]], plan["rooms"])
 
     result, info = rebuild(plan)
-    after = metrics(result["walls"])
+    after = metrics(result["walls"], result["rooms"])
 
     print(f"repaired holes      : {info['repaired_holes'] or 'none'}")
     print(f"envelope walls      : {info['envelope']} (one per walkableOutline edge)")
@@ -1144,6 +1585,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         f"outside the outline), {info['rejected']['shadowed_fixed']} wholly shadowing the "
         f"envelope/core"
     )
+    print(f"dangling-end repair : {len(info['repairs'])} action(s), {info['dangling_after']} left")
+    for line in info["repairs"]:
+        print(f"  - {line}")
     prov = info["provenance"]
     print(
         f"provenance          : glass {prov['glass_carried']}/{prov['glass_original']} carried "
