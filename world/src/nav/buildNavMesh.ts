@@ -32,10 +32,14 @@ export interface BuiltNavMesh {
   navMesh: NavMesh;
   navMeshQuery: NavMeshQuery;
   /**
-   * Looks up `rooms[].name`/`aliases` case-insensitively and returns the room's `door`
-   * point snapped onto the navmesh via `NavMeshQuery.findClosestPoint`. Returns `null` if
-   * the name doesn't match any room, or if the door point isn't close enough to any polygon
-   * on the navmesh to snap (see `NavMeshQuery.defaultQueryHalfExtents`).
+   * Resolves a free-text room reference to that room's `door` point, snapped onto the
+   * navmesh via `NavMeshQuery.findClosestPoint`. Resolution is forgiving on purpose: both
+   * the LLM and real visitors fuzz room names ("Classroom 1408" for the room named "1408",
+   * "the kitchen", "north collab"), so a single exact string compare would fail on common,
+   * unambiguous phrasings. See `makeRoomResolver` for the ordered fallback layers. Returns
+   * `null` when nothing matches CONFIDENTLY (an unmatched query the visitor can re-phrase is
+   * strictly better than silently escorting them to the wrong room), or if the door point
+   * isn't close enough to any polygon on the navmesh to snap.
    */
   findRoomTarget: (nameOrAlias: string) => RoomTarget | null;
 }
@@ -180,6 +184,121 @@ function normalizeRoomKey(value: string): string {
   return value.trim().toLowerCase();
 }
 
+// Generic filler tokens that carry no disambiguating meaning on THIS floor: they either
+// recur across many room names ("Classroom 1417", "Wellness Room", "Event Space") or are
+// pure grammar glue ("the"). Stripping them lets "Classroom 1408" and "1408", "the kitchen"
+// and "Kitchen", "north collaboration space" and "north collaboration" collapse to one key.
+// Matched as WHOLE tokens only -- critical so "washroom" never loses its embedded "room".
+const GENERIC_TOKENS = new Set(["the", "classroom", "room", "space"]);
+
+/**
+ * Lowercases, turns punctuation into spaces (keeping the apostrophe in "women's"), collapses
+ * whitespace, and drops the generic filler tokens above. Two strings with the same stripped
+ * form name the same place regardless of phrasing noise (case, extra spaces, a trailing ".",
+ * a leading "the", or a generic "room"/"classroom"/"space" word).
+ */
+function stripNoise(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s']/gu, " ")
+    .split(/\s+/)
+    .filter((tok) => tok.length > 0 && !GENERIC_TOKENS.has(tok))
+    .join(" ");
+}
+
+/**
+ * Builds the free-text -> room-index resolver used by `findRoomTarget`. All four layers are
+ * deterministic, tried in order, first hit wins, and every one is built to return `null`
+ * (not a guess) the moment a query is ambiguous, because a wrong destination is worse than a
+ * re-ask. The layers, and WHY each exists:
+ *
+ *   1. Exact normalized name/alias (trim + lowercase) -- the original behavior, kept as the
+ *      fast, zero-ambiguity path for names/aliases passed verbatim ("room 1430", "1409").
+ *   2. Stripped-noise equality -- strips case, punctuation, whitespace, a leading "the", and
+ *      the generic words room/classroom/space from BOTH sides, then compares. This is what
+ *      resolves "Classroom 1408" -> "1408", "the kitchen" -> "Kitchen", and "north
+ *      collaboration space" -> "North Collaboration Space". Only fires when exactly one room
+ *      owns that stripped form.
+ *   3. 4-digit-number extraction -- if the query contains a 4-digit number that appears in
+ *      exactly one room's name or aliases, return that room. Catches "1408 room", "go to
+ *      1417", etc. All nine numbered rooms (1407/1408/1409/1417/1418/1425/1426/1429/1430)
+ *      are unique by number, so this never has to guess; a number no room owns ("1499")
+ *      falls through to null.
+ *   4. Distinctive-keyword containment (LAST resort) -- only tokens that are GLOBALLY UNIQUE
+ *      to a single room (computed here, not hardcoded) count as distinctive, so "kitchen",
+ *      "wellness", "event", "quiet", "north"/"south", "female"/"male", "gender" each pin one
+ *      room, while shared words like "washroom" (3 rooms) and "collaboration" (2 rooms) are
+ *      deliberately NON-distinctive and match nothing on their own. This is what lets "north
+ *      collab" resolve (the token "north" is distinctive; the abbreviation "collab" is simply
+ *      ignored). Returns null unless exactly one room is implicated.
+ */
+function makeRoomResolver(
+  rooms: readonly FloorPlan["rooms"][number][],
+): (query: string) => number | null {
+  const addTo = (map: Map<string, Set<number>>, key: string, i: number): void => {
+    if (!key) return;
+    const set = map.get(key) ?? new Set<number>();
+    set.add(i);
+    map.set(key, set);
+  };
+
+  const exact = new Map<string, number>(); // layer 1: normalized name/alias -> room
+  const stripped = new Map<string, Set<number>>(); // layer 2: stripped form -> rooms
+  const byNumber = new Map<string, Set<number>>(); // layer 3: 4-digit number -> rooms
+  const tokenRooms = new Map<string, Set<number>>(); // token -> rooms (for layer 4 uniqueness)
+
+  rooms.forEach((room, i) => {
+    const surfaces = [room.name, ...(room.aliases ?? [])];
+    for (const surface of surfaces) {
+      exact.set(normalizeRoomKey(surface), i);
+      addTo(stripped, stripNoise(surface), i);
+      for (const tok of stripNoise(surface).split(/\s+/)) addTo(tokenRooms, tok, i);
+    }
+    for (const match of surfaces.join(" ").matchAll(/\d{4}/g)) addTo(byNumber, match[0], i);
+  });
+
+  // A token is "distinctive" only if it belongs to exactly one room. Shared words
+  // (washroom, collaboration) are intentionally excluded so layer 4 can never send a
+  // "washroom" query to one of the three washrooms arbitrarily.
+  const distinctive = new Map<string, number>();
+  for (const [tok, set] of tokenRooms) {
+    if (set.size === 1) distinctive.set(tok, [...set][0]);
+  }
+
+  const only = (set: Set<number> | undefined): number | null =>
+    set && set.size === 1 ? [...set][0] : null;
+
+  return (query: string): number | null => {
+    const key = normalizeRoomKey(query);
+    if (!key) return null; // empty / whitespace-only
+
+    // Layer 1: exact normalized name or alias.
+    const hit = exact.get(key);
+    if (hit !== undefined) return hit;
+
+    // Layer 2: stripped-noise equality.
+    const strippedKey = stripNoise(query);
+    const byStripped = only(stripped.get(strippedKey));
+    if (byStripped !== null) return byStripped;
+
+    // Layer 3: a 4-digit number that uniquely identifies one room.
+    const numberMatches = new Set<number>();
+    for (const match of query.matchAll(/\d{4}/g)) {
+      for (const i of byNumber.get(match[0]) ?? []) numberMatches.add(i);
+    }
+    const byNum = only(numberMatches);
+    if (byNum !== null) return byNum;
+
+    // Layer 4: exactly one distinctive keyword present in the query (last resort).
+    const keywordMatches = new Set<number>();
+    for (const tok of strippedKey.split(/\s+/)) {
+      const i = distinctive.get(tok);
+      if (i !== undefined) keywordMatches.add(i);
+    }
+    return only(keywordMatches);
+  };
+}
+
 /**
  * Builds the navmesh for a floor plan (defaults to loading `world/data/floor-14.json`).
  * Awaits recast-navigation's WASM init exactly once (memoized across calls) before
@@ -199,19 +318,13 @@ export async function buildNavMesh(floorPlan?: FloorPlan): Promise<BuiltNavMesh>
   const { navMesh } = result;
   const navMeshQuery = new NavMeshQuery(navMesh);
 
-  const roomLookup = new Map<string, Point2D>();
-  for (const room of plan.rooms) {
-    roomLookup.set(normalizeRoomKey(room.name), room.door);
-    for (const alias of room.aliases ?? []) {
-      roomLookup.set(normalizeRoomKey(alias), room.door);
-    }
-  }
+  const resolveRoomIndex = makeRoomResolver(plan.rooms);
 
   const findRoomTarget = (nameOrAlias: string): RoomTarget | null => {
-    const door = roomLookup.get(normalizeRoomKey(nameOrAlias));
-    if (!door) return null;
+    const idx = resolveRoomIndex(nameOrAlias);
+    if (idx === null) return null;
 
-    const [x, z] = door;
+    const [x, z]: Point2D = plan.rooms[idx].door;
     const { success, point } = navMeshQuery.findClosestPoint({ x, y: 0, z });
     if (!success) return null;
 
@@ -221,5 +334,12 @@ export async function buildNavMesh(floorPlan?: FloorPlan): Promise<BuiltNavMesh>
   return { navMesh, navMeshQuery, findRoomTarget };
 }
 
-// Exported for unit testing the triangulation/winding logic in isolation from WASM.
-export const __internal = { buildGeometry, addFloorTriangles, addWallQuad };
+// Exported for unit testing the triangulation/winding logic and the room-name resolution
+// layers in isolation from WASM (makeRoomResolver is pure string logic; it needs no navmesh).
+export const __internal = {
+  buildGeometry,
+  addFloorTriangles,
+  addWallQuad,
+  makeRoomResolver,
+  stripNoise,
+};

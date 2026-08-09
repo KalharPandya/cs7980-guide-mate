@@ -164,7 +164,10 @@ def _room_vocabulary_line() -> str:
         entries.append(f"{name} (also: {', '.join(aliases)})" if aliases else name)
     return (
         "These are the only places on this floor, and the only names guide_to_room "
-        "accepts: " + "; ".join(entries) + "."
+        "accepts: " + "; ".join(entries) + ". "
+        "Pass the room name EXACTLY as listed here. Some rooms are named by a bare "
+        "number (1407, 1408, 1409, 1429, 1430): pass just the number, do NOT prefix "
+        "'Classroom' onto it (say '1408', not 'Classroom 1408')."
     )
 # --- what kind of robot am I driving? ---------------------------------------
 # The two fleets have OPPOSITE capabilities, and the model has to be told which
