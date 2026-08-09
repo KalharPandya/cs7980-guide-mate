@@ -1,0 +1,284 @@
+<style>
+  .name-board {
+    display: grid;
+    gap: 18px;
+    margin-top: 18px;
+  }
+
+  .name-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
+    gap: 16px;
+  }
+
+  .name-card {
+    border: 1px solid #d9dee8;
+    border-radius: 18px;
+    background: #fff;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  }
+
+  .name-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 36px rgba(16, 24, 40, 0.14);
+  }
+
+  .name-card.selected {
+    border-color: #1d4ed8;
+    box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.16), 0 18px 44px rgba(16, 24, 40, 0.16);
+  }
+
+  .sample {
+    min-height: 220px;
+    padding: 18px;
+    display: grid;
+    align-content: space-between;
+    gap: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .sample::after {
+    content: "";
+    position: absolute;
+    right: -38px;
+    bottom: -44px;
+    width: 154px;
+    height: 124px;
+    border-radius: 36px;
+    opacity: 0.86;
+  }
+
+  .eyebrow {
+    font: 850 11px/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    position: relative;
+    z-index: 1;
+  }
+
+  .wordmark {
+    position: relative;
+    z-index: 1;
+  }
+
+  .wordmark h3 {
+    margin: 0;
+    font-size: 42px;
+    line-height: 0.95;
+    letter-spacing: -0.04em;
+  }
+
+  .wordmark p {
+    margin: 9px 0 0;
+    font-size: 13px;
+    line-height: 1.35;
+    max-width: 17rem;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .chip {
+    border-radius: 999px;
+    padding: 7px 10px;
+    font-size: 11px;
+    line-height: 1;
+    font-weight: 900;
+  }
+
+  .name-body {
+    padding: 14px 16px 16px;
+  }
+
+  .name-body h4 {
+    margin: 0 0 6px;
+    font-size: 17px;
+  }
+
+  .name-body p {
+    margin: 0;
+    color: #566174;
+    font-size: 14px;
+  }
+
+  .pick {
+    background:
+      linear-gradient(90deg, rgba(17, 24, 39, 0.055) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(17, 24, 39, 0.045) 1px, transparent 1px),
+      #f8fafc;
+    background-size: 26px 26px;
+    color: #111827;
+  }
+
+  .pick::after { background: #dbeafe; }
+  .pick .chip { background: #111827; color: #fff; }
+
+  .warm {
+    background:
+      radial-gradient(circle at 88% 20%, rgba(20, 184, 166, 0.24), transparent 30%),
+      radial-gradient(circle at 20% 88%, rgba(250, 204, 21, 0.30), transparent 28%),
+      #fbfdfb;
+    color: #12312d;
+  }
+
+  .warm::after { background: #ccfbf1; }
+  .warm .chip { background: #0f766e; color: #fff; }
+
+  .ops {
+    background:
+      linear-gradient(135deg, rgba(56, 189, 248, 0.16), transparent 45%),
+      #111827;
+    color: #f8fafc;
+  }
+
+  .ops .wordmark p { color: #cbd5e1; }
+  .ops::after { background: #1f2937; border: 1px solid rgba(148, 163, 184, 0.22); }
+  .ops .chip { background: #38bdf8; color: #082f49; }
+
+  .shortlist {
+    border: 1px solid #d9dee8;
+    border-radius: 18px;
+    padding: 14px 16px;
+    background: #fff;
+    color: #394150;
+    font-size: 14px;
+  }
+</style>
+
+<h2>Name directions for the central AI concierge</h2>
+<p class="subtitle">Avoiding robot-first names. These should fit a central agent that can answer, route, dispatch, escalate, and later control many tools. Click names you like, or tell me what sounds wrong.</p>
+
+<div class="name-board">
+  <div class="name-grid">
+    <div class="name-card" data-choice="concierge" onclick="toggleSelect(this)">
+      <div class="sample pick">
+        <div class="eyebrow">recommended / grounded expert</div>
+        <div class="wordmark">
+          <h3>Concierge</h3>
+          <p>A plain-English product name. It immediately tells users this AI can help, arrange, and route.</p>
+        </div>
+        <div class="chips">
+          <span class="chip">Map</span>
+          <span class="chip">Knowledge</span>
+          <span class="chip">Robot</span>
+          <span class="chip">Staff</span>
+        </div>
+      </div>
+      <div class="name-body">
+        <h4>A. Concierge</h4>
+        <p>Strongest concept fit, but generic. Could become "Campus Concierge" or "Concierge AI" in copy.</p>
+      </div>
+    </div>
+
+    <div class="name-card" data-choice="navi" onclick="toggleSelect(this)">
+      <div class="sample warm">
+        <div class="eyebrow">short / welcoming / navigational</div>
+        <div class="wordmark">
+          <h3>Navi</h3>
+          <p>Friendly and memorable. Reads as navigation plus assistant, without making the robot the brand.</p>
+        </div>
+        <div class="chips">
+          <span class="chip">Ask</span>
+          <span class="chip">Route</span>
+          <span class="chip">Voice</span>
+          <span class="chip">Companion</span>
+        </div>
+      </div>
+      <div class="name-body">
+        <h4>B. Navi</h4>
+        <p>Most approachable. Slightly less "expert concierge" unless paired with confident UI language.</p>
+      </div>
+    </div>
+
+    <div class="name-card" data-choice="atlas" onclick="toggleSelect(this)">
+      <div class="sample pick">
+        <div class="eyebrow">knowledge + place intelligence</div>
+        <div class="wordmark">
+          <h3>Atlas</h3>
+          <p>Signals maps, campus knowledge, and spatial intelligence. Feels more premium and expandable.</p>
+        </div>
+        <div class="chips">
+          <span class="chip">Places</span>
+          <span class="chip">Docs</span>
+          <span class="chip">Routes</span>
+          <span class="chip">Robots</span>
+        </div>
+      </div>
+      <div class="name-body">
+        <h4>C. Atlas</h4>
+        <p>Best if the system's intelligence is about place, documents, and routing. Less explicitly service-oriented.</p>
+      </div>
+    </div>
+
+    <div class="name-card" data-choice="waypoint" onclick="toggleSelect(this)">
+      <div class="sample warm">
+        <div class="eyebrow">accessible / campus movement</div>
+        <div class="wordmark">
+          <h3>Waypoint</h3>
+          <p>A calm guidance name. Works for routes, check-ins, approvals, and handoffs.</p>
+        </div>
+        <div class="chips">
+          <span class="chip">Start</span>
+          <span class="chip">Route</span>
+          <span class="chip">Arrive</span>
+          <span class="chip">Help</span>
+        </div>
+      </div>
+      <div class="name-body">
+        <h4>D. Waypoint</h4>
+        <p>Very usable and clear, but more wayfinding app than central AI arsenal.</p>
+      </div>
+    </div>
+
+    <div class="name-card" data-choice="haven" onclick="toggleSelect(this)">
+      <div class="sample warm">
+        <div class="eyebrow">safety / accessibility / care</div>
+        <div class="wordmark">
+          <h3>Haven</h3>
+          <p>Soft, safe, accessible. Good for a support-oriented agent, less strong for multi-tool orchestration.</p>
+        </div>
+        <div class="chips">
+          <span class="chip">Safe</span>
+          <span class="chip">Readable</span>
+          <span class="chip">Human help</span>
+        </div>
+      </div>
+      <div class="name-body">
+        <h4>E. Haven</h4>
+        <p>Warmest. I would avoid it if you want the agent to feel expert and operational.</p>
+      </div>
+    </div>
+
+    <div class="name-card" data-choice="relay" onclick="toggleSelect(this)">
+      <div class="sample ops">
+        <div class="eyebrow">orchestration / dispatch layer</div>
+        <div class="wordmark">
+          <h3>Relay</h3>
+          <p>Fast, technical, multi-system. The agent connects people, robots, knowledge, and staff.</p>
+        </div>
+        <div class="chips">
+          <span class="chip">Dispatch</span>
+          <span class="chip">Status</span>
+          <span class="chip">Ack</span>
+          <span class="chip">Audit</span>
+        </div>
+      </div>
+      <div class="name-body">
+        <h4>F. Relay</h4>
+        <p>Best for admin/operator identity. Probably too technical for the public-facing concierge.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="shortlist">
+    My shortlist: <strong>Atlas</strong> if you want the product to feel like a place-intelligence platform; <strong>Navi</strong> if you want it to feel personal and easy; <strong>Concierge</strong> if concept clarity matters more than uniqueness. A hybrid could be: product name <strong>Atlas</strong>, role line <strong>"your campus concierge AI"</strong>.
+  </div>
+</div>

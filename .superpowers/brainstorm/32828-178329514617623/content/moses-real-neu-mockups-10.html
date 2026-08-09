@@ -1,0 +1,585 @@
+<style>
+  :root {
+    --neu-black: #000000;
+    --neu-ink: #17191f;
+    --neu-gray-800: #1e2028;
+    --neu-gray-500: #989c9e;
+    --neu-gray-300: #e0e0e0;
+    --neu-gray-200: #ebebeb;
+    --neu-gray-100: #f5f5f5;
+    --neu-white: #ffffff;
+    --neu-red: #c8102e;
+    --neu-gold: #a4804a;
+  }
+
+  body {
+    margin: 0;
+    padding: 18px;
+    background: var(--neu-white);
+    color: var(--neu-black);
+    font-family: "Real Head Pro", "FF Real Head", Lato, Arial, sans-serif;
+  }
+
+  h2 {
+    margin: 0 0 12px;
+    font-size: 34px;
+    line-height: 1;
+    letter-spacing: -0.04em;
+  }
+
+  .subtitle {
+    margin: 0;
+    max-width: 92rem;
+    font-family: Lato, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--neu-ink);
+  }
+
+  .neu-board {
+    display: grid;
+    gap: 18px;
+    margin-top: 18px;
+    font-family: "Real Head Pro", "FF Real Head", Lato, Arial, sans-serif;
+  }
+
+  .neu-note {
+    border: 1px solid var(--neu-gray-300);
+    background: var(--neu-white);
+    border-radius: 0;
+    padding: 14px 16px;
+    color: var(--neu-ink);
+    font-size: 14px;
+  }
+
+  .mock-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(390px, 1fr));
+    gap: 18px;
+  }
+
+  .mock-card {
+    border: 1px solid var(--neu-gray-300);
+    background: var(--neu-white);
+    border-radius: 0;
+    overflow: hidden;
+    cursor: pointer;
+    transition: box-shadow 160ms ease, border-color 160ms ease, transform 160ms ease;
+  }
+
+  .mock-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.16);
+  }
+
+  .mock-card.selected {
+    border-color: var(--neu-red);
+    box-shadow: 0 0 0 4px rgba(200, 16, 46, 0.16), 0 18px 44px rgba(0, 0, 0, 0.16);
+  }
+
+  .mock-screen {
+    min-height: 560px;
+    background: var(--neu-gray-100);
+    padding: 16px;
+  }
+
+  .browser {
+    min-height: 528px;
+    background: var(--neu-white);
+    border: 1px solid var(--neu-gray-300);
+    overflow: hidden;
+  }
+
+  .neu-global {
+    min-height: 64px;
+    background: var(--neu-black);
+    color: var(--neu-white);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 0 18px;
+  }
+
+  .neu-global img {
+    display: block;
+    max-width: 235px;
+    height: auto;
+    max-height: 40px;
+    transform: scale(1.28);
+    transform-origin: left center;
+  }
+
+  .global-links {
+    display: flex;
+    gap: 14px;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  .moses-local {
+    min-height: 58px;
+    border-bottom: 1px solid var(--neu-gray-300);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 0 18px;
+    background: var(--neu-white);
+  }
+
+  .moses-word {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .husky-icon {
+    width: 42px;
+    height: 42px;
+    object-fit: contain;
+  }
+
+  .word-stack {
+    display: grid;
+    gap: 1px;
+  }
+
+  .word-stack strong {
+    color: var(--neu-black);
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: -0.03em;
+  }
+
+  .word-stack span {
+    color: var(--neu-gray-800);
+    font-family: Lato, Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: var(--neu-black);
+    color: var(--neu-white);
+    font-family: Lato, Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 900;
+  }
+
+  .pill.red {
+    background: var(--neu-red);
+  }
+
+  .pill.light {
+    background: var(--neu-gray-100);
+    color: var(--neu-black);
+    border: 1px solid var(--neu-gray-300);
+  }
+
+  .hero {
+    padding: 28px 22px 24px;
+    display: grid;
+    gap: 18px;
+    background:
+      linear-gradient(90deg, rgba(0, 0, 0, 0.06) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+      var(--neu-white);
+    background-size: 32px 32px;
+  }
+
+  .hero h3 {
+    margin: 0;
+    color: var(--neu-black);
+    font-size: 44px;
+    line-height: 0.92;
+    letter-spacing: -0.055em;
+    max-width: 8.5em;
+  }
+
+  .hero p {
+    margin: 0;
+    max-width: 31em;
+    color: var(--neu-ink);
+    font-family: Lato, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .action {
+    min-height: 48px;
+    border: 2px solid var(--neu-black);
+    background: var(--neu-white);
+    color: var(--neu-black);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 12px;
+    font-family: Lato, Arial, sans-serif;
+    font-size: 13px;
+    font-weight: 900;
+  }
+
+  .action.primary {
+    background: var(--neu-black);
+    color: var(--neu-white);
+  }
+
+  .action.red {
+    border-color: var(--neu-red);
+    background: var(--neu-red);
+    color: var(--neu-white);
+  }
+
+  .conversation {
+    padding: 18px;
+    display: grid;
+    gap: 11px;
+    background: var(--neu-gray-100);
+  }
+
+  .bubble {
+    max-width: 82%;
+    width: fit-content;
+    padding: 12px 13px;
+    background: var(--neu-white);
+    border-left: 4px solid var(--neu-black);
+    color: var(--neu-ink);
+    font-family: Lato, Arial, sans-serif;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .bubble.user {
+    margin-left: auto;
+    background: var(--neu-black);
+    color: var(--neu-white);
+    border-left-color: var(--neu-red);
+  }
+
+  .source {
+    display: block;
+    margin-top: 8px;
+    color: var(--neu-red);
+    font-size: 10px;
+    text-transform: uppercase;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+  }
+
+  .admin-layout {
+    display: grid;
+    grid-template-columns: 160px minmax(0, 1fr);
+    min-height: 528px;
+  }
+
+  .admin-side {
+    background: var(--neu-black);
+    color: var(--neu-white);
+    padding: 16px 12px;
+    display: grid;
+    gap: 22px;
+    align-content: start;
+  }
+
+  .side-logo {
+    display: grid;
+    gap: 10px;
+  }
+
+  .side-logo img {
+    width: 120px;
+    height: auto;
+    transform: scale(1.2);
+    transform-origin: left center;
+  }
+
+  .admin-nav {
+    display: grid;
+    gap: 4px;
+  }
+
+  .nav {
+    padding: 10px;
+    color: var(--neu-gray-300);
+    font-family: Lato, Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 900;
+  }
+
+  .nav.active {
+    background: var(--neu-red);
+    color: var(--neu-white);
+  }
+
+  .admin-main {
+    padding: 16px;
+    background: var(--neu-gray-100);
+    display: grid;
+    gap: 14px;
+    align-content: start;
+  }
+
+  .admin-main h3 {
+    margin: 0;
+    font-size: 27px;
+    line-height: 1;
+    letter-spacing: -0.04em;
+  }
+
+  .cards-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .stat-card {
+    background: var(--neu-white);
+    border: 1px solid var(--neu-gray-300);
+    padding: 11px;
+    min-width: 0;
+  }
+
+  .stat-card b {
+    display: block;
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: -0.05em;
+  }
+
+  .stat-card span {
+    color: var(--neu-gray-800);
+    font-family: Lato, Arial, sans-serif;
+    font-size: 10px;
+    font-weight: 900;
+  }
+
+  .queue {
+    background: var(--neu-white);
+    border: 1px solid var(--neu-gray-300);
+  }
+
+  .queue-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    padding: 12px;
+    border-bottom: 1px solid var(--neu-gray-200);
+    font-family: Lato, Arial, sans-serif;
+    font-size: 12px;
+    line-height: 1.3;
+  }
+
+  .queue-row:last-child {
+    border-bottom: 0;
+  }
+
+  .identity-panel {
+    min-height: 528px;
+    max-height: 528px;
+    background: var(--neu-black);
+    color: var(--neu-white);
+    display: grid;
+    align-content: space-between;
+    padding: 26px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .identity-panel::after {
+    content: "";
+    position: absolute;
+    right: -96px;
+    bottom: -116px;
+    width: 320px;
+    height: 320px;
+    border-radius: 50%;
+    border: 30px solid var(--neu-red);
+    opacity: 0.92;
+  }
+
+  .identity-top {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    gap: 18px;
+  }
+
+  .identity-top img {
+    width: 92px;
+    height: 92px;
+    object-fit: contain;
+  }
+
+  .identity-panel h3 {
+    margin: 0;
+    font-size: 58px;
+    line-height: 0.86;
+    letter-spacing: -0.07em;
+  }
+
+  .identity-panel p {
+    margin: 0;
+    max-width: 23em;
+    color: var(--neu-gray-300);
+    font-family: Lato, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .identity-bottom {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    max-width: 280px;
+  }
+
+  .caption {
+    padding: 14px 16px 16px;
+  }
+
+  .caption h4 {
+    margin: 0 0 6px;
+    font-size: 17px;
+  }
+
+  .caption p {
+    margin: 0;
+    color: #566174;
+    font-size: 14px;
+  }
+</style>
+
+<h2>Real Northeastern-material mockup pass</h2>
+<p class="subtitle">This version uses the official public Brand Center asset URLs as-is, Northeastern red/black/white, digital gray values, and the official typography guidance: Real Head Pro if licensed, Lato as approved fallback.</p>
+
+<div class="neu-board">
+  <div class="neu-note">
+    Important correction: these screens intentionally use real Northeastern reference materials rather than invented logos/colors. The Moses product identity still needs approval before public use.
+  </div>
+
+  <div class="mock-grid">
+    <div class="mock-card" data-choice="real-public-chat" onclick="toggleSelect(this)">
+      <div class="mock-screen">
+        <div class="browser">
+          <div class="neu-global">
+            <img src="https://brand.northeastern.edu/wp-content/uploads/2024/12/Wordmark_Red1.svg" alt="Northeastern wordmark" />
+            <div class="global-links"><span>Students</span><span>Visitors</span></div>
+          </div>
+          <div class="moses-local">
+            <div class="moses-word">
+              <img class="husky-icon" src="https://brand.northeastern.edu/wp-content/uploads/2022/05/dog-Head.svg" alt="King Husky mark" />
+              <div class="word-stack">
+                <strong>Moses</strong>
+                <span>Student project concierge AI</span>
+              </div>
+            </div>
+            <span class="pill light">Drydock safe</span>
+          </div>
+          <section class="hero">
+            <div>
+              <h3>Ask Moses to help you experience campus.</h3>
+              <p>A Northeastern-inspired AI concierge for routes, campus knowledge, voice help, staff handoff, and approved robot companions.</p>
+            </div>
+            <div class="actions">
+              <div class="action primary">Find a destination</div>
+              <div class="action">Ask campus history</div>
+              <div class="action">Request robot companion</div>
+              <div class="action red">Stop robot</div>
+            </div>
+          </section>
+          <section class="conversation">
+            <div class="bubble user">Why is the husky important here?</div>
+            <div class="bubble">Northeastern's husky tradition began with Sapsut, who was presented as King Husky I in 1927. I can show the source or tell the shorter version.<span class="source">Source: Northeastern Global News</span></div>
+          </section>
+        </div>
+      </div>
+      <div class="caption">
+        <h4>Public Chat With Real Marks</h4>
+        <p>Uses real Northeastern wordmark + King Husky mark as reference assets. Strongest for a class demo that looks institutionally grounded.</p>
+      </div>
+    </div>
+
+    <div class="mock-card" data-choice="real-admin-console" onclick="toggleSelect(this)">
+      <div class="mock-screen">
+        <div class="browser">
+          <div class="admin-layout">
+            <aside class="admin-side">
+              <div class="side-logo">
+                <img src="https://brand.northeastern.edu/wp-content/uploads/2024/12/Wordmark_Red2.svg" alt="Northeastern wordmark" />
+                <div class="word-stack">
+                  <strong style="color:#fff">Moses</strong>
+                  <span style="color:#e0e0e0">Operator console</span>
+                </div>
+              </div>
+              <nav class="admin-nav">
+                <div class="nav active">Mission queue</div>
+                <div class="nav">Robot tools</div>
+                <div class="nav">Knowledge</div>
+                <div class="nav">Maps</div>
+                <div class="nav">Audit</div>
+              </nav>
+            </aside>
+            <main class="admin-main">
+              <h3>Concierge operations</h3>
+              <div class="cards-row">
+                <div class="stat-card"><b>1</b><span>robot request</span></div>
+                <div class="stat-card"><b>0</b><span>motion enabled</span></div>
+                <div class="stat-card"><b>468</b><span>docked safe</span></div>
+              </div>
+              <div class="queue">
+                <div class="queue-row"><span>Visitor requests physical companion to Ell Hall</span><span class="pill red">Review</span></div>
+                <div class="queue-row"><span>King Husky history synced into knowledge base</span><span class="pill light">Ready</span></div>
+                <div class="queue-row"><span>Robot 468 heartbeat: docked, dry run</span><span class="pill light">Locked</span></div>
+                <div class="queue-row"><span>Direct command safety</span><span class="pill red">Stop</span></div>
+              </div>
+            </main>
+          </div>
+        </div>
+      </div>
+      <div class="caption">
+        <h4>Operator Console</h4>
+        <p>Official palette, square institutional layout, Real Head/Lato typography direction, and restrained red emphasis.</p>
+      </div>
+    </div>
+
+    <div class="mock-card" data-choice="real-identity" onclick="toggleSelect(this)">
+      <div class="mock-screen">
+        <div class="identity-panel">
+          <div class="identity-top">
+            <img src="https://brand.northeastern.edu/wp-content/uploads/2024/12/husky-red.svg" alt="King Husky red mark" />
+            <div>
+              <h3>Moses</h3>
+              <p>Your Northeastern concierge AI. A student project inspired by King Husky heritage, built to coordinate knowledge, maps, staff help, and robot companions.</p>
+            </div>
+          </div>
+          <div class="identity-bottom">
+            <span class="pill">Trusted</span>
+            <span class="pill">Empowering</span>
+            <span class="pill">Determined</span>
+            <span class="pill red">Explorer</span>
+          </div>
+        </div>
+      </div>
+      <div class="caption">
+        <h4>Moses Identity Panel</h4>
+        <p>Uses the real red Husky mark as a reference treatment. For approval, we can either keep official marks or replace with a custom Moses illustration.</p>
+      </div>
+    </div>
+  </div>
+</div>

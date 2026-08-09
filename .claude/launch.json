@@ -1,0 +1,38 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "avatar-poc",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "uvicorn", "--app-dir", "avatar_poc", "app:app", "--port", "8100"],
+      "port": 8100
+    },
+    {
+      "name": "world-server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        ".claude/worktrees/feat+kalhar-virtual-world/world",
+        "run",
+        "dev"
+      ],
+      "port": 2567
+    },
+    {
+      "name": "world-client",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        ".claude/worktrees/feat+kalhar-virtual-world/world-client",
+        "run",
+        "dev",
+        "--",
+        "--host",
+        "--port",
+        "5173",
+        "--strictPort"
+      ],
+      "port": 5173
+    }
+  ]
+}

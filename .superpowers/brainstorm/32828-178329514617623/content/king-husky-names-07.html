@@ -1,0 +1,200 @@
+<style>
+  .name-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 16px;
+    margin-top: 18px;
+  }
+  .name-card {
+    border: 1px solid #d9dee8;
+    border-radius: 18px;
+    background: #fff;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  }
+  .name-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 36px rgba(16, 24, 40, 0.14);
+  }
+  .name-card.selected {
+    border-color: #c8102e;
+    box-shadow: 0 0 0 4px rgba(200, 16, 46, 0.16), 0 18px 44px rgba(16, 24, 40, 0.16);
+  }
+  .poster {
+    min-height: 235px;
+    padding: 18px;
+    display: grid;
+    align-content: space-between;
+    gap: 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .poster::after {
+    content: "";
+    position: absolute;
+    width: 150px;
+    height: 116px;
+    right: -34px;
+    bottom: -42px;
+    border-radius: 40px;
+    opacity: 0.86;
+  }
+  .eyebrow {
+    font: 850 11px/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    position: relative;
+    z-index: 1;
+  }
+  .word {
+    position: relative;
+    z-index: 1;
+  }
+  .word h3 {
+    margin: 0;
+    font-size: 44px;
+    line-height: 0.92;
+    letter-spacing: -0.045em;
+  }
+  .word p {
+    margin: 9px 0 0;
+    max-width: 18rem;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+  .chips {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+  .chip {
+    border-radius: 999px;
+    padding: 7px 10px;
+    font-size: 11px;
+    line-height: 1;
+    font-weight: 900;
+  }
+  .body {
+    padding: 14px 16px 16px;
+  }
+  .body h4 {
+    margin: 0 0 6px;
+    font-size: 17px;
+  }
+  .body p {
+    margin: 0;
+    color: #566174;
+    font-size: 14px;
+  }
+  .heritage {
+    background:
+      linear-gradient(90deg, rgba(17, 24, 39, 0.055) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(17, 24, 39, 0.04) 1px, transparent 1px),
+      #f8fafc;
+    background-size: 26px 26px;
+    color: #111827;
+  }
+  .heritage::after { background: #fee2e2; }
+  .heritage .chip { background: #111827; color: #fff; }
+  .snow {
+    background:
+      radial-gradient(circle at 84% 18%, rgba(96, 165, 250, 0.24), transparent 30%),
+      #f8fbff;
+    color: #0f172a;
+  }
+  .snow::after { background: #dbeafe; }
+  .snow .chip { background: #1d4ed8; color: #fff; }
+  .warm {
+    background:
+      radial-gradient(circle at 84% 18%, rgba(200, 16, 46, 0.16), transparent 30%),
+      radial-gradient(circle at 20% 86%, rgba(250, 204, 21, 0.26), transparent 28%),
+      #fffafa;
+    color: #2d1118;
+  }
+  .warm::after { background: #ffe4e6; }
+  .warm .chip { background: #c8102e; color: #fff; }
+  .night {
+    background:
+      linear-gradient(135deg, rgba(248, 113, 113, 0.16), transparent 42%),
+      #111827;
+    color: #f8fafc;
+  }
+  .night .word p { color: #cbd5e1; }
+  .night::after { background: #1f2937; border: 1px solid rgba(248, 113, 113, 0.24); }
+  .night .chip { background: #f87171; color: #111827; }
+  .note {
+    margin-top: 18px;
+    border: 1px solid #d9dee8;
+    border-radius: 18px;
+    padding: 14px 16px;
+    background: #fff;
+    color: #394150;
+    font-size: 14px;
+  }
+</style>
+
+<h2>Northeastern King Husky-inspired names</h2>
+<p class="subtitle">Names drawn from the King Husky story: the 1927 arrival, Sapsut/King Husky I, Seppala, the serum-run lineage, North Station, the good-luck statue, and the modern live mascot tradition.</p>
+
+<div class="name-grid">
+  <div class="name-card" data-choice="sapsut" onclick="toggleSelect(this)">
+    <div class="poster heritage">
+      <div class="eyebrow">deepest homage / original name</div>
+      <div class="word"><h3>Sapsut</h3><p>The original husky name before he was presented as King Husky. Distinctive, real, and rooted.</p></div>
+      <div class="chips"><span class="chip">1927</span><span class="chip">King Husky I</span><span class="chip">Concierge AI</span></div>
+    </div>
+    <div class="body"><h4>A. Sapsut</h4><p>Most meaningful dedication. Unusual pronunciation is the tradeoff, but the story gives it weight.</p></div>
+  </div>
+
+  <div class="name-card" data-choice="sepp" onclick="toggleSelect(this)">
+    <div class="poster snow">
+      <div class="eyebrow">sled-dog lineage / expert guide</div>
+      <div class="word"><h3>Sepp</h3><p>Shortened from Seppala, the musher who delivered Sapsut. Feels sharp, capable, and name-like.</p></div>
+      <div class="chips"><span class="chip">Guide</span><span class="chip">Route</span><span class="chip">Dispatch</span></div>
+    </div>
+    <div class="body"><h4>B. Sepp</h4><p>My best balance: a proper character name, not generic, with expert-guide heritage.</p></div>
+  </div>
+
+  <div class="name-card" data-choice="togo" onclick="toggleSelect(this)">
+    <div class="poster night">
+      <div class="eyebrow">serum run / lead dog energy</div>
+      <div class="word"><h3>Togo</h3><p>A direct nod to the serum-run story behind Northeastern choosing a husky mascot.</p></div>
+      <div class="chips"><span class="chip">Lead</span><span class="chip">Mission</span><span class="chip">Campus</span></div>
+    </div>
+    <div class="body"><h4>C. Togo</h4><p>Powerful and recognizable, though it points more to the broader sled-dog legend than Northeastern specifically.</p></div>
+  </div>
+
+  <div class="name-card" data-choice="noro" onclick="toggleSelect(this)">
+    <div class="poster warm">
+      <div class="eyebrow">northeastern-coded / softer</div>
+      <div class="word"><h3>Noro</h3><p>A coined name from Northeastern + route. Friendly, short, and easier than a historical name.</p></div>
+      <div class="chips"><span class="chip">Ask</span><span class="chip">Route</span><span class="chip">Robot</span></div>
+    </div>
+    <div class="body"><h4>D. Noro</h4><p>Good if you want a proper name inspired by NU without borrowing a specific mascot identity.</p></div>
+  </div>
+
+  <div class="name-card" data-choice="cairn" onclick="toggleSelect(this)">
+    <div class="poster snow">
+      <div class="eyebrow">guide marker / campus navigation</div>
+      <div class="word"><h3>Cairn</h3><p>A trail marker name: calm, expert, guiding. Less husky-personal, more concierge-platform.</p></div>
+      <div class="chips"><span class="chip">Wayfinding</span><span class="chip">Knowledge</span><span class="chip">Handoff</span></div>
+    </div>
+    <div class="body"><h4>E. Cairn</h4><p>Elegant, but less dog-personality. Strong as a product codename if not the character name.</p></div>
+  </div>
+
+  <div class="name-card" data-choice="moss" onclick="toggleSelect(this)">
+    <div class="poster heritage">
+      <div class="eyebrow">modern live mascot echo</div>
+      <div class="word"><h3>Moss</h3><p>A softened, distinct nod toward Moses without directly using the current King Husky's name.</p></div>
+      <div class="chips"><span class="chip">Warm</span><span class="chip">Campus</span><span class="chip">Companion</span></div>
+    </div>
+    <div class="body"><h4>F. Moss</h4><p>Warm and name-like. More subtle homage, less immediately royal or expert.</p></div>
+  </div>
+</div>
+
+<div class="note">
+  My recommendation from this source: <strong>Sepp</strong> if you want a usable character name with expert-guide heritage; <strong>Sapsut</strong> if you want the dedication to be unmistakable and historically deep. Avoid using <strong>King Husky</strong>, <strong>Paws</strong>, or <strong>Moses</strong> as the main name unless the project has explicit university approval.
+</div>

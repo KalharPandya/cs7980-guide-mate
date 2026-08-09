@@ -1,0 +1,231 @@
+<style>
+  .name-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+    gap: 16px;
+    margin-top: 18px;
+  }
+
+  .name-card {
+    border: 1px solid #d9dee8;
+    border-radius: 18px;
+    background: #fff;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  }
+
+  .name-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 36px rgba(16, 24, 40, 0.14);
+  }
+
+  .name-card.selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.16), 0 18px 44px rgba(16, 24, 40, 0.16);
+  }
+
+  .poster {
+    min-height: 240px;
+    padding: 18px;
+    display: grid;
+    align-content: space-between;
+    gap: 18px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .poster::after {
+    content: "";
+    position: absolute;
+    width: 150px;
+    height: 116px;
+    right: -34px;
+    bottom: -42px;
+    border-radius: 40px;
+    opacity: 0.85;
+  }
+
+  .eyebrow {
+    font: 850 11px/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    position: relative;
+    z-index: 1;
+  }
+
+  .word {
+    position: relative;
+    z-index: 1;
+  }
+
+  .word h3 {
+    margin: 0;
+    font-size: 46px;
+    line-height: 0.92;
+    letter-spacing: -0.045em;
+  }
+
+  .word p {
+    margin: 9px 0 0;
+    max-width: 17rem;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+
+  .chips {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+
+  .chip {
+    border-radius: 999px;
+    padding: 7px 10px;
+    font-size: 11px;
+    line-height: 1;
+    font-weight: 900;
+  }
+
+  .body {
+    padding: 14px 16px 16px;
+  }
+
+  .body h4 {
+    margin: 0 0 6px;
+    font-size: 17px;
+  }
+
+  .body p {
+    margin: 0;
+    color: #566174;
+    font-size: 14px;
+  }
+
+  .cool {
+    background:
+      radial-gradient(circle at 84% 18%, rgba(96, 165, 250, 0.24), transparent 30%),
+      linear-gradient(90deg, rgba(15, 23, 42, 0.055) 1px, transparent 1px),
+      #f8fafc;
+    background-size: auto, 26px 26px;
+    color: #111827;
+  }
+
+  .cool::after { background: #dbeafe; }
+  .cool .chip { background: #111827; color: #fff; }
+
+  .warm {
+    background:
+      radial-gradient(circle at 84% 18%, rgba(20, 184, 166, 0.22), transparent 30%),
+      radial-gradient(circle at 20% 86%, rgba(250, 204, 21, 0.32), transparent 28%),
+      #fbfdfb;
+    color: #12312d;
+  }
+
+  .warm::after { background: #ccfbf1; }
+  .warm .chip { background: #0f766e; color: #fff; }
+
+  .night {
+    background:
+      linear-gradient(135deg, rgba(125, 211, 252, 0.17), transparent 42%),
+      #111827;
+    color: #f8fafc;
+  }
+
+  .night .word p { color: #cbd5e1; }
+  .night::after { background: #1f2937; border: 1px solid rgba(148, 163, 184, 0.24); }
+  .night .chip { background: #7dd3fc; color: #082f49; }
+
+  .note {
+    margin-top: 18px;
+    border: 1px solid #d9dee8;
+    border-radius: 18px;
+    padding: 14px 16px;
+    background: #fff;
+    color: #394150;
+    font-size: 14px;
+  }
+</style>
+
+<h2>Proper character names for the husky concierge AI</h2>
+<p class="subtitle">These are meant to feel like a named AI companion, not a product category. The personality: smart husky, alert, loyal, energetic, expressive, but trained enough to be a real concierge expert.</p>
+
+<div class="name-grid">
+  <div class="name-card" data-choice="koda" onclick="toggleSelect(this)">
+    <div class="poster cool">
+      <div class="eyebrow">friendly / strong / husky-coded</div>
+      <div class="word">
+        <h3>Koda</h3>
+        <p>Short, warm, memorable. Feels like a companion name without becoming childish.</p>
+      </div>
+      <div class="chips"><span class="chip">Concierge</span><span class="chip">Maps</span><span class="chip">Robots</span></div>
+    </div>
+    <div class="body"><h4>A. Koda</h4><p>My strongest pick. Sounds like a real husky character and can still front a serious AI system.</p></div>
+  </div>
+
+  <div class="name-card" data-choice="togo" onclick="toggleSelect(this)">
+    <div class="poster night">
+      <div class="eyebrow">heritage / capable / expedition</div>
+      <div class="word">
+        <h3>Togo</h3>
+        <p>Named like a legendary lead sled dog: guidance, endurance, intelligence, mission focus.</p>
+      </div>
+      <div class="chips"><span class="chip">Lead</span><span class="chip">Route</span><span class="chip">Dispatch</span></div>
+    </div>
+    <div class="body"><h4>B. Togo</h4><p>Most conceptually rich for a husky guide. Slightly less soft, more capable and purposeful.</p></div>
+  </div>
+
+  <div class="name-card" data-choice="niko" onclick="toggleSelect(this)">
+    <div class="poster warm">
+      <div class="eyebrow">approachable / bright / easy</div>
+      <div class="word">
+        <h3>Niko</h3>
+        <p>Human-friendly and energetic. Works well in chat: "Ask Niko" feels natural.</p>
+      </div>
+      <div class="chips"><span class="chip">Ask</span><span class="chip">Voice</span><span class="chip">Help</span></div>
+    </div>
+    <div class="body"><h4>C. Niko</h4><p>Most accessible. Less specifically husky, but very usable as a named assistant.</p></div>
+  </div>
+
+  <div class="name-card" data-choice="mika" onclick="toggleSelect(this)">
+    <div class="poster cool">
+      <div class="eyebrow">calm / clear / premium</div>
+      <div class="word">
+        <h3>Mika</h3>
+        <p>Soft, concise, and polished. Feels less like a pet name and more like a trusted AI persona.</p>
+      </div>
+      <div class="chips"><span class="chip">Knowledge</span><span class="chip">Route</span><span class="chip">Handoff</span></div>
+    </div>
+    <div class="body"><h4>D. Mika</h4><p>Good if you want warmth without too much "dog character" energy.</p></div>
+  </div>
+
+  <div class="name-card" data-choice="lumi" onclick="toggleSelect(this)">
+    <div class="poster cool">
+      <div class="eyebrow">snow / light / gentle</div>
+      <div class="word">
+        <h3>Lumi</h3>
+        <p>Bright and accessible, with subtle snow/husky atmosphere. More gentle than operational.</p>
+      </div>
+      <div class="chips"><span class="chip">Readable</span><span class="chip">Voice</span><span class="chip">Care</span></div>
+    </div>
+    <div class="body"><h4>E. Lumi</h4><p>Softest option. Nice for accessibility, weaker for expert concierge authority.</p></div>
+  </div>
+
+  <div class="name-card" data-choice="summit" onclick="toggleSelect(this)">
+    <div class="poster night">
+      <div class="eyebrow">place / guidance / capable</div>
+      <div class="word">
+        <h3>Summit</h3>
+        <p>More brand-like than pet-like. Suggests guidance, terrain, and high-level coordination.</p>
+      </div>
+      <div class="chips"><span class="chip">Plan</span><span class="chip">Tools</span><span class="chip">Status</span></div>
+    </div>
+    <div class="body"><h4>F. Summit</h4><p>Good product name, but less like a named husky personality.</p></div>
+  </div>
+</div>
+
+<div class="note">
+  My new recommendation: <strong>Koda</strong> as the agent's proper name. Product line: <strong>Koda, your campus concierge AI</strong>. Robot language: "Koda can dispatch the robot companion when approved."
+</div>

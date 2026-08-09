@@ -1,0 +1,326 @@
+<style>
+  :root {
+    --neu-black: #000;
+    --neu-red: #c8102e;
+    --neu-white: #fff;
+    --neu-gray-100: #f5f5f5;
+    --neu-gray-200: #ebebeb;
+    --neu-gray-300: #e0e0e0;
+    --neu-ink: #17191f;
+  }
+
+  body {
+    margin: 0;
+    padding: 18px;
+    background: var(--neu-white);
+    color: var(--neu-black);
+    font-family: "Real Head Pro", "FF Real Head", Lato, Arial, sans-serif;
+  }
+
+  h2 {
+    margin: 0 0 10px;
+    font-size: 34px;
+    line-height: 1;
+    letter-spacing: -0.04em;
+  }
+
+  .subtitle {
+    margin: 0;
+    max-width: 84rem;
+    font-family: Lato, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+  }
+
+  .logo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 18px;
+    margin-top: 18px;
+  }
+
+  .logo-card {
+    border: 1px solid var(--neu-gray-300);
+    background: var(--neu-white);
+    cursor: pointer;
+    transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  }
+
+  .logo-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.16);
+  }
+
+  .logo-card.selected {
+    border-color: var(--neu-red);
+    box-shadow: 0 0 0 4px rgba(200, 16, 46, 0.16), 0 18px 44px rgba(0, 0, 0, 0.16);
+  }
+
+  .stage {
+    min-height: 430px;
+    padding: 22px;
+    display: grid;
+    align-content: space-between;
+    gap: 22px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stage.white {
+    background:
+      linear-gradient(90deg, rgba(0, 0, 0, .055) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(0, 0, 0, .045) 1px, transparent 1px),
+      var(--neu-white);
+    background-size: 28px 28px;
+  }
+
+  .stage.black {
+    background: var(--neu-black);
+    color: var(--neu-white);
+  }
+
+  .stage.red {
+    background: var(--neu-red);
+    color: var(--neu-white);
+  }
+
+  .affiliation {
+    font-family: Lato, Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .logo-lockup {
+    display: grid;
+    gap: 16px;
+    align-content: start;
+  }
+
+  .logo-row {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+
+  .mark-box {
+    width: 96px;
+    height: 96px;
+    display: grid;
+    place-items: center;
+    background: var(--neu-white);
+    border: 1px solid var(--neu-gray-300);
+  }
+
+  .stage.black .mark-box,
+  .stage.red .mark-box {
+    border-color: rgba(255, 255, 255, .35);
+  }
+
+  .mark-box img {
+    max-width: 76px;
+    max-height: 76px;
+    display: block;
+  }
+
+  .wordmark {
+    display: grid;
+    gap: 5px;
+  }
+
+  .wordmark strong {
+    font-size: 58px;
+    line-height: .86;
+    letter-spacing: -.065em;
+  }
+
+  .wordmark span {
+    font-family: Lato, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.35;
+    font-weight: 800;
+  }
+
+  .use-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    border-radius: 999px;
+    padding: 0 12px;
+    background: var(--neu-black);
+    color: var(--neu-white);
+    font-family: Lato, Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 900;
+  }
+
+  .stage.black .chip {
+    background: var(--neu-white);
+    color: var(--neu-black);
+  }
+
+  .stage.red .chip {
+    background: var(--neu-black);
+    color: var(--neu-white);
+  }
+
+  .sample-bar {
+    border: 1px solid var(--neu-gray-300);
+    background: var(--neu-white);
+    min-height: 68px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 0 16px;
+    color: var(--neu-black);
+  }
+
+  .sample-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .sample-brand img {
+    width: 38px;
+    height: 38px;
+    object-fit: contain;
+  }
+
+  .sample-brand strong {
+    font-size: 24px;
+    letter-spacing: -.04em;
+  }
+
+  .sample-brand span {
+    display: block;
+    font-family: Lato, Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--neu-ink);
+  }
+
+  .caption {
+    padding: 14px 16px 16px;
+  }
+
+  .caption h3 {
+    margin: 0 0 6px;
+    font-size: 18px;
+  }
+
+  .caption p {
+    margin: 0;
+    color: #566174;
+    font-size: 14px;
+    line-height: 1.35;
+  }
+
+  .note {
+    margin-top: 18px;
+    border: 1px solid var(--neu-gray-300);
+    padding: 14px 16px;
+    background: var(--neu-gray-100);
+    font-family: Lato, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+</style>
+
+<h2>Moses logo direction: make Moses the product mark</h2>
+<p class="subtitle">The full Northeastern logo should behave like an affiliation mark, not the Moses app logo. These options use the cleaner Husky head as the Moses mark and keep the official university identity separate.</p>
+
+<div class="logo-grid">
+  <div class="logo-card" data-choice="monogram-husky-lockup" onclick="toggleSelect(this)">
+    <div class="stage white">
+      <div class="affiliation">Student project inspired by Northeastern</div>
+      <div class="logo-lockup">
+        <div class="logo-row">
+          <div class="mark-box"><img src="https://brand.northeastern.edu/wp-content/uploads/2022/05/dog-Head.svg" alt="King Husky head mark" /></div>
+          <div class="wordmark">
+            <strong>Moses</strong>
+            <span>Your Northeastern concierge AI</span>
+          </div>
+        </div>
+        <div class="sample-bar">
+          <div class="sample-brand">
+            <img src="https://brand.northeastern.edu/wp-content/uploads/2022/05/dog-Head.svg" alt="" />
+            <div><strong>Moses</strong><span>Concierge AI</span></div>
+          </div>
+          <span class="chip">Ask Moses</span>
+        </div>
+      </div>
+      <div class="use-row"><span class="chip">Best app header</span><span class="chip">Strong NU tie</span><span class="chip">Compact</span></div>
+    </div>
+    <div class="caption">
+      <h3>A. Husky Head + Moses</h3>
+      <p>Best practical logo direction. It gives Moses a memorable face, works in small UI, and avoids the awkward full wordmark crop.</p>
+    </div>
+  </div>
+
+  <div class="logo-card" data-choice="king-husky-head-lockup" onclick="toggleSelect(this)">
+    <div class="stage black">
+      <div class="affiliation">King Husky heritage concept</div>
+      <div class="logo-lockup">
+        <div class="logo-row">
+          <div class="mark-box"><img src="https://brand.northeastern.edu/wp-content/uploads/2022/05/dog-Head.svg" alt="King Husky head mark" /></div>
+          <div class="wordmark">
+            <strong>Moses</strong>
+            <span>Campus-aware AI with Husky personality</span>
+          </div>
+        </div>
+        <div class="sample-bar">
+          <div class="sample-brand">
+            <img src="https://brand.northeastern.edu/wp-content/uploads/2022/05/dog-Head.svg" alt="" />
+            <div><strong>Moses</strong><span>King Husky-inspired AI</span></div>
+          </div>
+          <span class="chip">History</span>
+        </div>
+      </div>
+      <div class="use-row"><span class="chip">Most personality</span><span class="chip">High contrast</span><span class="chip">Mascot-forward</span></div>
+    </div>
+    <div class="caption">
+      <h3>B. Inverted Husky + Moses</h3>
+      <p>Best for splash and hero moments. It feels more ceremonial and King Husky-inspired without relying on the broken red asset crop.</p>
+    </div>
+  </div>
+
+  <div class="logo-card" data-choice="separated-affiliation" onclick="toggleSelect(this)">
+    <div class="stage red">
+      <div class="affiliation">Northeastern affiliation separate from Moses</div>
+      <div class="logo-lockup">
+        <div class="logo-row">
+          <div class="mark-box"><img src="https://brand.northeastern.edu/wp-content/uploads/2022/05/dog-Head.svg" alt="King Husky head mark" /></div>
+          <div class="wordmark">
+            <strong>Moses</strong>
+            <span>A student-built concierge AI for campus exploration</span>
+          </div>
+        </div>
+        <div class="sample-bar">
+          <div class="sample-brand">
+            <img src="https://brand.northeastern.edu/wp-content/uploads/2022/05/dog-Head.svg" alt="" />
+            <div><strong>Moses</strong><span>Student project</span></div>
+          </div>
+          <span class="chip">Northeastern</span>
+        </div>
+      </div>
+      <div class="use-row"><span class="chip">Approval-safe</span><span class="chip">Clear product name</span><span class="chip">Flexible</span></div>
+    </div>
+    <div class="caption">
+      <h3>C. Separate Affiliation</h3>
+      <p>Best for approval safety: Moses has the product identity; Northeastern appears as context/affiliation, not as a merged logo.</p>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  Recommendation: use <strong>A</strong> for the app header and <strong>B</strong> for splash/hero moments. Do not keep the full Brand Center wordmark SVG in a small app header; it behaves like an affiliation asset, not an app icon.
+</div>
