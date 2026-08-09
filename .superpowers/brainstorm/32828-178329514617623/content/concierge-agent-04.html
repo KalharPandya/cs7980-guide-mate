@@ -1,0 +1,283 @@
+<style>
+  .agent-frame {
+    display: grid;
+    gap: 18px;
+    margin-top: 18px;
+  }
+
+  .agent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 18px;
+  }
+
+  .agent-card {
+    border: 1px solid #d9dee8;
+    border-radius: 18px;
+    background: #fff;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  }
+
+  .agent-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 42px rgba(16, 24, 40, 0.14);
+  }
+
+  .agent-card.selected {
+    border-color: #1d4ed8;
+    box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.16), 0 18px 44px rgba(16, 24, 40, 0.16);
+  }
+
+  .poster {
+    min-height: 330px;
+    padding: 18px;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 18px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .poster::after {
+    content: "";
+    position: absolute;
+    inset: auto -30px -52px auto;
+    width: 190px;
+    height: 150px;
+    border-radius: 42px;
+    opacity: 0.92;
+  }
+
+  .topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    position: relative;
+    z-index: 1;
+    font: 850 11px/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .mark {
+    width: 44px;
+    height: 44px;
+    border-radius: 15px;
+    display: grid;
+    place-items: center;
+    font-weight: 950;
+  }
+
+  .title {
+    position: relative;
+    z-index: 1;
+  }
+
+  .title h3 {
+    margin: 0;
+    font-size: 34px;
+    line-height: 0.95;
+    letter-spacing: -0.035em;
+  }
+
+  .title p {
+    margin: 10px 0 0;
+    max-width: 20rem;
+    font-size: 14px;
+    line-height: 1.38;
+  }
+
+  .console {
+    position: relative;
+    z-index: 1;
+    border-radius: 24px 24px 0 0;
+    padding: 14px;
+    min-height: 150px;
+    display: grid;
+    gap: 10px;
+    align-content: start;
+    box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.12);
+  }
+
+  .chatline {
+    border-radius: 16px;
+    padding: 9px 11px;
+    font-size: 12px;
+    line-height: 1.3;
+    font-weight: 760;
+    max-width: 92%;
+  }
+
+  .tool-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+
+  .tool {
+    border-radius: 999px;
+    padding: 7px 10px;
+    font-size: 11px;
+    line-height: 1;
+    font-weight: 900;
+  }
+
+  .body {
+    padding: 16px 17px 18px;
+  }
+
+  .body h4 {
+    margin: 0 0 6px;
+    font-size: 17px;
+  }
+
+  .body p {
+    margin: 0;
+    color: #566174;
+    font-size: 14px;
+  }
+
+  .concierge {
+    color: #111827;
+    background:
+      linear-gradient(90deg, rgba(17, 24, 39, 0.06) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(17, 24, 39, 0.045) 1px, transparent 1px),
+      #f8fafc;
+    background-size: 26px 26px;
+  }
+
+  .concierge::after { background: #dbeafe; }
+  .concierge .mark { background: #1d4ed8; color: white; }
+  .concierge .console { background: white; }
+  .concierge .chatline { background: #eff6ff; color: #1e3a8a; }
+  .concierge .tool { background: #111827; color: white; }
+
+  .guide {
+    color: #12312d;
+    background:
+      radial-gradient(circle at 82% 18%, rgba(20, 184, 166, 0.26), transparent 30%),
+      radial-gradient(circle at 18% 82%, rgba(250, 204, 21, 0.32), transparent 28%),
+      #fbfdfb;
+  }
+
+  .guide::after { background: #ccfbf1; }
+  .guide .mark { background: #14b8a6; color: #042f2e; box-shadow: 0 0 0 10px rgba(20, 184, 166, 0.16); }
+  .guide .console { background: rgba(255,255,255,0.9); }
+  .guide .chatline { background: #ffffff; color: #12312d; }
+  .guide .tool { background: #0f766e; color: white; }
+
+  .orchestrator {
+    color: #f8fafc;
+    background:
+      linear-gradient(135deg, rgba(56, 189, 248, 0.16), transparent 45%),
+      #111827;
+  }
+
+  .orchestrator::after { background: #1f2937; border: 1px solid rgba(148, 163, 184, 0.22); }
+  .orchestrator .title p { color: #cbd5e1; }
+  .orchestrator .mark { background: #38bdf8; color: #082f49; }
+  .orchestrator .console { background: #1f2937; }
+  .orchestrator .chatline { background: #374151; color: #f9fafb; }
+  .orchestrator .tool { background: #38bdf8; color: #082f49; }
+
+  .note {
+    border: 1px solid #d9dee8;
+    border-radius: 18px;
+    background: #fff;
+    padding: 14px 16px;
+    color: #394150;
+    font-size: 14px;
+  }
+</style>
+
+<h2>Central agent, concierge expert</h2>
+<p class="subtitle">Welcoming and accessible, but grounded in a capable AI concierge. The robot is one tool in the agent's arsenal, alongside maps, knowledge, voice, admin approval, and human handoff.</p>
+
+<div class="agent-frame">
+  <div class="agent-grid">
+    <div class="agent-card" data-choice="concierge-copilot" onclick="toggleSelect(this)">
+      <div class="poster concierge">
+        <div class="topline">
+          <span>expert agent / clear authority</span>
+          <div class="mark">GM</div>
+        </div>
+        <div class="title">
+          <h3>GuideMate<br>Concierge</h3>
+          <p>The AI is the point of contact: it understands campus knowledge, checks robot availability, escalates to people, and chooses the right tool.</p>
+        </div>
+        <div class="console">
+          <div class="chatline">I can help you get to the lab. Best option: self-guided route now; robot companion needs staff approval.</div>
+          <div class="tool-row">
+            <span class="tool">Map</span>
+            <span class="tool">KB</span>
+            <span class="tool">Robot</span>
+            <span class="tool">Staff</span>
+          </div>
+        </div>
+      </div>
+      <div class="body">
+        <h4>A. Concierge Copilot</h4>
+        <p>Most grounded. The identity says expert, helpful, and safe; the robot becomes a premium capability the concierge can arrange.</p>
+      </div>
+    </div>
+
+    <div class="agent-card" data-choice="warm-guide-agent" onclick="toggleSelect(this)">
+      <div class="poster guide">
+        <div class="topline">
+          <span>warm guide / accessible first</span>
+          <div class="mark">hi</div>
+        </div>
+        <div class="title">
+          <h3>GuideMate<br>Guide</h3>
+          <p>The AI feels like a calm front-desk guide: friendly language, plain choices, accessibility built into every interaction.</p>
+        </div>
+        <div class="console">
+          <div class="chatline">Hi Kalhar. I can show the route, read it aloud, or request a robot companion for you.</div>
+          <div class="tool-row">
+            <span class="tool">Text</span>
+            <span class="tool">Voice</span>
+            <span class="tool">Route</span>
+            <span class="tool">Help</span>
+          </div>
+        </div>
+      </div>
+      <div class="body">
+        <h4>B. Warm Guide Agent</h4>
+        <p>Most welcoming. Strong for public users, but risks under-selling the broader "central agent with an arsenal" idea.</p>
+      </div>
+    </div>
+
+    <div class="agent-card" data-choice="mission-orchestrator" onclick="toggleSelect(this)">
+      <div class="poster orchestrator">
+        <div class="topline">
+          <span>orchestrator / multi-tool system</span>
+          <div class="mark">AI</div>
+        </div>
+        <div class="title">
+          <h3>GuideMate<br>Operator</h3>
+          <p>The AI is a mission-control layer. It binds users to tools, robots, maps, and workflows with explicit permissions and live state.</p>
+        </div>
+        <div class="console">
+          <div class="chatline">Request received. I can dispatch robot 468, use the sim agent, or hand this to staff.</div>
+          <div class="tool-row">
+            <span class="tool">468</span>
+            <span class="tool">Sim</span>
+            <span class="tool">Shadow</span>
+            <span class="tool">Audit</span>
+          </div>
+        </div>
+      </div>
+      <div class="body">
+        <h4>C. Mission Orchestrator</h4>
+        <p>Most scalable and systems-aware. Better for admin/technical demos, less immediately soft for first-time visitors.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    My recommendation: start from <strong>A. Concierge Copilot</strong>, borrow B's warmth in copy and accessibility, and reserve C's orchestrator language for the admin/operator surface.
+  </div>
+</div>

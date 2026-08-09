@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Robert — live avatar POC</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="stage">
+    <header class="topbar">
+      <h1>Robert <span class="tag">live avatar POC</span></h1>
+      <span id="health" class="health" title="backend + Polly status">checking…</span>
+    </header>
+
+    <section class="dogwrap" aria-label="animated robot dog">
+      <!-- viewBox parts are id'd so avatar.js can drive mouth + emotes -->
+      <svg id="stageSvg" viewBox="0 0 320 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="dogTitle">
+        <title id="dogTitle">Robert the robot dog</title>
+        <g id="dog">
+          <!-- tail (behind body) -->
+          <g id="tailGroup">
+            <path id="tail" d="M244,300 q46,-6 60,-40 q6,26 -14,46 q-24,20 -46,10 z" fill="#a5703a"/>
+          </g>
+          <!-- body -->
+          <ellipse id="body" cx="160" cy="312" rx="98" ry="56" fill="#c98a4b"/>
+          <!-- ears (behind head) -->
+          <ellipse id="earL" cx="86" cy="118" rx="30" ry="62" fill="#a5703a"/>
+          <ellipse id="earR" cx="234" cy="118" rx="30" ry="62" fill="#a5703a"/>
+          <!-- head -->
+          <ellipse id="head" cx="160" cy="156" rx="104" ry="96" fill="#c98a4b"/>
+          <!-- muzzle -->
+          <ellipse id="muzzle" cx="160" cy="196" rx="64" ry="48" fill="#f0e0c8"/>
+          <!-- eyes -->
+          <g id="eyeGroupL">
+            <ellipse cx="120" cy="132" rx="21" ry="25" fill="#ffffff"/>
+            <circle id="pupilL" cx="120" cy="138" r="9" fill="#2c2c2a"/>
+            <ellipse id="lidL" cx="120" cy="132" rx="22" ry="26" fill="#c98a4b"/>
+          </g>
+          <g id="eyeGroupR">
+            <ellipse cx="200" cy="132" rx="21" ry="25" fill="#ffffff"/>
+            <circle id="pupilR" cx="200" cy="138" r="9" fill="#2c2c2a"/>
+            <ellipse id="lidR" cx="200" cy="132" rx="22" ry="26" fill="#c98a4b"/>
+          </g>
+          <!-- nose -->
+          <ellipse id="nose" cx="160" cy="170" rx="17" ry="12" fill="#2c2c2a"/>
+          <!-- tongue (hidden unless happy) -->
+          <ellipse id="tongue" cx="160" cy="224" rx="15" ry="20" fill="#e8829a" opacity="0"/>
+          <!-- mouth interior + teeth; avatar.js sets #mouth rx/ry per viseme -->
+          <ellipse id="mouth" cx="160" cy="206" rx="20" ry="2" fill="#7a2233"/>
+          <rect id="teeth" x="143" y="196" width="34" height="6" rx="2" fill="#ffffff" opacity="0"/>
+        </g>
+      </svg>
+    </section>
+
+    <section class="controls">
+      <div class="row">
+        <input id="text" type="text" maxlength="600"
+               value="Woof! I am Robert, your robot dog. Ask me to do a trick!"
+               aria-label="what Robert says" />
+        <button id="say" class="primary">Say it</button>
+      </div>
+      <div class="row emotes" role="group" aria-label="emotes">
+        <button data-emote="happy">happy</button>
+        <button data-emote="yes">yes</button>
+        <button data-emote="no">no</button>
+        <button data-emote="circle">circle</button>
+        <button data-emote="spin">spin</button>
+      </div>
+      <div class="row meta">
+        <label>voice
+          <select id="voice">
+            <option value="Ivy">Ivy (child)</option>
+            <option value="Justin">Justin (child)</option>
+            <option value="Joanna">Joanna</option>
+            <option value="Matthew">Matthew</option>
+            <option value="Danielle">Danielle</option>
+          </select>
+        </label>
+        <span id="status" class="status"></span>
+      </div>
+    </section>
+  </main>
+  <script src="/static/avatar.js"></script>
+</body>
+</html>

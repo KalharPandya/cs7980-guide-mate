@@ -32,6 +32,13 @@ Base unit default is `GUIDEMATE_DRY_RUN=1` (safe) — the drop-in is what overri
    or re-add the `GUIDEMATE_SUPERVISED_468_MOTION == "observer-present"` branch), commit, push,
    then on the Pi `cd ~/cs7980-guide-mate && git pull`.
 
+   **Variant (used 2026-07-08, keeps the repo default-deny):** patch the token branch into
+   `bridge.py` as a **transient UNCOMMITTED edit directly on the Pi** (insert
+   `if env.get("GUIDEMATE_SUPERVISED_468_MOTION") == "observer-present": return` before the
+   `raise SystemExit` in `assert_motion_identity_safe`). Nothing armed lands in git; the Pi's
+   `git status` shows the dirty file as the tell. Disarm then includes
+   `git checkout -- src/guide_mate_bridge/guide_mate_bridge/bridge.py` on the Pi.
+
 **2. Pi drop-in** — create `/etc/systemd/system/guidemate-bridge.service.d/motion-supervised.conf`:
 
 ```ini
@@ -93,6 +100,19 @@ ssh guidemate 'systemctl show guidemate-bridge.service -p Environment | tr " " "
 aws iot-data get-thing-shadow --thing-name Turtlebot-468 /dev/stdout | python3 -m json.tool
   # expect reported: motion_enabled:false, dry_run:true, effective_dry_run:true
 ```
+
+## If dock/undock fail `action server unavailable` after ANY ROS restart
+The bridge must be restarted **LAST** (a bridge older than discovery is a stale FastDDS
+participant — this exact failure recurred twice on 2026-07-08):
+```bash
+ssh guidemate 'sudo systemctl restart discovery.service && sleep 3 && \
+  sudo systemctl restart turtlebot4.service && sleep 5 && \
+  sudo systemctl restart guidemate-bridge.service && \
+  source /opt/ros/humble/setup.bash && ros2 daemon stop && ros2 daemon start'
+```
+Then check a heartbeat: if `gates.docked` is **null**, the dock telemetry didn't latch —
+bounce `guidemate-bridge` once more after ~30 s (unknown dock state default-denies ALL
+motion, not just docking). Findings: `2026-07-08-prod-motion-findings.md`.
 
 ## Notes / gotchas
 - **Order for disarm matters:** lock the shadow before touching the Pi so no armed motion

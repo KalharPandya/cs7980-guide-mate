@@ -20,6 +20,8 @@ from botocore.exceptions import ClientError
 
 from guidemate_msgs.messages import Command
 
+from guidemate_agent.robot_lifecycle import assign_actions, end_actions
+
 REGION = "us-west-2"
 TABLE_SESSIONS = "guidemate-sessions"
 TABLE_MESSAGES = "guidemate-messages"
@@ -300,17 +302,41 @@ def get_assign_events(robot_id: str) -> list[dict]:
     return json.loads(item["events_json"]) if item else []
 
 
-def _send_assignment_command(registry, robot_id: str, name: str) -> dict:
-    """Best-effort dock/undock on (un)assignment. Never raises."""
-    acks = []
-    if registry is not None:
+# Create 3 dock/undock actions take 10-60 s; the registry returns as soon as a
+# terminal ack lands, so a fast completion still returns fast.
+ACTION_TIMEOUT_S = 75.0
+
+
+def _make_send(registry):
+    """Adapt a registry to robot_lifecycle's send(robot_id, cmd, timeout_s) -> [Ack].
+    Best-effort: a missing registry or a send failure yields no acks (never raises)."""
+
+    def send(robot_id: str, cmd: Command, timeout_s: float):
+        if registry is None:
+            return []
         try:
-            acks = registry.send_command(
-                robot_id, Command(type="motion", name=name)
-            )
+            return registry.send_command(robot_id, cmd, timeout_s=timeout_s)
         except Exception:  # noqa: BLE001 — best-effort by design
-            acks = []
-    return _record_assign_event(robot_id, name, acks)
+            return []
+
+    return send
+
+
+def _live_docked(registry, robot_id: str):
+    """Robot's live dock state (True/False), or None when unknown/unavailable."""
+    if registry is None:
+        return None
+    try:
+        return registry.get_status(robot_id).get("docked")
+    except Exception:  # noqa: BLE001 — unknown dock state, let the bridge gate it
+        return None
+
+
+def _run_lifecycle(registry, robot_id: str, actions, **kwargs) -> None:
+    """Run a lifecycle action list (see robot_lifecycle) and record each outcome."""
+    send = _make_send(registry)
+    for action, acks in actions(send, robot_id, ACTION_TIMEOUT_S, **kwargs):
+        _record_assign_event(robot_id, action, acks)
 
 
 def _bind_robot(robot_id: str, session_id: str, registry=None) -> Optional[str]:
@@ -319,7 +345,7 @@ def _bind_robot(robot_id: str, session_id: str, registry=None) -> Optional[str]:
     if holder and holder != session_id:
         release_robot_lock(robot_id)
         _mark_session_aborted(holder)
-        _send_assignment_command(registry, robot_id, "dock")     # unassign -> dock
+        _run_lifecycle(registry, robot_id, end_actions)          # unassign -> dock
         aborted = holder
     if not acquire_robot_lock(robot_id, session_id):
         # Lost a race (or same session re-binding): reset and take it.
@@ -330,8 +356,14 @@ def _bind_robot(robot_id: str, session_id: str, registry=None) -> Optional[str]:
         # it requires binding AND current lock-holder to match).
         release_robot_lock(robot_id)
         acquire_robot_lock(robot_id, session_id)
-    _update_session(session_id, robot_id=robot_id, request_status="approved")
-    _send_assignment_command(registry, robot_id, "undock")       # assign -> undock
+    _update_session(
+        session_id, robot_id=robot_id, request_status="approved",
+        last_active_ts=_now_iso(),
+    )
+    # assign -> undock, then a bounded forward nudge iff the undock succeeds.
+    # Already-undocked robot = pure handover (no undock attempt, no nudge).
+    _run_lifecycle(registry, robot_id, assign_actions,
+                   docked=_live_docked(registry, robot_id))
     return aborted
 
 
@@ -357,9 +389,54 @@ def abort_robot(robot_id: str, registry=None) -> Optional[str]:
     release_robot_lock(robot_id)
     if holder:
         _mark_session_aborted(holder)
-        _send_assignment_command(registry, robot_id, "dock")     # unassign -> dock
+        _run_lifecycle(registry, robot_id, end_actions)          # unassign -> dock
     return holder
 
 
 def reassign_robot(robot_id: str, session_id: str, registry=None) -> Optional[str]:
     return _bind_robot(robot_id, session_id, registry=registry)
+
+
+# ---- end of assignment (guest end button / idle timeout) -> dock ----
+def touch_session(session_id: str) -> None:
+    """Stamp last activity so the idle sweeper leaves an active session alone."""
+    _update_session(session_id, last_active_ts=_now_iso())
+
+
+def end_session(session_id: str, registry=None) -> Optional[str]:
+    """End an assignment: release the robot lock, mark the session ended, and dock.
+    No-op (returns None) if the session holds no robot. Returns the freed robot id."""
+    robot_id = robot_for_session(session_id)
+    if not robot_id:
+        return None
+    release_robot_lock(robot_id)
+    _update_session(session_id, status="ended", request_status="ended", robot_id=None)
+    _run_lifecycle(registry, robot_id, end_actions)              # end -> dock
+    return robot_id
+
+
+def _iso_age_seconds(ts: str, now_iso: str) -> float:
+    a = datetime.fromisoformat(ts)
+    b = datetime.fromisoformat(now_iso)
+    return (b - a).total_seconds()
+
+
+def sweep_idle_sessions(idle_timeout_s: float, registry=None) -> list[str]:
+    """End every robot-holding session idle longer than idle_timeout_s (dock each).
+    Returns the ended session ids. Best-effort: never raises for one bad row."""
+    now = _now_iso()
+    ended: list[str] = []
+    for sess in list_sessions():
+        sid = sess.get("session_id")
+        if not sid or not robot_for_session(sid):
+            continue
+        last = sess.get("last_active_ts") or sess.get("created_ts")
+        if not last:
+            continue
+        try:
+            idle = _iso_age_seconds(str(last), now)
+        except ValueError:
+            continue
+        if idle >= idle_timeout_s and end_session(sid, registry=registry):
+            ended.append(sid)
+    return ended

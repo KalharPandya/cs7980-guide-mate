@@ -8,8 +8,13 @@ and that dog_muted short-circuits before any Bedrock model is built.
 from guidemate_agent.dog_agent import (
     DogAgent,
     EMOTE_INSTRUCTION,
+    HONESTY,
+    KING_HUSKY_IDENTITY,
     NEUTRAL_PROMPT,
     PERSONA_BASE,
+    ROBOTICS_AI_STANCE,
+    SITUATION_CONTEXT,
+    SPEECH_STYLE,
 )
 from guidemate_agent.store import DEFAULT_FLAGS
 
@@ -86,7 +91,48 @@ def test_system_prompt_uses_persona_and_emote_rule_by_default():
 def test_system_prompt_neutral_when_persona_disabled():
     prompt = _agent()._system_prompt({**DEFAULT_FLAGS, "persona_enabled": False})
     assert NEUTRAL_PROMPT in prompt
-    assert "Robert" not in prompt
+    assert "Moses" not in prompt
+
+
+def test_persona_mode_includes_identity_blocks():
+    prompt = _agent()._system_prompt(dict(DEFAULT_FLAGS))
+    assert KING_HUSKY_IDENTITY in prompt
+    assert SITUATION_CONTEXT in prompt
+    assert ROBOTICS_AI_STANCE in prompt
+    # demo-credibility anchors: mascot identity + the live classroom
+    assert "King Husky" in prompt
+    assert "1526" in prompt
+
+
+def test_speech_style_and_honesty_present_in_all_modes():
+    persona = _agent()._system_prompt(dict(DEFAULT_FLAGS))
+    neutral = _agent()._system_prompt({**DEFAULT_FLAGS, "persona_enabled": False})
+    admin = _agent(prompt="You are a stern robot.")._system_prompt(dict(DEFAULT_FLAGS))
+    for prompt in (persona, neutral, admin):
+        assert SPEECH_STYLE in prompt
+        assert HONESTY in prompt
+
+
+def test_identity_blocks_dropped_in_neutral_and_admin_modes():
+    neutral = _agent()._system_prompt({**DEFAULT_FLAGS, "persona_enabled": False})
+    admin = _agent(prompt="You are a stern robot.")._system_prompt(dict(DEFAULT_FLAGS))
+    for prompt in (neutral, admin):
+        assert KING_HUSKY_IDENTITY not in prompt
+        assert SITUATION_CONTEXT not in prompt
+        assert ROBOTICS_AI_STANCE not in prompt
+
+
+def test_no_em_dash_in_prompt_constants():
+    # Replies are read aloud; the style rule bans em dashes, and the model
+    # mimics its prompt. Guard every prompt constant.
+    import guidemate_agent.dog_agent as da
+
+    for name in (
+        "PERSONA_BASE", "KING_HUSKY_IDENTITY", "SITUATION_CONTEXT",
+        "ROBOTICS_AI_STANCE", "SPEECH_STYLE", "HONESTY", "EMOTE_INSTRUCTION",
+        "MOTION_INSTRUCTION", "KB_INSTRUCTION", "NEUTRAL_PROMPT", "PERSONA",
+    ):
+        assert "—" not in getattr(da, name), f"em dash in {name}"
 
 
 def test_system_prompt_omits_emote_rule_when_emotes_disabled():

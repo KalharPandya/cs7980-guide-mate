@@ -9,6 +9,7 @@ dependencies = [
     "strands-agents",
     "awsiotsdk",
     "boto3",
+    "elevenlabs",
     # amazon-transcribe is deliberately NOT listed here: its metadata hard-pins
     # awscrt~=0.26.1, which conflicts with awsiotsdk's awscrt 0.34.x. A clean
     # resolve either fails or drags the whole stack down to an ancient awsiotsdk

@@ -1,0 +1,408 @@
+<style>
+  :root {
+    --neu-black: #000;
+    --neu-red: #c8102e;
+    --neu-white: #fff;
+    --neu-gray-100: #f5f5f5;
+    --neu-gray-200: #ebebeb;
+    --neu-gray-300: #e0e0e0;
+    --neu-ink: #17191f;
+  }
+
+  body {
+    margin: 0;
+    padding: 18px;
+    background: var(--neu-white);
+    color: var(--neu-black);
+    font-family: "Real Head Pro", "FF Real Head", Lato, Arial, sans-serif;
+  }
+
+  h2 {
+    margin: 0 0 10px;
+    font-size: 34px;
+    line-height: 1;
+    letter-spacing: -0.04em;
+  }
+
+  .subtitle {
+    margin: 0;
+    max-width: 84rem;
+    font-family: Lato, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+  }
+
+  .logo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 18px;
+    margin-top: 18px;
+  }
+
+  .logo-card {
+    border: 1px solid var(--neu-gray-300);
+    background: var(--neu-white);
+    cursor: pointer;
+    transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  }
+
+  .logo-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.16);
+  }
+
+  .logo-card.selected {
+    border-color: var(--neu-red);
+    box-shadow: 0 0 0 4px rgba(200, 16, 46, 0.16), 0 18px 44px rgba(0, 0, 0, 0.16);
+  }
+
+  .stage {
+    min-height: 430px;
+    padding: 22px;
+    display: grid;
+    align-content: space-between;
+    gap: 22px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stage.white {
+    background:
+      linear-gradient(90deg, rgba(0, 0, 0, .055) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(0, 0, 0, .045) 1px, transparent 1px),
+      var(--neu-white);
+    background-size: 28px 28px;
+  }
+
+  .stage.black {
+    background: var(--neu-black);
+    color: var(--neu-white);
+  }
+
+  .stage.red {
+    background: var(--neu-red);
+    color: var(--neu-white);
+  }
+
+  .affiliation {
+    font-family: Lato, Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .logo-lockup {
+    display: grid;
+    gap: 16px;
+    align-content: start;
+  }
+
+  .logo-row {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+
+  .mark-box {
+    width: 96px;
+    height: 96px;
+    display: grid;
+    place-items: center;
+    background: var(--neu-white);
+    border: 1px solid var(--neu-gray-300);
+  }
+
+  .mark-box.red-fill {
+    background: var(--neu-red);
+    border-color: var(--neu-red);
+  }
+
+  .mark-box.red-fill img {
+    max-width: 58px;
+    max-height: 58px;
+    padding: 9px;
+    background: var(--neu-white);
+    filter: none;
+  }
+
+  .mark-box.red-outline {
+    border: 3px solid var(--neu-red);
+  }
+
+  .stage.black .mark-box,
+  .stage.red .mark-box {
+    border-color: rgba(255, 255, 255, .35);
+  }
+
+  .stage.black .mark-box.red-outline {
+    border-color: var(--neu-red);
+  }
+
+  .mark-box img {
+    max-width: 76px;
+    max-height: 76px;
+    display: block;
+  }
+
+  .wordmark {
+    display: grid;
+    gap: 5px;
+  }
+
+  .wordmark strong {
+    font-size: 58px;
+    line-height: .86;
+    letter-spacing: -.065em;
+  }
+
+  .wordmark span {
+    font-family: Lato, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.35;
+    font-weight: 800;
+  }
+
+  .use-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    border-radius: 999px;
+    padding: 0 12px;
+    background: var(--neu-black);
+    color: var(--neu-white);
+    font-family: Lato, Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 900;
+  }
+
+  .stage.black .chip {
+    background: var(--neu-white);
+    color: var(--neu-black);
+  }
+
+  .stage.red .chip {
+    background: var(--neu-black);
+    color: var(--neu-white);
+  }
+
+  .sample-bar {
+    border: 1px solid var(--neu-gray-300);
+    background: var(--neu-white);
+    min-height: 68px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 0 16px;
+    color: var(--neu-black);
+  }
+
+  .sample-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .sample-brand img {
+    width: 38px;
+    height: 38px;
+    object-fit: contain;
+  }
+
+  .sample-brand strong {
+    font-size: 24px;
+    letter-spacing: -.04em;
+  }
+
+  .sample-brand span {
+    display: block;
+    font-family: Lato, Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--neu-ink);
+  }
+
+  .campus-lockup {
+    border: 1px solid var(--neu-gray-300);
+    background: var(--neu-white);
+    padding: 14px 16px;
+    color: var(--neu-black);
+  }
+
+  .campus-lockup img {
+    display: block;
+    width: 100%;
+    max-height: 72px;
+    object-fit: contain;
+    object-position: left center;
+  }
+
+  .campus-lockup.compact {
+    padding: 10px 12px;
+  }
+
+  .campus-lockup.compact img {
+    max-height: 42px;
+  }
+
+  .campus-band {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 14px;
+    border: 1px solid var(--neu-gray-300);
+    background: var(--neu-white);
+    color: var(--neu-black);
+    padding: 14px;
+  }
+
+  .campus-band img {
+    width: 230px;
+    max-width: 100%;
+    display: block;
+  }
+
+  .campus-band strong {
+    display: block;
+    font-size: 30px;
+    line-height: .95;
+    letter-spacing: -.05em;
+  }
+
+  .campus-band span {
+    display: block;
+    margin-top: 4px;
+    font-family: Lato, Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .caption {
+    padding: 14px 16px 16px;
+  }
+
+  .caption h3 {
+    margin: 0 0 6px;
+    font-size: 18px;
+  }
+
+  .caption p {
+    margin: 0;
+    color: #566174;
+    font-size: 14px;
+    line-height: 1.35;
+  }
+
+  .note {
+    margin-top: 18px;
+    border: 1px solid var(--neu-gray-300);
+    padding: 14px 16px;
+    background: var(--neu-gray-100);
+    font-family: Lato, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+</style>
+
+<h2>Moses logo direction: Moses + Northeastern Vancouver</h2>
+<p class="subtitle">A and B are the right product-logo shape. This revision restores Northeastern red and adds the Vancouver campus lockup as the credibility layer, without turning Moses into a fake university logo.</p>
+
+<div class="logo-grid">
+  <div class="logo-card" data-choice="red-app-header" onclick="toggleSelect(this)">
+    <div class="stage white">
+      <div class="affiliation">Student project inspired by Northeastern Vancouver</div>
+      <div class="logo-lockup">
+        <div class="logo-row">
+          <div class="mark-box red-fill"><img src="https://brand.northeastern.edu/wp-content/uploads/2022/05/dog-Head.svg" alt="King Husky head mark" /></div>
+          <div class="wordmark">
+            <strong>Moses</strong>
+            <span>Your Northeastern concierge AI</span>
+          </div>
+        </div>
+        <div class="sample-bar">
+          <div class="sample-brand">
+            <img src="https://brand.northeastern.edu/wp-content/uploads/2022/05/dog-Head.svg" alt="" />
+            <div><strong>Moses</strong><span>Concierge AI</span></div>
+          </div>
+          <span class="chip">Ask Moses</span>
+        </div>
+        <div class="campus-lockup compact">
+          <img src="northeastern-vancouver-lockup.png" alt="Northeastern University Vancouver lockup" />
+        </div>
+      </div>
+      <div class="use-row"><span class="chip">Best app header</span><span class="chip">Uses red</span><span class="chip">Vancouver anchored</span></div>
+    </div>
+    <div class="caption">
+      <h3>A. Red Husky + Moses</h3>
+      <p>Best practical logo direction. Moses gets the memorable mark, Northeastern Vancouver appears as the official affiliation layer.</p>
+    </div>
+  </div>
+
+  <div class="logo-card" data-choice="king-husky-head-lockup" onclick="toggleSelect(this)">
+    <div class="stage black">
+      <div class="affiliation">King Husky heritage concept</div>
+      <div class="logo-lockup">
+        <div class="logo-row">
+          <div class="mark-box red-outline"><img src="https://brand.northeastern.edu/wp-content/uploads/2022/05/dog-Head.svg" alt="King Husky head mark" /></div>
+          <div class="wordmark">
+            <strong>Moses</strong>
+            <span>Campus-aware AI with Husky personality</span>
+          </div>
+        </div>
+        <div class="sample-bar">
+          <div class="sample-brand">
+            <img src="https://brand.northeastern.edu/wp-content/uploads/2022/05/dog-Head.svg" alt="" />
+            <div><strong>Moses</strong><span>King Husky-inspired AI</span></div>
+          </div>
+          <span class="chip">History</span>
+        </div>
+        <div class="campus-lockup compact">
+          <img src="northeastern-vancouver-lockup.png" alt="Northeastern University Vancouver lockup" />
+        </div>
+      </div>
+      <div class="use-row"><span class="chip">Most personality</span><span class="chip">High contrast</span><span class="chip">Red accent</span></div>
+    </div>
+    <div class="caption">
+      <h3>B. Black Hero + Red Accent</h3>
+      <p>Best for splash and hero moments. Keeps the confident black stage, but the red outline and Vancouver strip stop it feeling generic.</p>
+    </div>
+  </div>
+
+  <div class="logo-card" data-choice="separated-affiliation" onclick="toggleSelect(this)">
+    <div class="stage red">
+      <div class="affiliation">Northeastern Vancouver branded entry point</div>
+      <div class="logo-lockup">
+        <div class="campus-band">
+          <img src="northeastern-vancouver-lockup.png" alt="Northeastern University Vancouver lockup" />
+          <div>
+            <strong>Moses</strong>
+            <span>Concierge AI for campus exploration</span>
+          </div>
+        </div>
+        <div class="sample-bar">
+          <div class="sample-brand">
+            <img src="https://brand.northeastern.edu/wp-content/uploads/2022/05/dog-Head.svg" alt="" />
+            <div><strong>Moses</strong><span>Student project</span></div>
+          </div>
+          <span class="chip">Northeastern</span>
+        </div>
+      </div>
+      <div class="use-row"><span class="chip">Strongest campus brand</span><span class="chip">Red-led</span><span class="chip">Approval-sensitive</span></div>
+    </div>
+    <div class="caption">
+      <h3>C. Vancouver Lockup Entry</h3>
+      <p>Best when the screen needs to feel officially campus-connected first. This is the closest to a Northeastern product framing.</p>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  Recommendation: use <strong>A</strong> as the app header, <strong>B</strong> as the splash/hero, and <strong>C</strong> for the login or “about this project” surface where Northeastern Vancouver needs to be explicit.
+</div>

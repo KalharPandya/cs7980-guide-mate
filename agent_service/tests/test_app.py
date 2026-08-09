@@ -20,8 +20,8 @@ def test_config_parses_multiple_robots(monkeypatch):
     assert Config.from_env().robot_ids == ["turtlebot468", "turtlebotsim"]
 
 
-def test_persona_mentions_robert_and_emote_rule():
-    assert "Robert" in PERSONA
+def test_persona_mentions_moses_and_emote_rule():
+    assert "Moses" in PERSONA
     assert "send_emote" in PERSONA
 
 
@@ -50,6 +50,9 @@ def test_index_served(monkeypatch):
     with TestClient(app) as client:
         resp = client.get("/")
         assert resp.status_code == 200
+        # Landing is the "Moses" concierge brand (frontend redesign); the dog
+        # persona is also Moses now. The DOM-hook contract below is the real
+        # guarantee that the right chat shell was served.
         assert "Moses" in resp.text
         # Task 5 polished chat UI: intake gate + chat shell DOM hooks that
         # both chat.js and the gated Playwright e2e (test_companion_flow.py)
@@ -61,6 +64,8 @@ def test_index_served(monkeypatch):
             'id="message"', 'id="mic"', 'id="status-chip"',
             # Task 4.3: the visitor-bound banner hook the state poll drives.
             'id="visitor-banner"',
+            # Redesign uses relative asset paths (renders both served and opened
+            # directly), so href/src are "chat.css"/"chat.js", not "/chat.css".
             'chat.css', 'chat.js',
         ):
             assert hook in resp.text, f"missing {hook}"
@@ -229,10 +234,11 @@ class _FakeStrands:
 
     last = None
 
-    def __init__(self, model=None, system_prompt=None, tools=None):
+    def __init__(self, model=None, system_prompt=None, tools=None, callback_handler=None):
         self.system_prompt = system_prompt
         self.tools = list(tools or [])
         self.tool_names = [t.tool_name for t in self.tools]
+        self.callback_handler = callback_handler
         type(self).last = self
 
     def __call__(self, message):
@@ -341,6 +347,29 @@ def test_request_companion_unknown_session_is_404(monkeypatch, ddb):
     with _fake_client(monkeypatch) as client:
         client.app.state.agent = _RecordingAgent()
         assert client.post("/api/session/nope/request-companion").status_code == 404
+
+
+def test_end_session_releases_robot_and_docks(monkeypatch, ddb):
+    with _fake_client(monkeypatch) as client:
+        client.app.state.agent = _RecordingAgent()
+        sid = client.post(
+            "/api/session", json={"name": "Ada", "comfortable": True}
+        ).json()["session_id"]
+        sessions.approve_request(sessions.create_request(sid), "turtlebot468")
+        client.app.state.registry.sent.clear()
+
+        r = client.post(f"/api/session/{sid}/end")
+        assert r.status_code == 200
+        assert r.json()["freed_robot_id"] == "turtlebot468"
+        assert sessions.robot_for_session(sid) is None
+        # End of assignment docks the robot.
+        assert ("turtlebot468", "motion", "dock") in client.app.state.registry.sent
+
+
+def test_end_unknown_session_is_404(monkeypatch, ddb):
+    with _fake_client(monkeypatch) as client:
+        client.app.state.agent = _RecordingAgent()
+        assert client.post("/api/session/nope/end").status_code == 404
 
 
 def test_state_unknown_session_is_404(monkeypatch, ddb):

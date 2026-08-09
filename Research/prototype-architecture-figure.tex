@@ -1,0 +1,140 @@
+% =====================================================================
+% Section III figure: guide-robot prototype architecture.
+% Paste into the paper as-is. Requires only packages the paper already
+% loads: tikz + arrows.meta, positioning, fit, backgrounds, calc.
+% Compile-verified against the paper's IEEEtran preamble: 0 overfull
+% boxes, fits the 181.9 mm two-column text width (drawing is ~170 mm).
+% Style deliberately matches Figs. threat/defence in Sec. VI.
+% =====================================================================
+\begin{figure*}[t]
+\centering
+\begin{tikzpicture}[
+  x=1mm, y=1mm,
+  font=\scriptsize,
+  b/.style={draw=black!70, rounded corners=1.2pt, align=center,
+            inner sep=1.6pt, minimum height=4.4mm, fill=white},
+  bp/.style={b, draw=black!45, densely dashed},
+  f/.style={-{Latex[length=1.3mm]}, semithick, black!70},
+  fd/.style={f, densely dashed, black!45},
+  badge/.style={circle, draw=black!65, fill=white, inner sep=0.3pt,
+                font=\tiny\bfseries, minimum size=3.2mm},
+  zlab/.style={font=\tiny\itshape, text=black!55, fill=white, inner sep=0.6pt}
+]
+
+%% ---------------- visitor plane ----------------
+\node[b, text width=16mm] (vis) at (10,-15)
+  {Visitor browser\\[-1.5pt]{\tiny text + mic}};
+\node[b, text width=16mm] (op) at (10,-31.5)
+  {Operator\\[-1.5pt]{\tiny admin plane}};
+
+%% ---------------- cloud: Moses ----------------
+\node[b, text width=38mm] (stt) at (46,0)
+  {speech to text\\[-1.5pt]{\tiny Transcribe stream or Scribe v2}};
+\node[b, text width=38mm] (llm) at (46,-10.5)
+  {Bedrock agent turn\\[-1.5pt]{\tiny \texttt{claude-sonnet-4-6}, Strands}};
+\node[b, text width=38mm] (kb) at (46,-21)
+  {Knowledge Base retrieve\\[-1.5pt]{\tiny top-4 passages}};
+\node[b, text width=38mm] (lock) at (46,-31.5)
+  {robot lock held?\\[-1.5pt]{\tiny companion request, operator approval}};
+\node[b, text width=38mm] (tools) at (46,-42)
+  {closed tool set, schema validated\\[-1.5pt]{\tiny 3 emotes, 2 tricks, stop}};
+\node[b, text width=38mm] (tts) at (46,-52.5)
+  {text to speech\\[-1.5pt]{\tiny ElevenLabs flash or Polly}};
+\node[b, text width=38mm] (ddb) at (46,-63)
+  {DynamoDB\\[-1.5pt]{\tiny sessions, messages, flags, locks}};
+\node[b, text width=38mm] (reg) at (46,-73.5)
+  {robot registry\\[-1.5pt]{\tiny presence, battery, dock, acks}};
+
+%% ---------------- transport ----------------
+\node[b, text width=28mm] (cmd) at (86,-42)
+  {command topic\\[-1.5pt]{\tiny\texttt{guidemate/\{id\}/cmd}}};
+\node[b, text width=28mm] (shd) at (86,-52.5)
+  {device shadow\\[-1.5pt]{\tiny\texttt{motion\_enabled}, \texttt{dry\_run}}};
+\node[b, text width=28mm] (sts) at (86,-73.5)
+  {status topic\\[-1.5pt]{\tiny\texttt{guidemate/\{id\}/status}}};
+
+%% ---------------- robot: command path ----------------
+\node[b, text width=28mm] (br) at (122,-42)
+  {bridge: validate, dedupe\\[-1.5pt]{\tiny closed vocabulary}};
+\node[b, text width=28mm] (gate) at (122,-52.5)
+  {dock guard\\[-1.5pt]{\tiny docked or unknown: deny}};
+\node[b, text width=28mm] (cv) at (122,-63)
+  {clamp, then \texttt{cmd\_vel} 10\,Hz\\[-1.5pt]{\tiny 0.15\,m/s, 30\,s; Dock / Undock}};
+
+%% ---------------- robot: perception and navigation ----------------
+\node[bp, text width=28mm] (sens) at (154,-42)
+  {RPLIDAR + OAK-D-LITE\\[-1.5pt]{\tiny 360$^{\circ}$ at 8\,Hz; depth 640$\times$480}};
+\node[bp, text width=28mm] (fus) at (154,-52.5)
+  {\texttt{depth\_lidar\_fusion}\\[-1.5pt]{\tiny $\rightarrow$ \texttt{scan\_fused}}};
+\node[bp, text width=28mm] (nav) at (154,-63)
+  {\texttt{slam\_toolbox} + Nav2\\[-1.5pt]{\tiny \texttt{glass\_guard}; DWB 0.15\,m/s}};
+
+\node[b, text width=60mm] (base) at (138,-73.5)
+  {iRobot Create 3 base};
+
+%% ---------------- edges ----------------
+\draw[f] (vis.north) -- (stt.west);
+\draw[f] (stt) -- (llm);
+\draw[f] (llm) -- (kb);
+\draw[f] (kb) -- (lock);
+\draw[f] (lock) -- (tools);
+\draw[f] (op) -- (lock);
+\draw[f] (tools) -- (tts);
+\draw[f] (tts.west) -- (22,-52.5) -- (22,-15) -- (vis.east);
+
+\draw[f] (tools) -- (cmd);
+\draw[f] (cmd) -- (br);
+\draw[f] (shd) -- (gate);
+\draw[f] (br) -- (gate);
+\draw[f] (gate) -- (cv);
+\draw[f] (cv) -- (base);
+
+\draw[fd] (sens) -- (fus);
+\draw[fd] (fus) -- (nav);
+\draw[fd] (nav) -- (base);
+
+\draw[f] (base) -- (sts);
+\draw[f] (sts) -- (reg);
+
+%% ---------------- gate badges ----------------
+\node[badge] at (lock.north west) {1};
+\node[badge] at (tools.north west) {2};
+\node[badge] at (shd.north west) {3};
+\node[badge] at (gate.north west) {4};
+\node[badge] at (cv.north west) {5};
+
+%% ---------------- zones ----------------
+\begin{scope}[on background layer]
+  \node[draw=black!45, rounded corners=2pt, inner sep=1.5mm,
+        fit=(vis)(op), fill=black!4] (zv) {};
+  \node[draw=black!45, rounded corners=2pt, inner sep=1.5mm,
+        fit=(stt)(reg), fill=black!4] (zc) {};
+  \node[draw=black!45, rounded corners=2pt, inner sep=1.5mm,
+        fit=(cmd)(sts), fill=black!4] (zi) {};
+  \node[draw=black!45, rounded corners=2pt, inner sep=1.5mm,
+        fit=(br)(sens)(base), fill=black!4] (zr) {};
+\end{scope}
+
+\node[zlab, anchor=south] at (zv.north) {visitor plane};
+\node[zlab, anchor=south] at (zc.north) {Moses: FastAPI + Bedrock on EC2};
+\node[zlab, anchor=south] at (zi.north) {AWS IoT Core};
+\node[zlab, anchor=south] at (zr.north) {robot: Raspberry Pi 4 + Create 3};
+
+\end{tikzpicture}
+\caption{Architecture of the guide-robot prototype. A visitor's typed or spoken
+request is transcribed, answered by a Bedrock-hosted Claude Sonnet agent grounded
+in a campus knowledge base, and may be turned into a robot command that travels
+over AWS IoT Core (MQTT, QoS 1, SigV4 from the service and X.509 mutual TLS from
+the robot) to an on-robot bridge, the only component that actuates the base.
+Numbered circles mark five independent checks, each failing closed: (1) the
+session must hold the robot lock, granted only by an authenticated operator;
+(2) the model may emit only a closed, schema-validated vocabulary of three
+emotes, two tricks and a stop; (3) the device shadow must have armed motion,
+whose defaults are disarmed and dry-run; (4) the dock guard refuses any
+non-docking command while the robot is docked or its dock state is unknown;
+(5) every primitive is clamped to 0.15\,m/s, 1.5\,rad/s and 30\,s before any
+velocity is published. Dashed components are the mapping and navigation stack: they run
+on the same robot but are brought up separately and are not reachable from the
+deployed language front end.}
+\label{fig:prototype}
+\end{figure*}

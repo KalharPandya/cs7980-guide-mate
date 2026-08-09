@@ -454,6 +454,34 @@ def test_dock_command_is_refused(monkeypatch, ddb):
         assert "motion" in out["acks"][-1]["reason"].lower()
 
 
+def test_slow_actions_use_long_ack_window(monkeypatch, ddb):
+    # Create 3 dock/undock take 10-60 s; the admin command must wait long enough
+    # for the terminal ack, or the panel reports "nothing happened" mid-dock.
+    appmod, client = _admin_client(monkeypatch)
+    with client:
+        seen = {}
+
+        class _T:
+            def __init__(self):
+                self.sent = []
+
+            def send_command(self, robot_id, cmd, timeout_s=5.0, collect_all=False):
+                from guidemate_msgs.messages import Ack
+                seen[cmd.name] = timeout_s
+                return [Ack(cmd_id=cmd.cmd_id, state="done", simulated=True)]
+
+            def get_status(self, robot_id):
+                return {"robot_id": robot_id, "presence": "online"}
+
+        client.app.state.registry = _T()
+        for name, typ in (("dock", "motion"), ("undock", "motion"), ("stop", "stop")):
+            client.post("/api/admin/robot/turtlebot468/command",
+                        json={"type": typ, "name": name})
+    assert seen["dock"] >= 60.0      # slow Create 3 action -> long window
+    assert seen["undock"] >= 60.0
+    assert seen["stop"] <= 10.0      # quick command -> short window
+
+
 def test_invalid_command_synthesizes_refusal_without_publishing(monkeypatch, ddb):
     appmod, client = _admin_client(monkeypatch)
     with client:

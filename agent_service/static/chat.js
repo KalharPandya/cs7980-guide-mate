@@ -23,6 +23,7 @@
   const banner = $("companion-banner");
   const bannerText = $("companion-status");
   const requestBtn = $("request-companion");
+  const endBtn = $("end-session");
   const virtualPetBadge = $("virtual-pet-badge");
   const visitorBanner = $("visitor-banner");
   const stopBar = $("stop-bar");
@@ -363,7 +364,9 @@
   let wsClosedByUs = false;
 
   function setConnDetail(connected) {
-    chip.title = connected ? "connected" : "reconnecting…";
+    // #status-chip was removed in the minimal chat shell; the companion banner
+    // now owns the connection readout. Guard so its absence never throws.
+    if (chip) chip.title = connected ? "connected" : "reconnecting…";
   }
 
   function connect() {
@@ -574,10 +577,10 @@
       virtualPetBadge.classList.toggle("hidden", !isPet);
     }
     if (isPet) {
-      chip.classList.add("hidden");
-    } else {
+      if (chip) chip.classList.add("hidden");
+    } else if (chip) {
       chip.className = "chip " + (physical ? "chip-physical" : "chip-virtual");
-      chipMode.textContent = physical ? "physical" : "virtual";
+      if (chipMode) chipMode.textContent = physical ? "physical" : "virtual";
     }
 
     // Persistent Stop: visible only while REAL robot motion can be active
@@ -591,6 +594,10 @@
     // guide_to_room tool call succeeded) -- show it on the big-screen alongside
     // the other connection chips. Independent of physical/virtual robot state.
     if (visitorBanner) visitorBanner.classList.toggle("hidden", !s.visitor_id);
+
+    // "End session" is offered only while a robot is bound; ending it releases
+    // the robot and sends it back to its dock (POST /api/session/{id}/end).
+    if (endBtn) endBtn.hidden = !physical;
 
     banner.classList.remove("pending", "approved", "denied", "aborted");
     if (physical) {
@@ -634,8 +641,8 @@
     } catch (e) {
       // Session row missing or endpoint unreachable -- quietly show the
       // virtual default rather than wedging the UI.
-      chip.className = "chip chip-virtual";
-      chipMode.textContent = "virtual";
+      if (chip) chip.className = "chip chip-virtual";
+      if (chipMode) chipMode.textContent = "virtual";
       if (stopBar) stopBar.classList.add("hidden");
       if (virtualPetBadge) virtualPetBadge.classList.add("hidden");
       if (visitorBanner) visitorBanner.classList.add("hidden");
@@ -665,6 +672,23 @@
     } catch (e) { /* network hiccup -- next poll will reconcile */ }
     requestBtn.disabled = false;
   });
+
+  if (endBtn) {
+    endBtn.addEventListener("click", async () => {
+      if (!sessionId) return;
+      endBtn.disabled = true;
+      try {
+        await fetch(`/api/session/${sessionId}/end`, {
+          method: "POST", credentials: "same-origin",
+        });
+        // Optimistic: hide immediately; the next poll reconciles to virtual.
+        endBtn.hidden = true;
+        banner.classList.remove("approved", "pending");
+        bannerText.textContent = "Session ended — dog returning to its dock.";
+      } catch (e) { /* next poll reconciles */ }
+      endBtn.disabled = false;
+    });
+  }
 
   // --- persistent Stop: send a real stop command to the bound robot ---------
   // The button is only shown while a physical robot is connected (renderState),

@@ -238,8 +238,9 @@ def _build_motion_sinks(env: "Mapping[str, str]"):
     from guide_mate_bridge.cmd_vel_publisher import CmdVelPublisher
     from guide_mate_bridge.dock_actions import DockActions
 
-    if not rclpy.ok():
-        rclpy.init(args=None)
+    from guide_mate_bridge.ros_init import ensure_rclpy_init
+
+    ensure_rclpy_init()
     namespace = env.get("GUIDEMATE_ROS_NAMESPACE", env.get("GUIDEMATE_ROBOT_ID", ""))
     node = rclpy.create_node(
         "guidemate_bridge_motion",

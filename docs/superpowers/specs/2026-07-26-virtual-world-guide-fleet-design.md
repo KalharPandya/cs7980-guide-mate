@@ -165,7 +165,8 @@ from the pasted floor plan images, eyeballed coordinates, documented as such in 
 
 Phase 0 — Scaffolding and floor data
 - Create `world/` (Colyseus server, ESM) and `world-client/` (Vite + R3F) in the repo.
-- Author the 14th-floor JSON from the campus floor plan. DONE: `world/data/floor-14.json`.
+- Author the 14th-floor JSON from the campus floor plan (rooms, doors, walls, glass flags).
+  DONE: `world/data/floor-14.json`.
 - Fetch CC0 assets via the verified recipes into the repo (a `world/scripts/fetch_assets.sh`).
 - Done when: JSON validates, assets present, both skeletons run locally.
 

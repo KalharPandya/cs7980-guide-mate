@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import logging
 import os
+import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -35,6 +36,24 @@ from guidemate_agent.ws_chat import CaptureRegistry, register as register_ws
 
 log = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+
+def _force_utf8_stdio() -> None:
+    """Make stdout/stderr carry non-ASCII on any platform/console.
+
+    Agent replies and logs contain emoji (the persona emits a paw print). Linux
+    and the Docker image already use UTF-8, but a Windows dev console defaults to
+    cp1252 and raises UnicodeEncodeError on the first emoji — which otherwise
+    kills the request pipeline. errors="replace" guarantees a write never raises;
+    the try/except covers pytest's captured streams (no reconfigure attribute)."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError):
+            pass
+
+
+_force_utf8_stdio()
 
 
 class ChatRequest(BaseModel):
@@ -73,6 +92,23 @@ async def lifespan(app: FastAPI):
     app.state.store = store
     # Config + KB manager are read by the admin API (status / kill-switch / KB).
     app.state.config = cfg
+    # Shared ElevenLabs client (built once) when a voice backend uses it; None
+    # otherwise. A configured-but-keyless backend logs a warning and leaves the AWS
+    # default in force (speech.py falls back when el_client is None/errors), so a
+    # missing key can never break startup or a chat turn.
+    app.state.el_client = None
+    if cfg.tts_backend == "elevenlabs" or cfg.stt_backend == "elevenlabs":
+        if cfg.elevenlabs_api_key:
+            try:
+                from elevenlabs import ElevenLabs
+                app.state.el_client = ElevenLabs(api_key=cfg.elevenlabs_api_key)
+            except Exception:  # noqa: BLE001 — never block startup on the SDK
+                log.exception("ElevenLabs client init failed; using AWS voice")
+        else:
+            log.warning(
+                "voice backend set to elevenlabs but ELEVENLABS_API_KEY is empty; "
+                "falling back to AWS (Polly/Transcribe)"
+            )
     app.state.kb = KBManager(
         bucket=cfg.kb_bucket,
         kb_id=cfg.kb_id,
@@ -137,9 +173,20 @@ async def lifespan(app: FastAPI):
 
     scheduler = BackgroundScheduler(timezone="America/New_York")
     scheduler.add_job(engine.morning_stretch, "cron", hour=9, minute=0, id="morning_stretch")
+    # Idle cleanup: end (and dock) any session that has held a robot but been idle
+    # longer than IDLE_TIMEOUT_S, so an abandoned session never parks the robot
+    # undocked forever. Best-effort — sessions.sweep_idle_sessions never raises.
+    idle_timeout_s = float(os.environ.get("GUIDEMATE_IDLE_TIMEOUT_S", "600"))
+    scheduler.add_job(
+        lambda: sessions.sweep_idle_sessions(idle_timeout_s, registry=registry),
+        "interval", minutes=1, id="idle_dock_sweep",
+    )
     scheduler.start()
     app.state.scheduler = scheduler
-    log.info("autonomy engine + scheduler started (morning stretch daily 09:00)")
+    log.info(
+        "autonomy engine + scheduler started (morning stretch 09:00; "
+        "idle dock sweep every 60s, timeout=%.0fs)", idle_timeout_s,
+    )
 
     try:
         yield
@@ -196,6 +243,7 @@ def chat(req: ChatRequest) -> JSONResponse:
         else:
             if sessions.get_session(req.session_id) is None:
                 raise HTTPException(status_code=404, detail="unknown session")
+            sessions.touch_session(req.session_id)  # keep the idle sweeper at bay
             result = app.state.agent.chat(req.message, session_id=req.session_id)
     except HTTPException:
         raise
@@ -219,6 +267,16 @@ def session_state(session_id: str) -> dict:
     if sessions.get_session(session_id) is None:
         raise HTTPException(status_code=404, detail="unknown session")
     return sessions.get_session_state(session_id)
+
+
+@app.post("/api/session/{session_id}/end")
+def end_session(session_id: str, request: Request) -> dict:
+    """Guest ends the assignment: release the robot lock and dock it (best-effort).
+    A session holding no robot ends cleanly with freed_robot_id=null."""
+    if sessions.get_session(session_id) is None:
+        raise HTTPException(status_code=404, detail="unknown session")
+    freed = sessions.end_session(session_id, registry=request.app.state.registry)
+    return {"freed_robot_id": freed}
 
 
 # --- user-facing session capabilities (Wave-2, NOT admin-gated) --------------

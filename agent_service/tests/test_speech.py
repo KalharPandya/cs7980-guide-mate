@@ -75,6 +75,69 @@ class _FakePolly:
         return {"AudioStream": _FakeAudioStream(b"AUDIOBYTES")}
 
 
+class _FakeElevenTTS:
+    """Stand-in for elevenlabs.ElevenLabs: records convert() kwargs, yields byte chunks."""
+
+    def __init__(self, chunks=(b"EL", b"AUDIO"), raise_exc=None):
+        self._chunks = chunks
+        self._raise = raise_exc
+        self.calls = []
+        self.text_to_speech = self
+
+    def convert(self, **kwargs):
+        self.calls.append(kwargs)
+        if self._raise:
+            raise self._raise
+        return iter(self._chunks)
+
+
+def test_synthesize_mp3_elevenlabs_joins_chunks():
+    el = _FakeElevenTTS(chunks=(b"EL", b"AUDIO"))
+    out = synthesize_mp3(
+        "hello pup", backend="elevenlabs", el_client=el,
+        el_voice_id="voiceXYZ", el_model="eleven_flash_v2_5",
+    )
+    assert out == b"ELAUDIO"
+    kw = el.calls[0]
+    assert kw["voice_id"] == "voiceXYZ"
+    assert kw["text"] == "hello pup"
+    assert kw["model_id"] == "eleven_flash_v2_5"
+    assert kw["output_format"] == "mp3_44100_128"
+
+
+def test_synthesize_pcm16_elevenlabs_requests_pcm_16000():
+    el = _FakeElevenTTS(chunks=(b"PCM", b"DATA"))
+    out = synthesize_pcm16(
+        "woof", backend="elevenlabs", el_client=el, el_voice_id="voiceXYZ",
+    )
+    assert out == b"PCMDATA"
+    assert el.calls[0]["output_format"] == "pcm_16000"
+
+
+def test_synthesize_mp3_falls_back_to_polly_on_eleven_error():
+    el = _FakeElevenTTS(raise_exc=RuntimeError("boom"))
+    polly = _FakePolly()
+    out = synthesize_mp3(
+        "hello", backend="elevenlabs", el_client=el, polly_client=polly,
+    )
+    assert out == b"AUDIOBYTES"          # came from Polly fallback
+    assert el.calls and polly.calls      # tried EL, then fell back
+
+
+def test_synthesize_pcm16_falls_back_to_polly_on_eleven_error():
+    el = _FakeElevenTTS(raise_exc=RuntimeError("boom"))
+    polly = _FakePolly()
+    out = synthesize_pcm16("woof", backend="elevenlabs", el_client=el, polly_client=polly)
+    assert out == b"AUDIOBYTES"
+    assert el.calls and polly.calls
+
+
+def test_synthesize_mp3_elevenlabs_without_client_falls_back_to_polly():
+    polly = _FakePolly()
+    out = synthesize_mp3("hi", backend="elevenlabs", el_client=None, polly_client=polly)
+    assert out == b"AUDIOBYTES"
+
+
 def test_synthesize_mp3_uses_neural_justin_mp3():
     polly = _FakePolly()
     out = synthesize_mp3("hello pup", polly_client=polly)

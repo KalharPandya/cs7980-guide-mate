@@ -16,6 +16,11 @@ services:
       # virtual (avatar-only) session's emote is ALSO best-effort mirrored
       # onto that physical robot -- see dog_agent._emote_mirror_robot_id.
       - GUIDEMATE_EMOTE_MIRROR_ROBOT_ID=${GUIDEMATE_EMOTE_MIRROR_ROBOT_ID:-}
+      # Voice backend (AWS Polly/Transcribe stay the default if these are unset).
+      - GUIDEMATE_TTS_BACKEND=${GUIDEMATE_TTS_BACKEND:-polly}
+      - GUIDEMATE_STT_BACKEND=${GUIDEMATE_STT_BACKEND:-transcribe}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
+      - ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID:-}
 
   world-server:
     build:

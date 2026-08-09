@@ -1,0 +1,307 @@
+<style>
+  .direction-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 18px;
+    margin-top: 18px;
+  }
+
+  .direction-card {
+    border: 1px solid #d6dae3;
+    border-radius: 18px;
+    overflow: hidden;
+    background: white;
+    cursor: pointer;
+    transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  }
+
+  .direction-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 35px rgba(15, 23, 42, 0.14);
+  }
+
+  .direction-card.selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.16), 0 18px 44px rgba(15, 23, 42, 0.16);
+  }
+
+  .poster {
+    min-height: 230px;
+    padding: 18px;
+    display: grid;
+    align-content: space-between;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .poster small {
+    font: 800 11px/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .poster h3 {
+    margin: 10px 0 4px;
+    font-size: 30px;
+    line-height: 0.95;
+    letter-spacing: -0.03em;
+  }
+
+  .poster p {
+    max-width: 18rem;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+
+  .mini-ui {
+    display: grid;
+    gap: 8px;
+    margin-top: 16px;
+    max-width: 220px;
+  }
+
+  .mini-line,
+  .mini-pill,
+  .mini-chip {
+    border-radius: 999px;
+  }
+
+  .mini-line {
+    height: 8px;
+    width: 100%;
+    opacity: 0.78;
+  }
+
+  .mini-line.short {
+    width: 64%;
+  }
+
+  .mini-pill {
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: fit-content;
+    padding: 0 14px;
+    font-size: 12px;
+    font-weight: 900;
+  }
+
+  .mini-map {
+    position: absolute;
+    right: -28px;
+    bottom: -22px;
+    width: 160px;
+    height: 128px;
+    border-radius: 28px;
+    opacity: 0.88;
+  }
+
+  .mini-map::before,
+  .mini-map::after {
+    content: "";
+    position: absolute;
+    border-radius: 999px;
+  }
+
+  .mini-map::before {
+    width: 92px;
+    height: 10px;
+    left: 28px;
+    top: 54px;
+    transform: rotate(-24deg);
+  }
+
+  .mini-map::after {
+    width: 12px;
+    height: 12px;
+    right: 46px;
+    top: 34px;
+  }
+
+  .robot-dot {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-weight: 950;
+  }
+
+  .card-body {
+    padding: 14px 16px 16px;
+  }
+
+  .card-body h4 {
+    margin: 0 0 6px;
+    font-size: 17px;
+  }
+
+  .card-body p {
+    margin: 0;
+    font-size: 14px;
+    color: #576071;
+  }
+
+  .a {
+    color: #10233f;
+    background:
+      linear-gradient(90deg, rgba(16, 35, 63, 0.08) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(16, 35, 63, 0.08) 1px, transparent 1px),
+      #f7f5ee;
+    background-size: 28px 28px;
+  }
+
+  .a .mini-line { background: #10233f; }
+  .a .mini-pill { background: #f5c542; color: #10233f; }
+  .a .mini-map { background: #dce8f7; }
+  .a .mini-map::before { background: #2563eb; }
+  .a .mini-map::after { background: #f05a28; box-shadow: 0 0 0 8px rgba(240, 90, 40, 0.18); }
+
+  .b {
+    color: #132f2b;
+    background:
+      radial-gradient(circle at 84% 20%, rgba(79, 209, 197, 0.28), transparent 34%),
+      radial-gradient(circle at 18% 86%, rgba(255, 183, 77, 0.38), transparent 30%),
+      #f9fbf8;
+  }
+
+  .b .mini-line { background: #132f2b; }
+  .b .mini-pill { background: #132f2b; color: white; }
+  .b .robot-dot { background: #4fd1c5; color: #132f2b; box-shadow: 0 0 0 12px rgba(79, 209, 197, 0.22); }
+
+  .c {
+    color: #f8fafc;
+    background:
+      linear-gradient(135deg, rgba(125, 211, 252, 0.16), transparent 42%),
+      #111827;
+  }
+
+  .c .mini-line { background: #7dd3fc; }
+  .c .mini-pill { background: #ef4444; color: white; }
+  .c .robot-dot { background: #1f2937; color: #7dd3fc; border: 1px solid #4b5563; }
+  .c p { color: #cbd5e1; }
+
+  .d {
+    color: #172554;
+    background:
+      linear-gradient(90deg, rgba(37, 99, 235, 0.11) 1px, transparent 1px),
+      #edf4ff;
+    background-size: 18px 18px;
+  }
+
+  .d .mini-line { background: #172554; }
+  .d .mini-pill { background: #2563eb; color: white; }
+  .d .mini-map { background: #ffffff; border: 1px solid rgba(37, 99, 235, 0.28); }
+  .d .mini-map::before { background: #14b8a6; }
+  .d .mini-map::after { background: #172554; box-shadow: 0 0 0 8px rgba(20, 184, 166, 0.18); }
+
+  .tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 18px;
+  }
+
+  .tag {
+    border: 1px solid #d6dae3;
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 13px;
+    font-weight: 750;
+    background: #fff;
+  }
+</style>
+
+<h2>Which identity direction is worth exploring?</h2>
+<p class="subtitle">The current package says "Echo as TurtleBot Pal." These are bigger pivots: different names, emotional temperature, visual language, and product emphasis. Click the direction that feels closest, or tell me which parts to combine.</p>
+
+<div class="direction-grid">
+  <div class="direction-card" data-choice="campus-compass" onclick="toggleSelect(this)">
+    <div class="poster a">
+      <div>
+        <small>Campus service / wayfinding first</small>
+        <h3>GuideMate<br>Compass</h3>
+        <p>Feels like a helpful campus kiosk that can physically accompany you.</p>
+      </div>
+      <div class="mini-ui">
+        <div class="mini-line"></div>
+        <div class="mini-line short"></div>
+        <div class="mini-pill">Show route</div>
+      </div>
+      <div class="mini-map"></div>
+    </div>
+    <div class="card-body">
+      <h4>A. Compass</h4>
+      <p>Best if the product should feel useful, credible, and navigation-native before it feels cute.</p>
+    </div>
+  </div>
+
+  <div class="direction-card" data-choice="robot-companion" onclick="toggleSelect(this)">
+    <div class="poster b">
+      <div>
+        <small>Companion / approachable robot</small>
+        <h3>GuideMate<br>Buddy</h3>
+        <p>Warmer, more expressive, still clearly a robot companion rather than a toy brand.</p>
+      </div>
+      <div class="robot-dot">:)</div>
+      <div class="mini-ui">
+        <div class="mini-line"></div>
+        <div class="mini-pill">Request companion</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h4>B. Buddy</h4>
+      <p>Best if the dog-agent personality is central and the UI should make users smile first.</p>
+    </div>
+  </div>
+
+  <div class="direction-card" data-choice="safety-console" onclick="toggleSelect(this)">
+    <div class="poster c">
+      <div>
+        <small>Trust / safety / operator clarity</small>
+        <h3>GuideMate<br>Control</h3>
+        <p>Sharp status hierarchy, explicit locks, strong stop affordance, less mascot presence.</p>
+      </div>
+      <div class="robot-dot">OK</div>
+      <div class="mini-ui">
+        <div class="mini-line"></div>
+        <div class="mini-line short"></div>
+        <div class="mini-pill">Stop robot</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h4>C. Control</h4>
+      <p>Best if the demo must feel trustworthy to staff, judges, and anyone nervous around robots.</p>
+    </div>
+  </div>
+
+  <div class="direction-card" data-choice="lab-fieldnote" onclick="toggleSelect(this)">
+    <div class="poster d">
+      <div>
+        <small>Research demo / field notebook</small>
+        <h3>GuideMate<br>Scout</h3>
+        <p>Academic, prototype-proud, map and telemetry artifacts become the signature look.</p>
+      </div>
+      <div class="mini-ui">
+        <div class="mini-line"></div>
+        <div class="mini-line short"></div>
+        <div class="mini-pill">Robot status</div>
+      </div>
+      <div class="mini-map"></div>
+    </div>
+    <div class="card-body">
+      <h4>D. Scout</h4>
+      <p>Best if you want the POC to own its robotics lab reality instead of hiding it.</p>
+    </div>
+  </div>
+</div>
+
+<div class="tag-row">
+  <span class="tag">Keep: accessibility</span>
+  <span class="tag">Keep: persistent stop</span>
+  <span class="tag">Open: name/personality</span>
+  <span class="tag">Open: mascot intensity</span>
+  <span class="tag">Open: visual signature</span>
+</div>
