@@ -41,10 +41,12 @@ import { fileURLToPath } from 'node:url'
 import * as THREE from 'three'
 
 import { GLASS_MATERIAL, SOLID_MATERIAL } from '../Walls'
+import { CORE_MATERIAL } from '../Cores'
 import type { FloorPlan } from '../floorPlanTypes'
 
 const FLOOR_PLAN_PATH = fileURLToPath(new URL('../../../public/data/floor-14.json', import.meta.url))
 const WALLS_SOURCE_PATH = fileURLToPath(new URL('../Walls.tsx', import.meta.url))
+const CORES_SOURCE_PATH = fileURLToPath(new URL('../Cores.tsx', import.meta.url))
 
 // Documented values, copied from the inline JSX materials this change replaced (git history /
 // the task's own diff), not re-derived from Walls.tsx's GLASS_COLOR/SOLID_WALL_COLOR constants --
@@ -149,6 +151,53 @@ function testMeshAssignsSharedMaterialViaPropNotJsxChild(): void {
   console.log('PASS: Walls.tsx assigns the shared material via the `material` prop (not a disposable JSX child)')
 }
 
+/**
+ * Cores.tsx (the solid elevator/stair shaft volumes added 2026-08-09) introduced a THIRD shared
+ * material, so it is held to exactly the same two-part standard as the wall materials above: real
+ * parameter values on the exported instance, plus the structural source assertions that catch a
+ * future edit reintroducing per-mesh construction or the JSX-child disposal trap. Without this,
+ * Cores.tsx could regress to a fresh material per core (or, worse, to a JSX-child material that R3F
+ * disposes on the first unmount) while wallMaterials.test.ts stayed green.
+ */
+const EXPECTED_CORE_COLOR_HEX = 0xc2bcb0
+const EXPECTED_CORE_ROUGHNESS = 0.92
+
+function testCoreMaterialIsSharedAndMatchesDocumentedValues(): void {
+  assert.ok(CORE_MATERIAL instanceof THREE.MeshStandardMaterial, 'CORE_MATERIAL should be a MeshStandardMaterial')
+  assert.equal(CORE_MATERIAL.color.getHex(), EXPECTED_CORE_COLOR_HEX, 'CORE_MATERIAL.color should match the documented core color')
+  assert.equal(CORE_MATERIAL.roughness, EXPECTED_CORE_ROUGHNESS, 'CORE_MATERIAL.roughness should match the documented value')
+
+  // A core is building structure, NOT a wall: it must remain its own instance, so a future tweak to
+  // either look cannot silently restyle the other.
+  assert.notEqual(CORE_MATERIAL as unknown, SOLID_MATERIAL as unknown, 'CORE_MATERIAL must not be the same instance as SOLID_MATERIAL')
+  assert.notEqual(CORE_MATERIAL as unknown, GLASS_MATERIAL as unknown, 'CORE_MATERIAL must not be the same instance as GLASS_MATERIAL')
+  console.log('PASS: CORE_MATERIAL is a distinct MeshStandardMaterial whose parameters match the documented values')
+}
+
+function testCoresSourceConstructsItsMaterialExactlyOnceAtModuleScope(): void {
+  const source = readFileSync(CORES_SOURCE_PATH, 'utf-8')
+
+  const constructions = source.match(/new THREE\.MeshStandardMaterial\(/g) ?? []
+  assert.equal(constructions.length, 1, `expected exactly one MeshStandardMaterial construction in Cores.tsx, found ${constructions.length}`)
+
+  const coreFunctionIndex = source.indexOf('function Core(')
+  assert.ok(coreFunctionIndex > 0, 'expected to find "function Core(" in Cores.tsx')
+  assert.ok(
+    source.indexOf('new THREE.MeshStandardMaterial(') < coreFunctionIndex,
+    'MeshStandardMaterial must be constructed at module scope in Cores.tsx, before function Core(',
+  )
+
+  assert.ok(
+    !/<meshStandardMaterial\b/.test(source),
+    '<meshStandardMaterial as a JSX child would be owned/disposed by R3F per-mesh -- must not appear in Cores.tsx',
+  )
+  assert.ok(
+    /material=\{CORE_MATERIAL\}/.test(source),
+    'expected <mesh> in Cores.tsx to assign the shared material via a `material={CORE_MATERIAL}` prop',
+  )
+  console.log('PASS: Cores.tsx constructs its shared material once at module scope and assigns it via the `material` prop')
+}
+
 function main(): void {
   testGlassMaterialIsSharedAndMatchesDocumentedValues()
   testSolidMaterialIsSharedAndMatchesDocumentedValues()
@@ -156,6 +205,8 @@ function main(): void {
   testFloorPlanHasBothGlassAndSolidWallsToShareAcross()
   testWallsSourceConstructsEachMaterialExactlyOnceAtModuleScope()
   testMeshAssignsSharedMaterialViaPropNotJsxChild()
+  testCoreMaterialIsSharedAndMatchesDocumentedValues()
+  testCoresSourceConstructsItsMaterialExactlyOnceAtModuleScope()
   console.log('ALL PASS: wallMaterials.test.ts')
 }
 

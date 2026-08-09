@@ -11,6 +11,7 @@ import { AgentInstances } from './scene/AgentInstances'
 import { ChargingPads } from './scene/ChargingPads'
 import { RouteLines } from './scene/RouteLine'
 import { Floor } from './scene/Floor'
+import { Cores } from './scene/Cores'
 import { Walls } from './scene/Walls'
 import { RoomLabels } from './scene/RoomLabels'
 import { computeOutlineBounds } from './scene/floorPlanUtils'
@@ -259,7 +260,11 @@ function App() {
             and MapControls target sit OUTSIDE this group and have their z negated (see above). */}
         <group scale={[1, 1, -1]}>
           <Floor floorPlan={floorPlan} />
-          <Walls walls={floorPlan.walls} />
+          {/* The elevator/stair shafts, as solid mass standing in the openings Floor.tsx cuts out
+              of the slab. MUST be inside this reflection group with the floor, or the blocks would
+              land mirrored across the building from the holes they fill. See Cores.tsx. */}
+          <Cores holes={floorPlan.holes} walls={floorPlan.walls} />
+          <Walls walls={floorPlan.walls} walkableOutline={floorPlan.walkableOutline} />
           <RoomLabels rooms={floorPlan.rooms} />
 
           {/* Charging pads sit on the carpet under the robots that park on them, inside the

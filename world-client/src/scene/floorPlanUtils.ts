@@ -1,4 +1,4 @@
-import type { Point2D } from './floorPlanTypes'
+import type { FloorPlanWall, Point2D } from './floorPlanTypes'
 
 /** Axis-aligned bounds of a set of 2D floor-plan points, in the same (x, z) meters. */
 export interface Bounds2D {
@@ -334,4 +334,229 @@ export function fitCameraToOutline(
 
   const target: Vec3 = { x: aim.x, y: 0, z: aim.z }
   return { target, position: positionAlongDirection(target, direction, distance) }
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * Wall thickness hierarchy (visual QA, 2026-08-09)
+ * ------------------------------------------------------------------------------------------ */
+
+/**
+ * floor-14.json gives each wall only a centerline (`a` -> `b`), a `height`, and a `glass` flag --
+ * no thickness. Walls.tsx used to extrude every one of the 79 segments as the same 0.15m slab,
+ * which is what made the render read as a wall DIAGRAM rather than a building: a load-bearing
+ * exterior envelope wall and a washroom partition came out visually identical, so the eye got no
+ * hierarchy to latch onto. Real construction has one, so these give the render one too.
+ *
+ * The classes are derived from the data at runtime (see classifyWall), never from hardcoded wall
+ * indices, so this keeps working if floor-14.json is re-authored or replaced:
+ *
+ * - `exterior` 0.30m: the wall lies along `walkableOutline`, i.e. it IS the building envelope.
+ *   0.30m is a plausible real exterior assembly (structure + insulation + cladding) and is the
+ *   thickest thing on the floor, which is exactly the read we want. Not made thicker than that
+ *   because of the overhang problem: these walls are centred ON the outline while the floor slab
+ *   STOPS at the outline, so half the thickness hangs past the slab edge. See
+ *   OUTLINE_WALL_OUTER_FACE_OVERHANG_M for how that half-overhang is neutralised.
+ * - `glass` 0.08m: a glazed panel is a PANE, not an assembly, and is thin whether it sits on the
+ *   envelope or inside the floor. So `glass` is checked BEFORE `exterior`, and the one glass
+ *   segment that does lie on the outline stays a pane instead of becoming a 0.30m block. Glass
+ *   walls stay visually distinct exactly as before (Walls.tsx's GLASS_MATERIAL); thinness only
+ *   reinforces that.
+ * - `partition` 0.09m: a full-height wall runs floor to structure; a wall authored SHORTER than
+ *   the floor's tallest wall is by definition a stub/partition (in floor-14.json today: the 12
+ *   washroom partitions at 2.1m against everything else's 2.7m). The threshold is the plan's own
+ *   tallest wall height (tallestWallHeight), not a hardcoded 2.7, so a plan authored in different
+ *   absolute heights classifies the same way.
+ * - `structural` 0.15m: everything else, i.e. full-height interior walls. Deliberately left at the
+ *   OLD uniform value so this change only ADDS contrast at the two extremes and never restyles the
+ *   bulk of the floor out from under the previously-reviewed look.
+ */
+export type WallClass = 'exterior' | 'glass' | 'structural' | 'partition'
+
+export const WALL_THICKNESS_M: Record<WallClass, number> = {
+  exterior: 0.3,
+  glass: 0.08,
+  structural: 0.15,
+  partition: 0.09,
+}
+
+/**
+ * The single thickness every wall used before the hierarchy above existed. Retained as a named
+ * constant (not folded into WALL_THICKNESS_M.structural) because it also defines the legacy
+ * silhouette that OUTLINE_WALL_OUTER_FACE_OVERHANG_M preserves.
+ */
+export const LEGACY_WALL_THICKNESS_M = 0.15
+
+/**
+ * How far an outline wall's OUTER face is allowed to sit past the floor slab's edge, in meters.
+ *
+ * Walls are authored on their centerline and the floor's ShapeGeometry (Floor.tsx) is cut exactly
+ * on `walkableOutline`, so an outline wall of thickness T already overhangs the slab by T/2 with
+ * nothing under it. At the old uniform 0.15m that overhang was 0.075m and invisible. At the new
+ * 0.30m exterior thickness it would have doubled to 0.15m of wall floating past the slab edge,
+ * the "floating ledge" failure mode. Rather than compromise on the exterior thickness, outline
+ * walls are INSET: each is shifted along its outline edge's inward normal by
+ * `thickness / 2 - OUTLINE_WALL_OUTER_FACE_OVERHANG_M`, which pins the outer face exactly where the
+ * old uniform 0.15m wall put it. The building's outer silhouette is therefore unchanged from the
+ * previously-reviewed render, and the extra thickness grows INWARD only, where there is floor
+ * underneath it to stand on.
+ *
+ * (The shift is signed, so it also works for classes THINNER than the legacy value: the one glass
+ * segment on the outline gets a small negative, i.e. outward, shift, which likewise keeps its outer
+ * face on the same plane as every other envelope wall rather than letting a thin pane recess into
+ * the facade.)
+ */
+export const OUTLINE_WALL_OUTER_FACE_OVERHANG_M = LEGACY_WALL_THICKNESS_M / 2
+
+/**
+ * How close (in meters) BOTH of a wall's endpoints must sit to a single `walkableOutline` edge for
+ * that wall to count as part of the building envelope. Measured against floor-14.json: the match
+ * count is 20 walls and does not move anywhere across 0.02m..0.10m (and only picks up a 21st,
+ * a clearly-interior glass segment, at 0.20m), so 0.10m sits in the middle of a wide stable
+ * plateau: loose enough to absorb the authored geometry's rounding, tight enough not to capture
+ * interior walls that merely run near the facade.
+ */
+export const OUTLINE_MATCH_TOLERANCE_M = 0.1
+
+/** Distance from point (px, pz) to the finite segment (ax, az)-(bx, bz), all in floor-plan meters. */
+function pointSegmentDistance(
+  px: number,
+  pz: number,
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+): number {
+  const dx = bx - ax
+  const dz = bz - az
+  const lengthSq = dx * dx + dz * dz
+  // A degenerate (zero-length) outline edge collapses to its own endpoint rather than dividing by 0.
+  const t = lengthSq > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / lengthSq)) : 0
+  return Math.hypot(px - (ax + t * dx), pz - (az + t * dz))
+}
+
+/**
+ * Shoelace signed area of a closed polygon in the (x, z) plane treated as a standard (X, Y) plane.
+ * Only the SIGN is used here, to learn the outline's winding: positive means counter-clockwise,
+ * which is what tells computeWallPlacement which side of an edge is "inside".
+ */
+export function polygonSignedArea(points: Point2D[]): number {
+  let doubleArea = 0
+  for (let i = 0; i < points.length; i++) {
+    const [ax, az] = points[i]
+    const [bx, bz] = points[(i + 1) % points.length]
+    doubleArea += ax * bz - bx * az
+  }
+  return doubleArea / 2
+}
+
+/**
+ * Index of the `walkableOutline` edge this wall lies along, or -1 if it is an interior wall. A wall
+ * counts as lying along an edge only when BOTH endpoints are within `tolerance` of that ONE edge.
+ * Requiring a single shared edge (rather than "each endpoint is near the outline somewhere") is
+ * what stops an interior wall that happens to start and end near two different facades from being
+ * misread as part of the envelope.
+ */
+export function findOutlineEdgeIndex(
+  wall: FloorPlanWall,
+  outline: Point2D[],
+  tolerance: number = OUTLINE_MATCH_TOLERANCE_M,
+): number {
+  for (let i = 0; i < outline.length; i++) {
+    const [ax, az] = outline[i]
+    const [bx, bz] = outline[(i + 1) % outline.length]
+    const worstEndpoint = Math.max(
+      pointSegmentDistance(wall.a[0], wall.a[1], ax, az, bx, bz),
+      pointSegmentDistance(wall.b[0], wall.b[1], ax, az, bx, bz),
+    )
+    if (worstEndpoint <= tolerance) return i
+  }
+  return -1
+}
+
+/**
+ * The tallest `height` in a wall list: the reference a `partition` is measured as shorter than.
+ * Falls back to 0 for an empty list so callers never propagate -Infinity into geometry.
+ */
+export function tallestWallHeight(walls: FloorPlanWall[]): number {
+  let tallest = 0
+  for (const wall of walls) {
+    if (wall.height > tallest) tallest = wall.height
+  }
+  return tallest
+}
+
+/** See WallClass's doc comment for the full reasoning behind this order and each threshold. */
+export function classifyWall(
+  wall: FloorPlanWall,
+  outline: Point2D[],
+  tallest: number,
+  outlineEdgeIndex: number = findOutlineEdgeIndex(wall, outline),
+): WallClass {
+  if (wall.glass) return 'glass'
+  if (outlineEdgeIndex >= 0) return 'exterior'
+  if (wall.height < tallest) return 'partition'
+  return 'structural'
+}
+
+export interface WallPlacement {
+  wallClass: WallClass
+  thickness: number
+  /** Midpoint of the extruded box, already inset if the wall sits on the outline. Floor-plan meters. */
+  center: Point2D
+  /** True when this wall lies along `walkableOutline` (i.e. it is part of the building envelope). */
+  onOutline: boolean
+}
+
+/**
+ * Everything Walls.tsx needs to place one wall box: which class it is, how thick to extrude it, and
+ * where its center goes once the outline inset (see OUTLINE_WALL_OUTER_FACE_OVERHANG_M) is applied.
+ * Kept here rather than in Walls.tsx so it is pure, three.js-free, and directly testable by the
+ * package's plain node:assert test scripts without a WebGL context.
+ *
+ * The inward direction is derived from the OUTLINE EDGE, never from the wall's own a->b direction:
+ * a wall may be authored running either way along its edge, so its own direction says nothing about
+ * which side the building is on. For a counter-clockwise outline (positive signed area) the interior
+ * lies to the LEFT of each directed edge, and the left normal of (dx, dz) is (-dz, dx); a clockwise
+ * outline flips that, hence the `sign` factor. Verified against floor-14.json: stepping 0.3m along
+ * this normal from the midpoint of all 20 outline edges lands inside the polygon 20/20 times (this
+ * is re-asserted in floorGeometry.test.ts, which also covers the clockwise case).
+ */
+export function computeWallPlacement(
+  wall: FloorPlanWall,
+  outline: Point2D[],
+  tallest: number,
+  signedArea: number = polygonSignedArea(outline),
+): WallPlacement {
+  const outlineEdgeIndex = findOutlineEdgeIndex(wall, outline)
+  const wallClass = classifyWall(wall, outline, tallest, outlineEdgeIndex)
+  const thickness = WALL_THICKNESS_M[wallClass]
+
+  const midX = (wall.a[0] + wall.b[0]) / 2
+  const midZ = (wall.a[1] + wall.b[1]) / 2
+  if (outlineEdgeIndex < 0) {
+    return { wallClass, thickness, center: [midX, midZ], onOutline: false }
+  }
+
+  const [ax, az] = outline[outlineEdgeIndex]
+  const [bx, bz] = outline[(outlineEdgeIndex + 1) % outline.length]
+  const dx = bx - ax
+  const dz = bz - az
+  const edgeLength = Math.hypot(dx, dz)
+  if (edgeLength === 0) {
+    // Degenerate outline edge: no meaningful normal, so leave the wall on its centerline rather
+    // than dividing by zero and flinging it to NaN.
+    return { wallClass, thickness, center: [midX, midZ], onOutline: true }
+  }
+
+  const sign = signedArea > 0 ? 1 : -1
+  const inwardX = (sign * -dz) / edgeLength
+  const inwardZ = (sign * dx) / edgeLength
+  const inset = thickness / 2 - OUTLINE_WALL_OUTER_FACE_OVERHANG_M
+
+  return {
+    wallClass,
+    thickness,
+    center: [midX + inwardX * inset, midZ + inwardZ * inset],
+    onOutline: true,
+  }
 }

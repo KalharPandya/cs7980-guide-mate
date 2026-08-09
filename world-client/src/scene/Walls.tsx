@@ -1,14 +1,13 @@
 import { useMemo } from 'react'
 import * as THREE from 'three'
 
-import type { FloorPlanWall } from './floorPlanTypes'
-import { directionToYRotation } from './floorPlanUtils'
-
-/**
- * floor-14.json gives each wall only a centerline (`a` -> `b`) and a height, no thickness, so
- * this is a reasonable constant for a demo partition wall (~drywall/glass-partition thickness).
- */
-const WALL_THICKNESS = 0.15
+import type { FloorPlanWall, Point2D } from './floorPlanTypes'
+import {
+  computeWallPlacement,
+  directionToYRotation,
+  polygonSignedArea,
+  tallestWallHeight,
+} from './floorPlanUtils'
 
 const GLASS_COLOR = '#cfe8ff'
 const SOLID_WALL_COLOR = '#d8d3c8'
@@ -75,21 +74,38 @@ export const SOLID_MATERIAL = new THREE.MeshStandardMaterial({
  * (dx, dz) is the b-minus-a direction -- see floorPlanUtils.ts for the full derivation of that
  * formula (three.js's Y-axis rotation maps local +X to world (cos(theta), -sin(theta)) in the
  * (x, z) plane, so solving cos(theta) = dx/len and -sin(theta) = dz/len gives that angle).
+ *
+ * The box's DEPTH (thickness) and its exact center are no longer a single constant: they come from
+ * computeWallPlacement, which classifies each wall from the plan data alone (envelope vs glass pane
+ * vs full-height interior vs short partition) and insets envelope walls so the thicker exterior
+ * assembly grows inward instead of overhanging the floor slab. See floorPlanUtils.ts's WallClass
+ * and OUTLINE_WALL_OUTER_FACE_OVERHANG_M doc comments for the whole scheme and its justification.
  */
-function Wall({ wall }: { wall: FloorPlanWall }) {
+function Wall({
+  wall,
+  outline,
+  tallest,
+  signedArea,
+}: {
+  wall: FloorPlanWall
+  outline: Point2D[]
+  tallest: number
+  signedArea: number
+}) {
   const { geometry, position, rotationY } = useMemo(() => {
     const [ax, az] = wall.a
     const [bx, bz] = wall.b
     const dx = bx - ax
     const dz = bz - az
     const length = Math.hypot(dx, dz)
+    const placement = computeWallPlacement(wall, outline, tallest, signedArea)
 
     return {
-      geometry: new THREE.BoxGeometry(length, wall.height, WALL_THICKNESS),
-      position: new THREE.Vector3((ax + bx) / 2, wall.height / 2, (az + bz) / 2),
+      geometry: new THREE.BoxGeometry(length, wall.height, placement.thickness),
+      position: new THREE.Vector3(placement.center[0], wall.height / 2, placement.center[1]),
       rotationY: directionToYRotation(dx, dz),
     }
-  }, [wall])
+  }, [wall, outline, tallest, signedArea])
 
   return (
     <mesh
@@ -109,13 +125,29 @@ function Wall({ wall }: { wall: FloorPlanWall }) {
   )
 }
 
-export function Walls({ walls }: { walls: FloorPlanWall[] }) {
+/**
+ * `walkableOutline` is taken as a prop (rather than each <Wall> reaching for the whole FloorPlan)
+ * because the thickness hierarchy needs to know which walls ARE the building envelope, and that is
+ * only knowable by comparing a wall against the outline. The outline's winding (signedArea) and the
+ * plan's tallest wall height are computed ONCE here and passed down, not recomputed per wall: both
+ * are whole-plan properties, and floor-14.json has 79 walls against a 20-vertex outline.
+ */
+export function Walls({ walls, walkableOutline }: { walls: FloorPlanWall[]; walkableOutline: Point2D[] }) {
+  const tallest = useMemo(() => tallestWallHeight(walls), [walls])
+  const signedArea = useMemo(() => polygonSignedArea(walkableOutline), [walkableOutline])
+
   return (
     <>
       {walls.map((wall, i) => (
         // Walls have no stable id in the schema; the note is unique in floor-14.json today but
         // isn't guaranteed to be, so index it too.
-        <Wall key={`${wall.note ?? 'wall'}-${i}`} wall={wall} />
+        <Wall
+          key={`${wall.note ?? 'wall'}-${i}`}
+          wall={wall}
+          outline={walkableOutline}
+          tallest={tallest}
+          signedArea={signedArea}
+        />
       ))}
     </>
   )
