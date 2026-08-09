@@ -425,6 +425,31 @@ const DWELL_MIN_S = 3;
 const DWELL_MAX_S = 8;
 
 /**
+ * How many idle guide robots are held in reserve for REAL (Moses-dispatched) users, out of
+ * `WorldRoom.GUIDE_ROBOT_COUNT` (= 5). A SIMULATED (ambient) visitor may only bind an idle
+ * robot if doing so still leaves at least this many idle assignable robots free; a REAL
+ * visitor is never subject to the reservation and may bind ANY idle robot (see
+ * `requestGuide`). Exported so tests can assert against the same number instead of a
+ * duplicated magic constant (mirrors `SIMULATED_VISITOR_TARGET` / `GUIDE_ROBOT_COUNT`).
+ *
+ * ---- why 2 against a fleet of 5 (this closes a measured, live starvation) ----
+ * The ambient simulated-visitor spawner keeps ~5 concurrent visitors constantly requesting
+ * guides, so without a reservation the whole 5-robot fleet is busy most of the time and a
+ * REAL "take me to the Kitchen" gets `no_idle_robot` roughly two thirds of the time --
+ * confirmed end to end in production: Moses published a real `assign`, the ack came back
+ * `failed`/`no_idle_robot`. The ambient traffic was starving real users.
+ *
+ * Reserving 2 leaves 3 robots for ambient simulated traffic (still a lively scene) while
+ * GUARANTEEING a real user can always claim one of the reserved 2 whenever any robot is idle.
+ * A class demo has at most 1-2 concurrent real users, so 2 covers well beyond that with a
+ * margin, without shrinking the simulated ambiance to nothing. It is bounded on both sides:
+ * it must be >= 1 (or real users get no protection at all) and < GUIDE_ROBOT_COUNT (or the
+ * simulated fleet can never move and the scene goes dead); 2 sits comfortably inside that,
+ * `RESERVED (2) < 3 free for sims < GUIDE_ROBOT_COUNT (5)`.
+ */
+export const RESERVED_ROBOTS_FOR_REAL_USERS = 2;
+
+/**
  * Fires once per escort ending, right before the binding is released (`tick()` has the
  * robot/visitor positions and the arrival/timeout verdict in hand at exactly that point --
  * see `tick()`'s call site). Optional, no-op by default, same "opt-in instrumentation hook
@@ -651,11 +676,13 @@ export class EscortManager {
 
     let bestRobotId: string | null = null;
     let bestDistance = Infinity;
+    let idleAssignableRobots = 0;
     for (const [id, agent] of this.host.agents) {
       if (agent.kind !== "robot") continue;
       if (agent.state !== "idle") continue;
       if (this.robotToVisitor.has(id)) continue; // already escorting -- not idle for OUR purposes
 
+      idleAssignableRobots++;
       const distance = Math.hypot(agent.x - visitorAgent.x, agent.z - visitorAgent.z);
       if (distance < bestDistance) {
         bestDistance = distance;
@@ -664,6 +691,26 @@ export class EscortManager {
     }
 
     if (!bestRobotId) return { robotId: null, reason: "no_idle_robot" };
+
+    // Capacity reservation for REAL users (see RESERVED_ROBOTS_FOR_REAL_USERS's doc comment
+    // for the measured starvation this closes). A SIMULATED (ambient) visitor may claim an
+    // idle robot ONLY IF doing so still leaves at least RESERVED_ROBOTS_FOR_REAL_USERS idle
+    // assignable robots free afterwards -- otherwise it is refused with the ordinary
+    // "no_idle_robot" reason and just waits/retries on its normal lifecycle (it is ambiance,
+    // not a person, so making it wait is fine). A REAL (Moses-dispatched) visitor is NEVER
+    // subject to the reservation: it may take ANY idle robot, which is exactly what
+    // guarantees a real request succeeds whenever ANY robot is idle, even while ambient
+    // traffic saturates the rest of the fleet. The requesting visitor's kind comes straight
+    // off its VisitorRecord (`record.kind`): a simulated visitor's record is pre-registered
+    // as "simulated" by simulatedVisitorSpawner.ts before its requestGuide, and a real
+    // (bridge-spawned) visitor's record was lazily created as "real" just above -- so this
+    // check reads the correct kind on both paths. This is a robot-availability decision, so
+    // it sits with the other "no idle robot" reasoning (before the destination is resolved),
+    // keeping "no_idle_robot" ahead of "target_unresolved" exactly as the plain no-robot
+    // path does.
+    if (record.kind === "simulated" && idleAssignableRobots - 1 < RESERVED_ROBOTS_FOR_REAL_USERS) {
+      return { robotId: null, reason: "no_idle_robot" };
+    }
 
     // Resolve (and validate) the DESTINATION up front, even though phase 1 sends the robot
     // to the PERSON, not here: an unresolvable destination must fail the whole request with

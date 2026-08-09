@@ -19,9 +19,11 @@
  */
 import assert from "node:assert/strict";
 
-import { WorldRoom } from "../WorldRoom.js";
+import { WorldRoom, GUIDE_ROBOT_COUNT } from "../WorldRoom.js";
 import { loadFloorPlan } from "../../nav/loadFloorPlan.js";
 import { SIMULATED_VISITOR_TARGET } from "../simulatedVisitorSpawner.js";
+import { RESERVED_ROBOTS_FOR_REAL_USERS } from "../escortManager.js";
+import type { EscortManager, VisitorRecord } from "../escortManager.js";
 
 const DOOR_TOLERANCE_M = 1.0; // matches WorldRoom.test.ts's convergence tolerance
 const TICK_MS = 16.6;
@@ -1044,6 +1046,176 @@ async function testEscortDeliversFromAdjacentPickup(tickMs: number): Promise<voi
   room.onDispose();
 }
 
+/**
+ * Reserved-capacity guarantee (the core of the fix): REAL (Moses-dispatched) users must not
+ * be starved of guide robots by ambient SIMULATED traffic. `EscortManager.requestGuide`
+ * holds `RESERVED_ROBOTS_FOR_REAL_USERS` (= 2) of the `GUIDE_ROBOT_COUNT` (= 5) idle robots
+ * in reserve for real users: a SIMULATED requester may bind an idle robot only if doing so
+ * still leaves at least the reserve free; a REAL requester may bind ANY idle robot.
+ *
+ * ---- why it drives the fleet busy by binding real fillers (no long simulation) ----
+ * A successful `requestGuide` moves the chosen robot into the reverse escort binding
+ * (`robotToVisitor`) synchronously, and it stays bound until an arrival/timeout releases it
+ * in `tick()`. This test never ticks, so each bind is a permanent, deterministic "this robot
+ * is now busy" -- letting it march the idle-assignable count down to exact values and probe
+ * the boundary precisely, with no crowd navigation or wall-clock timing involved.
+ *
+ * ---- how a SIMULATED requester is created deterministically ----
+ * A real (bridge-spawned) visitor's record is lazily created as kind "real" inside
+ * `requestGuide`; a simulated visitor's is pre-registered as kind "simulated" by
+ * simulatedVisitorSpawner.ts BEFORE its `requestGuide`. To make `requestGuide` see a
+ * simulated requester without running the non-deterministic background spawner, this reaches
+ * the room's private `VisitorManager.escorts` and calls `registerVisitor` with a
+ * kind:"simulated" record exactly as the spawner does -- the same test-only private-field
+ * reach `assignChain.test.ts` uses for `isRobotEscorting`.
+ */
+async function testReservedCapacityForRealUsers(): Promise<void> {
+  const room = new WorldRoom();
+  // disableGuideRobots: rebuild the real-sized fleet by hand so the 2-robot reservation is
+  // exercised against production's exact GUIDE_ROBOT_COUNT. disableSimulatedVisitors: no
+  // background spawner competing for robots -- this test drives every request itself.
+  await room.onCreate({ disableSimulatedVisitors: true, disableGuideRobots: true });
+  room.setSimulationInterval();
+
+  const plan = loadFloorPlan();
+  const entrance = { x: plan.entrance.point[0], z: plan.entrance.point[1] };
+
+  assert.ok(
+    RESERVED_ROBOTS_FOR_REAL_USERS >= 1 && RESERVED_ROBOTS_FOR_REAL_USERS < GUIDE_ROBOT_COUNT,
+    `test setup: the reserve (${RESERVED_ROBOTS_FOR_REAL_USERS}) must leave real users protection AND leave the ` +
+      `simulated fleet some robots (1 <= reserve < GUIDE_ROBOT_COUNT=${GUIDE_ROBOT_COUNT})`,
+  );
+
+  for (let i = 0; i < GUIDE_ROBOT_COUNT; i++) {
+    room.addAgent(`res-robot-${i}`, "robot", entrance);
+  }
+
+  // Reach the private VisitorManager -> EscortManager to register a simulated requester (see
+  // this test's header comment for why this is the deterministic way to get kind "simulated").
+  const escorts = (room as unknown as { visitors: { escorts: EscortManager } }).visitors.escorts;
+  let nextVisitorSeq = 0;
+
+  const addSimulatedVisitor = (): string => {
+    const id = `res-sim-${nextVisitorSeq++}`;
+    room.addAgent(id, "visitor", entrance);
+    const record: VisitorRecord = {
+      id,
+      kind: "simulated",
+      robotId: null,
+      escortPhase: null,
+      greetSecondsRemaining: 0,
+      escortDestination: null,
+      escortLeadTarget: null,
+      escortElapsedSeconds: 0,
+      escortSinceLastTrailUpdateSeconds: 0,
+      robotPositionHistory: [],
+      simulatedPhase: "waiting_for_robot",
+      simulatedTargetRoom: "Kitchen",
+      simulatedCooldownSeconds: 0,
+    };
+    escorts.registerVisitor(record);
+    return id;
+  };
+  const addRealVisitor = (): string => {
+    // No pre-registration: requestGuide lazily creates this one's record as kind "real",
+    // exactly like the IoT bridge's assign path (addAgent then requestGuide).
+    const id = `res-real-${nextVisitorSeq++}`;
+    room.addAgent(id, "visitor", entrance);
+    return id;
+  };
+  const idleAssignable = (): number =>
+    GUIDE_ROBOT_COUNT - room.getVisitorDebugStats().robotBindings;
+
+  // Bind REAL fillers until exactly RESERVED_ROBOTS_FOR_REAL_USERS + 1 robots remain idle --
+  // the state where a simulated request is still allowed (it would leave the reserve free).
+  while (idleAssignable() > RESERVED_ROBOTS_FOR_REAL_USERS + 1) {
+    const filler = addRealVisitor();
+    const bound = room.requestGuide(filler, "Kitchen");
+    assert.ok(bound.robotId, "test setup: binding a real filler escort should succeed while robots are plentiful");
+  }
+  assert.equal(
+    idleAssignable(),
+    RESERVED_ROBOTS_FOR_REAL_USERS + 1,
+    "test setup: drove the fleet down to reserve+1 idle robots",
+  );
+
+  // ---- boundary A: a SIMULATED request is ALLOWED when taking one still leaves the reserve ----
+  const simAllowedId = addSimulatedVisitor();
+  const simAllowed = room.requestGuide(simAllowedId, "Kitchen");
+  assert.ok(
+    simAllowed.robotId,
+    `a simulated request must SUCCEED while ${RESERVED_ROBOTS_FOR_REAL_USERS + 1} robots are idle ` +
+      `(taking one leaves the reserve of ${RESERVED_ROBOTS_FOR_REAL_USERS} free)`,
+  );
+  assert.equal(
+    idleAssignable(),
+    RESERVED_ROBOTS_FOR_REAL_USERS,
+    "after that simulated bind, only the reserved robots remain idle",
+  );
+  console.log(
+    `PASS: simulated request allowed at reserve+1 idle; fleet now down to exactly the reserved ` +
+      `${RESERVED_ROBOTS_FOR_REAL_USERS} idle robots`,
+  );
+
+  // ---- boundary B (THE CORE GUARANTEE): with ONLY the reserved robots left idle, a SIMULATED
+  // request is REFUSED no_idle_robot, but a REAL request in that SAME state STILL SUCCEEDS. ----
+  assert.equal(idleAssignable(), RESERVED_ROBOTS_FOR_REAL_USERS, "precondition: only the reserve is idle");
+
+  const simRefusedId = addSimulatedVisitor();
+  const simRefused = room.requestGuide(simRefusedId, "Kitchen");
+  assert.equal(
+    simRefused.robotId,
+    null,
+    "a simulated request MUST be refused when only the reserved robots remain idle (it must not eat the reserve)",
+  );
+  assert.equal(
+    (simRefused as { reason?: string }).reason,
+    "no_idle_robot",
+    "the simulated refusal reason should be the ordinary no_idle_robot",
+  );
+  // The refusal must NOT have consumed a robot -- the reserve is untouched, still there for a real user.
+  assert.equal(
+    idleAssignable(),
+    RESERVED_ROBOTS_FOR_REAL_USERS,
+    "a refused simulated request must not consume any robot -- the reserve stays intact",
+  );
+
+  const realId = addRealVisitor();
+  const realBound = room.requestGuide(realId, "Kitchen");
+  assert.ok(
+    realBound.robotId,
+    "a REAL request MUST succeed in the exact state where the simulated one was refused -- this is the whole guarantee",
+  );
+  console.log(
+    `PASS: with only the reserved ${RESERVED_ROBOTS_FOR_REAL_USERS} robots idle, the simulated request was refused ` +
+      `(no_idle_robot, reserve untouched) while the REAL request still bound robot "${realBound.robotId}"`,
+  );
+
+  // ---- exhaustion: drain the rest with REAL requests (they ignore the reserve), then confirm a
+  // real request is refused only when NO robot is genuinely idle (not by the reservation). ----
+  while (idleAssignable() > 0) {
+    const drainId = addRealVisitor();
+    const drained = room.requestGuide(drainId, "Kitchen");
+    assert.ok(drained.robotId, "a real request must keep succeeding while any robot is genuinely idle (reserve does not apply to it)");
+  }
+  assert.equal(idleAssignable(), 0, "the whole fleet is now bound");
+
+  const realExhaustedId = addRealVisitor();
+  const realExhausted = room.requestGuide(realExhaustedId, "Kitchen");
+  assert.equal(realExhausted.robotId, null, "a real request is refused only when NO robot is idle at all");
+  assert.equal(
+    (realExhausted as { reason?: string }).reason,
+    "no_idle_robot",
+    "the genuinely-exhausted refusal reason is no_idle_robot",
+  );
+  console.log(
+    "PASS: real requests bind every idle robot down to zero (reserve never applies to them); a real request is " +
+      "refused only once the whole fleet is genuinely busy",
+  );
+
+  room.onDispose();
+}
+
 async function main(): Promise<void> {
   // Both tick rates, for the reason in this scenario's header: a previous attempt at the
   // doorway deadlock passed at 100ms and still deadlocked at the production 16.6ms interval.
@@ -1055,6 +1227,7 @@ async function main(): Promise<void> {
   await testEscortTimeoutStillFiresWhenVisitorNeverCatchesUp();
   await testEscortTimeoutPauseCorrectness();
   await testSimulatedSpawnerPauseFreezesLifecycle();
+  await testReservedCapacityForRealUsers();
   await testSimulatedSpawnerConvergence();
 
   console.log("\nALL PASS: visitors.test.ts");
