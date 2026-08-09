@@ -2,7 +2,7 @@
   "units": "meters",
   "floor": 14,
   "source": "Algorithmically extracted from world/data/source/floor-14-plan-hires.png (2026-08-02 re-extraction against the hi-res source). floor-14-plan-hires.png (636x489) is the actual image published in Northeastern's GSE Vancouver handbook PDF, page 14 -- the authoritative original of the same drawing every prior pass traced from a 473x364 screenshot of. Same drawing, 1.8x the pixels, no screenshot resampling. Pipeline unchanged in kind from the prior pass (OpenCV intensity threshold at 180 isolates dark wall ink from light-grey furniture; connected-component filtering by bbox long-side, fill density, text-row height and corner-logo position strips specks/icons/labels/the N logo; HoughLinesP fragments are clustered by (angle, perpendicular offset) and merged via total-least-squares/PCA line fitting; gaps <=3.5px bridged as antialiasing noise, any other gap left as a real door opening), with every size-dependent constant retuned for this resolution (~1.33x the old pixel density) and two fixes specific to this pass: (1) two tight boxes over the upper core's physical stairwell drop antialiasing-noise fragments that happened to read as axis-aligned and slip past the existing diagonal-decoration filter (the X-shaft icons and stair hatching are still dropped by angle, 15-75 degrees off axis-aligned, exactly as before); (2) any merged wall segment lying entirely inside a hole polygon (all three probe points -- both endpoints and the midpoint, with a 0.05m radius absorbing the sub-cm rounding on dividers whose tip touches the hole's own boundary line by construction) is dropped, since the walls-only scorer's own target already excludes ink strictly inside the core holes, so drawing that internal shaft/stair detail is pure precision risk for zero recall upside -- the hole polygon's own boundary already carries the outer silhouette. Result improves the wall-match score against the hi-res reference on both axes: walls-only precision 84.7%->92.2%, recall 90.8%->95.6%, F1 87.7%->93.9%; all-structural-ink precision 95.5%->97.2%, recall 78.2%->79.4%, F1 86.0%->87.4%.",
-  "note": "Transform: world_x = (px - x0) * s, world_z = (bh - (py - y0)) * s -- ONE uniform scale s = 0.055644 m/px applied to every point, after shifting pixel coordinates so the building's own wall-network bounding box (the outer envelope + every partition wall that touches it, all one pixel-connected component in this line drawing; 629x471px at (0,1) in the trimmed-canvas frame) starts at (0,0); s is calibrated so the building's long (x) axis is 35.0m. Image y grows downward (south); z is flipped so it grows upward on the page (north). No bbox-nudge hack (unlike the old 473x364 pipeline, whose trimmed canvas was a few px bigger than the building's own footprint because its trim also caught the north-arrow/logo graphic): the hi-res source is full-bleed against its own canvas with no such margin, and after excluding the logo/title-block by connected-component position (not by cropping) the building's own bounding box already reproduces the source's aspect almost exactly with a plain uniform scale (aspect 1.333 vs the scorer's own 629x471px reference bbox, 1.335). The outline is the external contour of that same outer-envelope component; the two elevator/stair core holes are the external contours of the two free-standing core-band components (the lower one clipped to a measured pixel row -- the shaft row's own bottom rail, confirmed by direct zoom against the source to be one continuous straight line with no notches, unlike the upper band -- so the Female/Male/Gender-Neutral washroom partitions hanging off its south edge are not swallowed into the hole; a real gap separates the two holes, so the corridor between them stays walkable). Room centers/doors are carried over byte-for-byte from the prior (473px-source) file: they were hand-matched to each room's real label/doorway position, only need to land inside the right room near its real threshold (a far looser bar than wall tracing), and the building has not moved between source images -- verified by overlay and by `npm run test:nav` (18/18 rooms path-reachable) after the swap. The 8 glass:true walls (was 5) are the same design judgment as the prior file -- the source line drawing has no glass/solid notation anywhere, so this is a documented choice, not a surveyed fact -- carried forward onto their hi-res equivalents by endpoint-position matching rather than re-derived from scratch; the hi-res source resolves the Kitchen/1407/1408-vs-Event-Space front as more (shorter, jogged) segments than the old low-res screenshot's Hough merge could resolve, so more individual wall entries now carry that one continuous design decision (see each glass wall's own `note` field for specifics). Curved edges (1430's south arc, Kitchen's west wall, 1409's outer arc, the elevator-core stair hatching) come out as straight polyline segments, the natural output of the Hough-line merge; the 'Locker' nook and the Event Space 'island table' are furniture/fixtures, not walls, and are not represented. Washroom partition walls use height 2.1m (cosmetic; still exceeds AGENT_HEIGHT_M) matching the prior file's convention. `walls[]` entries are NOT render-only. CORRECTED 2026-08-02: an earlier version of this note claimed they were, saying the navmesh came from `walkableOutline` + `holes` alone. That is FALSE. `world/src/nav/buildNavMesh.ts` extrudes EVERY `walls[]` entry into a vertical quad that becomes a real Recast obstacle (see `buildGeometry`, which calls `addWallQuad` for every wall). Walls are load-bearing NAVIGATION geometry as well as render geometry (world-client Walls.tsx). This matters: a room whose walls form a fully closed loop becomes a disconnected navmesh island and is unreachable no matter what its `door` coordinate says, which is exactly what happened to the Gender Neutral Washroom during this hi-res re-trace, and the false note is part of why it was hard to spot. If you add, move or trim a wall, re-run `cd world && npm run test:nav`: it asserts every room door is reachable AND that Detour did not silently return a PARTIAL path. Geometry REBUILD pass (world/data/tools/rebuild_floor_plan.py): the walls array is no longer the raster trace's own segment list; it is constructed from clean primitives. Both elevator/stair core polygons are simple, correctly wound axis-aligned rectangles over their own bands, matching the two plain horizontal core bands the source drawing shows; the upper one came out of the trace as a self-intersecting 29-point polygon, which is what had let the shaft boxes inside it survive as walls and render as a comb across the middle of the floor. 20 walls are one-per-edge of walkableOutline (a closed envelope by construction), 8 are one-per-edge of the two repaired elevator/stair core polygons, and 50 are interior partitions admitted from the trace: a traced segment is kept only if it is at least 0.5 m long, its midpoint is outside both core polygons, and it does not shadow an envelope or core wall (within 8 degrees and 0.45 m with real overlap). Admitted partitions were then merged where collinear, welded at ends within 0.20 m, and landed on the perpendicular foot of any wall body within 0.50 m, with the envelope and core pinned so they keep matching walkableOutline and the holes exactly. Any partition end still stopping in open space afterwards, with no neighbour to land on and no door facing it, was then decided against the source raster in source/floor-14-plan-hires.png: an end whose own axis reaches a neighbour within 0.90 m is landed on it, a run the trace chopped is bridged, and an end is only ever closed where every point of the added span sits within 0.15 m of drawn ink, which is what distinguishes a joint the trace lost from a door opening the drawing leaves blank (measured on this plan: real wall bodies run 0.07 to 0.13 m from ink, the door openings 0.37 to 0.69 m). 4 such ends remain by design, each one a jamb facing an opening the drawing shows as a blank gap. Wall dimensions and angles are therefore constructed, not surveyed. No weld or snap was allowed to narrow a door-sized opening, and every room stays path-reachable (npm run test:nav, 18/18, no PARTIAL paths); glass flags and authored per-wall notes are carried onto the nearest parallel rebuilt wall.",
+  "note": "Transform: world_x = (px - x0) * s, world_z = (bh - (py - y0)) * s -- ONE uniform scale s = 0.055644 m/px applied to every point, after shifting pixel coordinates so the building's own wall-network bounding box (the outer envelope + every partition wall that touches it, all one pixel-connected component in this line drawing; 629x471px at (0,1) in the trimmed-canvas frame) starts at (0,0); s is calibrated so the building's long (x) axis is 35.0m. Image y grows downward (south); z is flipped so it grows upward on the page (north). No bbox-nudge hack (unlike the old 473x364 pipeline, whose trimmed canvas was a few px bigger than the building's own footprint because its trim also caught the north-arrow/logo graphic): the hi-res source is full-bleed against its own canvas with no such margin, and after excluding the logo/title-block by connected-component position (not by cropping) the building's own bounding box already reproduces the source's aspect almost exactly with a plain uniform scale (aspect 1.333 vs the scorer's own 629x471px reference bbox, 1.335). The outline is the external contour of that same outer-envelope component; the two elevator/stair core holes are the external contours of the two free-standing core-band components (the lower one clipped to a measured pixel row -- the shaft row's own bottom rail, confirmed by direct zoom against the source to be one continuous straight line with no notches, unlike the upper band -- so the Female/Male/Gender-Neutral washroom partitions hanging off its south edge are not swallowed into the hole; a real gap separates the two holes, so the corridor between them stays walkable). Room centers/doors are carried over byte-for-byte from the prior (473px-source) file: they were hand-matched to each room's real label/doorway position, only need to land inside the right room near its real threshold (a far looser bar than wall tracing), and the building has not moved between source images -- verified by overlay and by `npm run test:nav` (18/18 rooms path-reachable) after the swap. The 8 glass:true walls (was 5) are the same design judgment as the prior file -- the source line drawing has no glass/solid notation anywhere, so this is a documented choice, not a surveyed fact -- carried forward onto their hi-res equivalents by endpoint-position matching rather than re-derived from scratch; the hi-res source resolves the Kitchen/1407/1408-vs-Event-Space front as more (shorter, jogged) segments than the old low-res screenshot's Hough merge could resolve, so more individual wall entries now carry that one continuous design decision (see each glass wall's own `note` field for specifics). Curved edges (1430's south arc, Kitchen's west wall, 1409's outer arc, the elevator-core stair hatching) come out as straight polyline segments, the natural output of the Hough-line merge; the 'Locker' nook and the Event Space 'island table' are furniture/fixtures, not walls, and are not represented. Washroom partition walls use height 2.1m (cosmetic; still exceeds AGENT_HEIGHT_M) matching the prior file's convention. `walls[]` entries are NOT render-only. CORRECTED 2026-08-02: an earlier version of this note claimed they were, saying the navmesh came from `walkableOutline` + `holes` alone. That is FALSE. `world/src/nav/buildNavMesh.ts` extrudes EVERY `walls[]` entry into a vertical quad that becomes a real Recast obstacle (see `buildGeometry`, which calls `addWallQuad` for every wall). Walls are load-bearing NAVIGATION geometry as well as render geometry (world-client Walls.tsx). This matters: a room whose walls form a fully closed loop becomes a disconnected navmesh island and is unreachable no matter what its `door` coordinate says, which is exactly what happened to the Gender Neutral Washroom during this hi-res re-trace, and the false note is part of why it was hard to spot. If you add, move or trim a wall, re-run `cd world && npm run test:nav`: it asserts every room door is reachable AND that Detour did not silently return a PARTIAL path. Geometry REBUILD pass (world/data/tools/rebuild_floor_plan.py): the walls array is no longer the raster trace's own segment list; it is constructed from clean primitives. Both elevator/stair core polygons are simple, correctly wound axis-aligned rectangles over their own bands, matching the two plain horizontal core bands the source drawing shows; the upper one came out of the trace as a self-intersecting 29-point polygon, which is what had let the shaft boxes inside it survive as walls and render as a comb across the middle of the floor. 20 walls are one-per-edge of walkableOutline (a closed envelope by construction), 8 are one-per-edge of the two repaired elevator/stair core polygons, and 51 are interior partitions admitted from the trace: a traced segment is kept only if it is at least 0.5 m long, its midpoint is outside both core polygons, and it does not shadow an envelope or core wall (within 8 degrees and 0.45 m with real overlap). Admitted partitions were then merged where collinear, welded at ends within 0.20 m, and landed on the perpendicular foot of any wall body within 0.50 m, with the envelope and core pinned so they keep matching walkableOutline and the holes exactly. Any partition end still stopping in open space afterwards, with no neighbour to land on and no door facing it, was then decided against the source raster in source/floor-14-plan-hires.png: an end whose own axis reaches a neighbour within 0.90 m is landed on it, a run the trace chopped is bridged, and an end is only ever closed where every point of the added span sits within 0.15 m of drawn ink, which is what distinguishes a joint the trace lost from a door opening the drawing leaves blank (measured on this plan: real wall bodies run 0.05 to 0.12 m from ink, the door openings 0.36 to 0.47 m). Ink is greyscale below 150, not below 130 as in earlier passes: this drawing renders its thin interior partitions in LIGHT grey around 133 to 140 (sampled down the washroom block's right wall and the Gender Neutral washroom's left wall), so at 130 those walls read as blank paper and every break the trace left in them was preserved as if it were a doorway. Genuinely blank paper on this drawing is 200 and above, so the two populations are still cleanly separated. Two further passes then run on the corrected reading. The first judges a PAIR of loose ends rather than one end at a time and closes the gap between them when a third wall runs straight through it (a junction the drawing interrupts, which is why the washroom block's south wall stops at both faces of the plumbing chase between the Male and Female washrooms) or when the span is on ink once these two walls' OWN tracing error is allowed for (the Classroom 1417 / North Collaboration run is traced about 0.2 m off its own drawn line along its whole length, so a flat bound calls the joint between its two pieces blank for the same reason it would call the pieces themselves blank). The second emits wall the drawing has and the trace has none of at all, found by reading along a loose end's own axis past a blank opening: the washroom block's right wall below the Gender Neutral washroom's door, and the 1429/1430 jamb. A run only counts if it is a LINE with paper 0.28 m to either side, which is what keeps the washroom pictograms and the heavy room labels from being read as walls. 2 ends remain loose by design, each one a jamb facing an opening the drawing shows as a blank gap. Wall dimensions and angles are therefore constructed, not surveyed. No weld or snap was allowed to narrow a door-sized opening, and every room stays path-reachable (npm run test:nav, 18/18, no PARTIAL paths); glass flags and authored per-wall notes are carried onto the nearest parallel rebuilt wall.",
   "walkableOutline": [
     [
       27.822,
@@ -470,23 +470,11 @@
     {
       "a": [
         23.33,
-        7.091
-      ],
-      "b": [
-        17.848,
-        7.078
-      ],
-      "height": 2.1,
-      "glass": false
-    },
-    {
-      "a": [
-        17.154,
-        7.092
+        7.094
       ],
       "b": [
         11.681,
-        7.042
+        7.045
       ],
       "height": 2.1,
       "glass": false
@@ -632,7 +620,7 @@
       ],
       "b": [
         23.33,
-        7.091
+        7.094
       ],
       "height": 2.1,
       "glass": false
@@ -656,7 +644,7 @@
       ],
       "b": [
         11.681,
-        7.042
+        7.045
       ],
       "height": 2.1,
       "glass": false
@@ -679,8 +667,8 @@
         6.541
       ],
       "b": [
-        21.221,
-        5.367
+        20.626,
+        5.229
       ],
       "height": 2.7,
       "glass": false
@@ -747,8 +735,8 @@
     },
     {
       "a": [
-        23.371,
-        8.911
+        23.296,
+        8.912
       ],
       "b": [
         21.353,
@@ -823,8 +811,8 @@
         22.735
       ],
       "b": [
-        18.284,
-        23.572
+        18.362,
+        23.559
       ],
       "height": 2.7,
       "glass": false
@@ -872,7 +860,7 @@
       ],
       "b": [
         17.503,
-        7.078
+        7.069
       ],
       "height": 2.1,
       "glass": false
@@ -955,8 +943,8 @@
         10.127
       ],
       "b": [
-        21.434,
-        9.6
+        21.353,
+        8.908
       ],
       "height": 2.1,
       "glass": false,
@@ -1050,7 +1038,7 @@
     {
       "a": [
         27.052,
-        6.441
+        6.439
       ],
       "b": [
         26.712,
@@ -1067,6 +1055,30 @@
       "b": [
         26.712,
         5.668
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        23.301,
+        9.246
+      ],
+      "b": [
+        23.289,
+        8.486
+      ],
+      "height": 2.7,
+      "glass": false
+    },
+    {
+      "a": [
+        18.423,
+        23.931
+      ],
+      "b": [
+        18.297,
+        23.161
       ],
       "height": 2.7,
       "glass": false

@@ -160,7 +160,18 @@ BRIDGE_MAX_M = 1.20
 # wall bodies that are certainly real run 0.07 to 0.13 m from ink (the trace's own error), and
 # the three door openings that must never be bridged run 0.37 to 0.69 m. 0.15 m separates them
 # with margin on both sides.
-INK_LEVEL = 130           # greyscale below this is drawn ink
+#
+# INK_LEVEL was 130 and that was too strict: this drawing renders its thin interior partitions
+# in LIGHT grey, not black. Sampled down the washroom block's right wall (world x 23.30) the
+# pixel values are 70 (a wall nobody disputes), then 133 to 140 for the SAME kind of line a
+# little further along, then 247 to 253 where the paper is genuinely blank. The same split shows
+# up on the Gender Neutral washroom's left wall (a continuous run of 132 to 139 from z 10.02 down
+# to z 8.96). At 130 every one of those light-drawn walls read as blank paper, so the pipeline
+# preserved trace breaks in them as if they were doorways. 150 admits them and still leaves a
+# wide margin to the >= 200 of real blank paper; 150 to 200 is nobody's line and nobody's paper,
+# and nothing on this plan is decided in that band.
+INK_LEVEL = 150           # greyscale below this is drawn ink
+INK_BLANK_LEVEL = 200     # greyscale at or above this is definitely blank paper
 INK_STEP_M = 0.04         # sample spacing along a span
 INK_SEARCH_MAX_PX = 12    # give up looking for ink past this radius (~0.67 m)
 INK_ON_MAX_M = 0.15
@@ -169,6 +180,49 @@ INK_ON_MAX_M = 0.15
 # count go down is how this plan lost real walls once already.
 DROP_MAX_LENGTH_M = SHARD_MAX_LENGTH_M
 DROP_OFF_INK_MEAN_M = 0.35
+
+# --- Step 6b: close a break the trace invented ------------------------------------------
+# Two loose wall ends facing each other across a short gap are either a doorway or a joint the
+# trace dropped, and step 6's rules only ever look at ONE end at a time, so a pair like that is
+# invisible to them (each end is "a jamb facing a near-collinear end", which is exactly what a
+# real doorway looks like). This step judges the PAIR, and it closes the gap only on positive
+# evidence that the drawing has no opening there:
+#   (a) another wall's body runs straight through the gap. The drawing interrupts a wall where a
+#       thicker wall crosses it (the washroom block's south wall stops at both faces of the
+#       0.72 m plumbing chase between the Male and Female washrooms), and the trace kept the
+#       interruption. A crossing wall is a junction, never a door.
+#   (b) the span is on ink, judged against how far off ink THESE TWO WALLS ALREADY ARE. A flat
+#       bound assumes the trace sits on the line it traced; on this plan the Classroom 1417 /
+#       North Collaboration run is traced ~0.2 m off its own drawn line for its whole length, so
+#       a flat bound calls the joint between its two pieces "blank" for the same reason it would
+#       call the pieces themselves blank. Scoring the gap against the walls' own worst error asks
+#       the only question that matters: is the gap any worse supported than the walls either side
+#       of it?
+CLOSE_PAIR_MAX_M = 1.00
+CLOSE_PAIR_INK_SLACK = 1.25    # of the two walls' own worst off-ink distance
+# Never let the slack alone justify closing a door-width blank. Measured on this plan: the seven
+# openings the drawing really has run 0.36 to 0.47 m off ink while the walls either side of them
+# are traced 0.05 to 0.12 m off (budget 0.15 m, so none of them is even close to firing), and the
+# two runs that are traced badly enough to need the slack are 0.32 to 0.33 m off along their own
+# bodies. 0.40 m clears those two and still refuses every opening.
+CLOSE_PAIR_INK_CAP_M = 0.40
+
+# --- Step 6c: draw a wall the trace has none of -----------------------------------------
+# Past a loose end, beyond a gap that is genuinely blank (so it must stay open), the drawing
+# sometimes carries on with a wall the trace never emitted at all: the washroom block's right
+# wall resumes below the Gender Neutral washroom's door, and the 1429/1430 jamb is drawn but
+# missing. Those leave a partition floating with nothing to meet. This step reads the run off the
+# raster and emits it.
+RUN_SCAN_MAX_M = 2.20
+RUN_MIN_M = 0.60          # shorter than this is a tick mark or a leader line, not a wall
+RUN_STEP_M = 0.02
+RUN_BAND_M = 0.09         # half the rendered wall thickness: a 1 px trace offset is not a hole
+# A drawn wall is a LINE. A pictogram (the washroom figures) or a heavy label is a BLOB, and it
+# would otherwise read as a long ink run. Requiring blank paper to both sides separates them.
+RUN_THIN_OFFSET_M = 0.28
+RUN_THIN_MIN_FRACTION = 0.80
+RUN_COVER_M = 0.25        # a near-parallel wall this close already draws the run
+RUN_COVER_ANGLE_DEG = 20.0
 
 # --- Step 7 provenance carry-over ------------------------------------------------------
 CARRY_ANGLE_DEG = 20.0
@@ -811,6 +865,28 @@ def endpoint_is_attached(point: Point, owner: int, walls: Sequence[Wall]) -> boo
     return False
 
 
+def wall_is_connected(index: int, walls: Sequence[Wall]) -> bool:
+    """
+    Does this wall touch any other wall at all? Either of MY ends landing on someone else's body
+    counts, and so does someone else's end landing on MY body: a wall that another wall T-joins
+    mid-span is part of the building, whichever way round the junction was authored. Testing only
+    my own ends would call the washroom block's re-drawn right wall "floating" purely because the
+    Gender Neutral washroom's south wall meets it in the middle rather than at a tip.
+    """
+    a, b = wall_points(walls[index])
+    if endpoint_is_attached(a, index, walls) or endpoint_is_attached(b, index, walls):
+        return True
+    for other_index, other in enumerate(walls):
+        if other_index == index:
+            continue
+        if any(
+            segment_point_distance(point, walls[index]) <= ATTACHED_EPS_M
+            for point in wall_points(other)
+        ):
+            return True
+    return False
+
+
 def prune_floating_shards(partitions: List[Wall], fixed: Sequence[Wall]) -> List[Wall]:
     """
     Drop a partition only when it is BOTH shorter than SHARD_MAX_LENGTH_M AND fully floating.
@@ -821,11 +897,7 @@ def prune_floating_shards(partitions: List[Wall], fixed: Sequence[Wall]) -> List
     all_walls = list(partitions) + list(fixed)
     keep: List[Wall] = []
     for index, wall in enumerate(partitions):
-        if wall_length(wall) >= SHARD_MAX_LENGTH_M:
-            keep.append(wall)
-            continue
-        a, b = wall_points(wall)
-        if endpoint_is_attached(a, index, all_walls) or endpoint_is_attached(b, index, all_walls):
+        if wall_length(wall) >= SHARD_MAX_LENGTH_M or wall_is_connected(index, all_walls):
             keep.append(wall)
     return keep
 
@@ -1234,6 +1306,339 @@ def repair_dangling_ends(
 
 
 # ---------------------------------------------------------------------------------------
+# Step 6b: close a break the trace invented (judged on the PAIR of ends, not one end)
+# ---------------------------------------------------------------------------------------
+
+
+def free_endpoint_indices(walls: Sequence[Wall], epsilon: float = DANGLE_ATTACHED_EPS_M) -> List[int]:
+    """Endpoint indices (into endpoint_list) not sitting on any OTHER wall's body."""
+    points = endpoint_list(walls)
+    return [
+        index
+        for index, point in enumerate(points)
+        if not any(
+            segment_point_distance(point, other) <= epsilon
+            for position, other in enumerate(walls)
+            if position != index // 2
+        )
+    ]
+
+
+def wall_off_ink(wall: Wall) -> float:
+    """The worst distance-to-ink along a wall's own body: how far this trace sits off the line it
+    traced. The yardstick every added span is scored against."""
+    a, b = wall_points(wall)
+    return span_off_ink(a, b)
+
+
+def _span_crosses_a_wall(start: Point, end: Point, walls: Sequence[Wall], exclude: Sequence[int]) -> Optional[int]:
+    for index, wall in enumerate(walls):
+        if index in exclude:
+            continue
+        p, q = wall_points(wall)
+        if _segments_properly_cross(start, end, p, q):
+            return index
+    return None
+
+
+def _pair_move_is_along_axis(
+    end_point: Point, other_end: Point, target: Point, bearing: float
+) -> bool:
+    """The same guards `_landing_candidates` uses: a wall may be lengthened along its own axis,
+    never bent sideways onto a neighbour that merely passes nearby, and never flipped.
+
+    This step may only ever ADD material. A move that shortens the wall lands on a junction that
+    is already there and deletes whatever ran past it, which is a decision about an overshoot
+    (step 6's `_overshoot_landing`, which checks the drawing first) and not about a gap. Allowing
+    it here truncated the Kitchen's south wall by 0.87 m and the washroom block's left wall by
+    0.46 m, both of them wall the source draws.
+    """
+    axis = math.hypot(end_point[0] - other_end[0], end_point[1] - other_end[1])
+    if axis <= 0.0:
+        return False
+    outward = ((end_point[0] - other_end[0]) / axis, (end_point[1] - other_end[1]) / axis)
+    move = (target[0] - end_point[0], target[1] - end_point[1])
+    if move[0] * outward[0] + move[1] * outward[1] <= 0.0:
+        return False
+    if abs(move[0] * outward[1] - move[1] * outward[0]) > LAND_MAX_LATERAL_M:
+        return False
+    new_vector = (target[0] - other_end[0], target[1] - other_end[1])
+    if new_vector[0] * outward[0] + new_vector[1] * outward[1] <= 0.0:
+        return False
+    if math.hypot(new_vector[0], new_vector[1]) < max(MIN_COLLAPSE_LENGTH_M, PARTITION_MIN_LENGTH_M):
+        return False
+    landed = {"a": [target[0], target[1]], "b": [other_end[0], other_end[1]]}
+    return angle_diff_deg(bearing, wall_angle_deg(landed)) <= LAND_MAX_TURN_DEG
+
+
+def close_invented_breaks(
+    partitions: List[Wall], fixed: Sequence[Wall]
+) -> Tuple[List[Wall], List[str]]:
+    """
+    Pull one free partition end onto another wall's free end, closing a gap the trace invented.
+
+    Only two things justify it, and both are evidence about the drawing rather than about the
+    geometry: a third wall runs straight through the gap (a junction, never a door), or the span
+    is on ink once the two walls' own tracing error is allowed for. Everything else is left as the
+    opening the drawing shows. One change per pass with a restart, so the result is a pure
+    function of the wall list; each closure lands an end ON another wall, so a re-run sees it as
+    attached and nothing fires twice.
+    """
+    result = [dict(w) for w in partitions]
+    actions: List[str] = []
+
+    for _ in range(MAX_PASSES):
+        walls = result + list(fixed)
+        partition_count = len(result)
+
+        def name(index: int, count: int = partition_count) -> int:
+            return index + len(fixed) if index < count else index - count
+
+        points = endpoint_list(walls)
+        free = [index for index in free_endpoint_indices(walls) if index // 2 < len(result)]
+        budgets = {index // 2: None for index in free}
+        for owner in list(budgets):
+            budgets[owner] = wall_off_ink(walls[owner])
+
+        chosen: Optional[Tuple[int, int, Point, str]] = None
+        for endpoint_index in free:
+            owner = endpoint_index // 2
+            end_point = points[endpoint_index]
+            other_end = points[endpoint_index + 1 if endpoint_index % 2 == 0 else endpoint_index - 1]
+            bearing = wall_angle_deg(walls[owner])
+            candidates: List[Tuple[float, int, Point]] = []
+            for target_index, target in enumerate(walls):
+                if target_index == owner:
+                    continue
+                for raw in wall_points(target):
+                    point = (round(raw[0], COORD_DECIMALS), round(raw[1], COORD_DECIMALS))
+                    distance = math.hypot(point[0] - end_point[0], point[1] - end_point[1])
+                    if distance <= T_SNAP_EPS_M or distance > CLOSE_PAIR_MAX_M:
+                        continue
+                    candidates.append((distance, target_index, point))
+            candidates.sort(key=lambda item: (round(item[0], 6), item[1], item[2]))
+
+            for distance, target_index, point in candidates:
+                if not _pair_move_is_along_axis(end_point, other_end, point, bearing):
+                    continue
+                crossing = _span_crosses_a_wall(end_point, point, walls, (owner, target_index))
+                off_ink = span_off_ink(end_point, point)
+                budget = min(
+                    CLOSE_PAIR_INK_CAP_M,
+                    max(
+                        INK_ON_MAX_M,
+                        CLOSE_PAIR_INK_SLACK
+                        * max(budgets[owner], wall_off_ink(walls[target_index])),
+                    ),
+                )
+                if crossing is not None:
+                    reason = (
+                        f"wall {name(crossing)} runs straight through the gap, so it is a junction "
+                        f"the drawing interrupts, not a doorway"
+                    )
+                elif off_ink <= budget:
+                    reason = (
+                        f"the span is on ink ({off_ink:.3f} m off, budget {budget:.3f} m from "
+                        f"these two walls' own tracing error)"
+                    )
+                else:
+                    continue
+                chosen = (endpoint_index, target_index, point, reason)
+                break
+            if chosen is not None:
+                break
+
+        if chosen is None:
+            return round_walls(result), actions
+
+        endpoint_index, target_index, point, reason = chosen
+        owner = endpoint_index // 2
+        key = "a" if endpoint_index % 2 == 0 else "b"
+        end_point = points[endpoint_index]
+        moved = dict(result[owner])
+        moved[key] = [point[0], point[1]]
+        result[owner] = round_wall(moved)
+        actions.append(
+            f"close wall {name(owner)} end {key} [{end_point[0]:.3f}, {end_point[1]:.3f}] onto "
+            f"wall {name(target_index)} at [{point[0]:.3f}, {point[1]:.3f}]: {reason}"
+        )
+
+    raise RuntimeError("close_invented_breaks did not converge; check the CLOSE_PAIR_* tolerances")
+
+
+# ---------------------------------------------------------------------------------------
+# Step 6c: draw a wall the trace has none of
+# ---------------------------------------------------------------------------------------
+
+
+def _band_grey(point: Point, normal: Point) -> int:
+    """Darkest source pixel within RUN_BAND_M either side of `point`, across the wall."""
+    import render_floor_plan  # noqa: PLC0415
+
+    metres_per_px = render_floor_plan.SOURCE_SCALE_M_PER_PX
+    pixels, width, height = _source_raster()
+    steps = int(RUN_BAND_M / metres_per_px) + 1
+    best = 255
+    for step in range(-steps, steps + 1):
+        offset = step * metres_per_px
+        sample = (point[0] + normal[0] * offset, point[1] + normal[1] * offset)
+        fx, fy = _world_to_source_px(sample)
+        ix, iy = int(round(fx)), int(round(fy))
+        if 0 <= ix < width and 0 <= iy < height:
+            best = min(best, pixels[ix, iy])
+    return best
+
+
+def _ink_run_past_a_gap(
+    origin: Point, direction: Point
+) -> Optional[Tuple[float, float]]:
+    """
+    Scan outward from a loose end along its own axis and return the first contiguous ink run that
+    starts AFTER a stretch of blank paper, as (t_start, t_end).
+
+    Requiring the blank first is what makes this "a wall the trace has none of" rather than "this
+    wall is 2 cm short": anything still attached to the end's own ink belongs to the wall itself
+    and is step 6's business, not this step's.
+    """
+    normal = (-direction[1], direction[0])
+    steps = int(RUN_SCAN_MAX_M / RUN_STEP_M)
+    seen_blank = False
+    start: Optional[float] = None
+    for index in range(steps + 1):
+        t = index * RUN_STEP_M
+        grey = _band_grey((origin[0] + direction[0] * t, origin[1] + direction[1] * t), normal)
+        if grey >= INK_BLANK_LEVEL:
+            if start is not None:
+                return (start, t - RUN_STEP_M)
+            seen_blank = True
+        elif grey < INK_LEVEL:
+            if not seen_blank:
+                continue
+            if start is None:
+                start = t
+        # the 150..200 band decides nothing: it neither starts a run nor ends one
+    if start is not None:
+        return (start, steps * RUN_STEP_M)
+    return None
+
+
+def _run_is_a_drawn_line(origin: Point, direction: Point, span: Tuple[float, float]) -> bool:
+    """A wall is a line with paper either side of it; a pictogram or a heavy label is a blob."""
+    normal = (-direction[1], direction[0])
+    start, end = span
+    steps = max(2, int((end - start) / RUN_STEP_M))
+    clear = 0
+    for index in range(steps + 1):
+        t = start + (end - start) * index / steps
+        point = (origin[0] + direction[0] * t, origin[1] + direction[1] * t)
+        both = True
+        for sign in (-1.0, 1.0):
+            side = (
+                point[0] + normal[0] * sign * RUN_THIN_OFFSET_M,
+                point[1] + normal[1] * sign * RUN_THIN_OFFSET_M,
+            )
+            if _band_grey(side, normal) < INK_LEVEL:
+                both = False
+        if both:
+            clear += 1
+    return clear >= RUN_THIN_MIN_FRACTION * (steps + 1)
+
+
+def _uncovered_part_of_run(
+    origin: Point, direction: Point, span: Tuple[float, float], walls: Sequence[Wall]
+) -> Optional[Tuple[float, float]]:
+    """
+    The longest stretch of the run that no NEAR-PARALLEL wall already draws. A transverse wall
+    crossing the run does not cover it (that is a T-junction, and it is exactly the junction that
+    makes emitting the run worthwhile).
+    """
+    bearing = wall_angle_deg({"a": [0.0, 0.0], "b": [direction[0], direction[1]]})
+    start, end = span
+    steps = max(2, int((end - start) / RUN_STEP_M))
+    best: Optional[Tuple[float, float]] = None
+    run_start: Optional[float] = None
+    for index in range(steps + 2):
+        t = start + (end - start) * min(index, steps) / steps
+        point = (origin[0] + direction[0] * t, origin[1] + direction[1] * t)
+        covered = index > steps or any(
+            angle_diff_deg(bearing, wall_angle_deg(wall)) <= RUN_COVER_ANGLE_DEG
+            and segment_point_distance(point, wall) <= RUN_COVER_M
+            for wall in walls
+        )
+        if covered:
+            if run_start is not None:
+                candidate = (run_start, t)
+                if best is None or (candidate[1] - candidate[0]) > (best[1] - best[0]):
+                    best = candidate
+                run_start = None
+        elif run_start is None:
+            run_start = t
+    return best
+
+
+def draw_missing_ink_runs(
+    partitions: List[Wall], fixed: Sequence[Wall]
+) -> Tuple[List[Wall], List[str]]:
+    """
+    Where a loose end faces a genuinely blank gap and the drawing then CARRIES ON with a wall the
+    trace never emitted, emit it. The blank gap stays open (it is a door), but the partition on
+    the far side of it stops being missing, which is what leaves its neighbours floating.
+    """
+    result = [dict(w) for w in partitions]
+    actions: List[str] = []
+
+    for _ in range(MAX_PASSES):
+        walls = result + list(fixed)
+        partition_count = len(result)
+
+        def name(index: int, count: int = partition_count) -> int:
+            return index + len(fixed) if index < count else index - count
+
+        points = endpoint_list(walls)
+        emitted = False
+        for endpoint_index in free_endpoint_indices(walls):
+            owner = endpoint_index // 2
+            end_point = points[endpoint_index]
+            other_end = points[endpoint_index + 1 if endpoint_index % 2 == 0 else endpoint_index - 1]
+            axis = math.hypot(end_point[0] - other_end[0], end_point[1] - other_end[1])
+            if axis <= 0.0:
+                continue
+            direction = (
+                (end_point[0] - other_end[0]) / axis,
+                (end_point[1] - other_end[1]) / axis,
+            )
+            span = _ink_run_past_a_gap(end_point, direction)
+            if span is None or span[1] - span[0] < RUN_MIN_M:
+                continue
+            if not _run_is_a_drawn_line(end_point, direction, span):
+                continue
+            uncovered = _uncovered_part_of_run(end_point, direction, span, walls)
+            if uncovered is None or uncovered[1] - uncovered[0] < RUN_MIN_M:
+                continue
+            start = (
+                round(end_point[0] + direction[0] * uncovered[0], COORD_DECIMALS),
+                round(end_point[1] + direction[1] * uncovered[0], COORD_DECIMALS),
+            )
+            finish = (
+                round(end_point[0] + direction[0] * uncovered[1], COORD_DECIMALS),
+                round(end_point[1] + direction[1] * uncovered[1], COORD_DECIMALS),
+            )
+            result.append(make_wall(start, finish))
+            actions.append(
+                f"draw the {uncovered[1] - uncovered[0]:.2f} m of wall the source has and the "
+                f"trace does not, [{start[0]:.3f}, {start[1]:.3f}] to [{finish[0]:.3f}, "
+                f"{finish[1]:.3f}], facing wall {name(owner)} across a blank "
+                f"{uncovered[0]:.2f} m opening"
+            )
+            emitted = True
+            break
+        if not emitted:
+            return round_walls(result), actions
+
+    raise RuntimeError("draw_missing_ink_runs did not converge; check the RUN_* tolerances")
+
+
+# ---------------------------------------------------------------------------------------
 # Step 7: carry glass flags and authored notes onto the rebuilt walls
 # ---------------------------------------------------------------------------------------
 
@@ -1473,6 +1878,15 @@ def rebuild(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     # a fixpoint (a second run sees its own output and reproduces it).
     partitions, _ = admit_partitions(partitions, fixed, outline, hole_polygons)
     partitions, repairs = repair_dangling_ends(partitions, fixed, plan["rooms"])
+    partitions, closures = close_invented_breaks(partitions, fixed)
+    partitions, drawn = draw_missing_ink_runs(partitions, fixed)
+    # Settle again: a closure can leave a wall crossing where a T belongs (the wall that runs
+    # through a junction gap now pokes a few centimetres past the closed line), and an emitted run
+    # is crossed by whatever T-joins it. _geometry_fixpoint's trim turns both into clean junctions.
+    # `regularize` is deliberately NOT used here: its shard prune judges connectivity, and the
+    # emitted runs are joined mid-span rather than at a tip.
+    partitions = _geometry_fixpoint(partitions, fixed)
+    partitions, _ = admit_partitions(partitions, fixed, outline, hole_polygons)
 
     walls = round_walls(fixed + partitions)
     walls, provenance = carry_provenance(walls, originals)
@@ -1504,6 +1918,8 @@ def rebuild(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "repaired_holes": repaired_names,
         "provenance": provenance,
         "repairs": repairs,
+        "closures": closures,
+        "drawn": drawn,
         "dangling_after": len(dangling_ends(walls, plan["rooms"])),
     }
     return result, info
@@ -1541,8 +1957,27 @@ def rebuild_sentence(
         f"is bridged, and an end is only ever closed where every point of the added span sits "
         f"within {INK_ON_MAX_M:.2f} m of drawn ink, which is what distinguishes a joint the trace "
         f"lost from a door opening the drawing leaves blank (measured on this plan: real wall "
-        f"bodies run 0.07 to 0.13 m from ink, the door openings 0.37 to 0.69 m). {dangling_count} "
-        f"such ends remain by design, each one a jamb facing an opening the drawing shows as a "
+        f"bodies run 0.05 to 0.12 m from ink, the door openings 0.36 to 0.47 m). Ink is greyscale "
+        f"below {INK_LEVEL}, not below 130 as in earlier passes: this drawing renders its thin "
+        f"interior partitions in LIGHT grey around 133 to 140 (sampled down the washroom block's "
+        f"right wall and the Gender Neutral washroom's left wall), so at 130 those walls read as "
+        f"blank paper and every break the trace left in them was preserved as if it were a "
+        f"doorway. Genuinely blank paper on this drawing is {INK_BLANK_LEVEL} and above, so the "
+        f"two populations are still cleanly separated. Two further passes then run on the "
+        f"corrected reading. The first judges a PAIR of loose ends rather than one end at a time "
+        f"and closes the gap between them when a third wall runs straight through it (a junction "
+        f"the drawing interrupts, which is why the washroom block's south wall stops at both faces "
+        f"of the plumbing chase between the Male and Female washrooms) or when the span is on ink "
+        f"once these two walls' OWN tracing error is allowed for (the Classroom 1417 / North "
+        f"Collaboration run is traced about 0.2 m off its own drawn line along its whole length, "
+        f"so a flat bound calls the joint between its two pieces blank for the same reason it "
+        f"would call the pieces themselves blank). The second emits wall the drawing has and the "
+        f"trace has none of at all, found by reading along a loose end's own axis past a blank "
+        f"opening: the washroom block's right wall below the Gender Neutral washroom's door, and "
+        f"the 1429/1430 jamb. A run only counts if it is a LINE with paper "
+        f"{RUN_THIN_OFFSET_M:.2f} m to either side, which is what keeps the washroom pictograms "
+        f"and the heavy room labels from being read as walls. {dangling_count} "
+        f"ends remain loose by design, each one a jamb facing an opening the drawing shows as a "
         f"blank gap. Wall dimensions and angles are therefore "
         f"constructed, not surveyed. No weld or snap was allowed to narrow a door-sized opening, "
         f"and every room stays path-reachable (npm run test:nav, 18/18, no PARTIAL paths); glass "
@@ -1587,6 +2022,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     print(f"dangling-end repair : {len(info['repairs'])} action(s), {info['dangling_after']} left")
     for line in info["repairs"]:
+        print(f"  - {line}")
+    print(f"invented breaks     : {len(info['closures'])} closed")
+    for line in info["closures"]:
+        print(f"  - {line}")
+    print(f"missing drawn walls : {len(info['drawn'])} emitted")
+    for line in info["drawn"]:
         print(f"  - {line}")
     prov = info["provenance"]
     print(
