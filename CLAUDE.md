@@ -167,13 +167,25 @@ implementer-subagent-built, spec-reviewed, and code-quality-reviewed, with every
 bug found along the way fixed and independently re-verified. Full test suite is green
 across `world/`, `world-client/`, `shared/guidemate_msgs`, and `agent_service`.
 
-**What's NOT done, all requiring Kalhar's own action (per the risk register):**
-applying the virtual-fleet IoT identity (`scripts/create_virtual_fleet_identity.sh
---apply`, an AWS-account-mutating step no Claude session should run autonomously),
-deploying `world-server` to the live `echo.kalhar.ca` instance, and actually looking at
-the rendered scene in a real browser (the dev sessions that built this hit an
-environment limitation where the embedded Browser pane never composited a frame, so
-nothing here has been visually confirmed by a human or AI yet).
+**DEPLOYED 2026-08-09 (branch `kalhar-main`).** `world-server` and a new `world-client`
+service are live on the `echo.kalhar.ca` instance alongside the chat app: `/` serves Moses
+(voice intact), `/world/*` the Colyseus server (`/world/healthz` was 404 before this, now
+200), and `/viz/*` the 3D floor plan. `agent_service/Caddyfile` routes all three; the
+client is built with `base=/viz/` and `VITE_WORLD_SERVER_URL=wss://$GUIDEMATE_DOMAIN/world`,
+which are two halves of one decision (change either alone and every asset 404s). The scene
+HAS now been rendered and viewed in a real browser, repeatedly, contradicting the old
+"never composited a frame" note; the simulation is confirmed running in production.
+
+**Before deploying, ALWAYS preflight what the instance is currently running.** It was on
+`feat/kalhar-elevenlabs-voice`, and `redeploy.sh` does `git checkout` + `reset --hard`, so
+deploying a branch missing that work would have stripped ElevenLabs voice, the Moses chat
+shell and the motion-trick dispatch off production. Check with
+`git merge-base --is-ancestor <live-sha> <your-branch>` and merge first if it fails.
+
+**What's still NOT done, requiring Kalhar's own action:** applying the virtual-fleet IoT
+identity (`scripts/create_virtual_fleet_identity.sh --apply`, an AWS-account-mutating step).
+Until it runs, `startIotBridgeFromEnv` stays disabled and Moses's MQTT dispatch is a silent
+no-op in production, even though the escort path itself is proven (100% delivery at scale).
 
 ## Security workstream (WP A/B/C)
 The security/privacy workstream (Fazheng Han, han.faz@northeastern.edu) covers **WP A**
