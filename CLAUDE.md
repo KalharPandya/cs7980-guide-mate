@@ -150,6 +150,7 @@ browser-based 3D floor of Northeastern Vancouver. Physical robot 468 stays emote
 sessions sharing the main tree, see memory `multi-agent-shared-worktree-git-discipline`).
 
 **Start here if you're joining this effort, read in this order:**
+0. [docs/superpowers/plans/2026-08-09-session-resume.md](docs/superpowers/plans/2026-08-09-session-resume.md), the MOST RECENT checkpoint (floor-plan cleanup, furniture, wider doors, hand-selected glass, name tags, route line, Moses from_room dispatch, and the IoT-bridge wiring left in progress). Read this first to resume the current work.
 1. [docs/superpowers/plans/2026-07-26-virtual-world-progress.md](docs/superpowers/plans/2026-07-26-virtual-world-progress.md), the living status doc: task-by-task state, every real bug found and fixed, how to resume.
 2. [docs/superpowers/specs/2026-07-31-virtual-world-risk-register.md](docs/superpowers/specs/2026-07-31-virtual-world-risk-register.md), what's code-verified vs. still needing a human to look at it, deploy it, or apply real AWS changes, plus a rehearsal checklist.
 3. [docs/superpowers/specs/2026-07-26-virtual-world-guide-fleet-design.md](docs/superpowers/specs/2026-07-26-virtual-world-guide-fleet-design.md), the original architecture/design spec.
