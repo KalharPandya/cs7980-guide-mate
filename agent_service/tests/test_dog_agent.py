@@ -560,6 +560,83 @@ def test_system_prompt_mentions_guide_only_when_virtual():
     assert "guide_to_room" not in physical_prompt
 
 
+# =====================================================================
+# Capability-aware system prompt: the model must be told WHICH robot it is
+# driving. The physical TurtleBot does emotes/tricks/stop and has no navigation
+# at all; the virtual fleet robot navigates to rooms and does no physical
+# motion. The prompt must never advertise the other fleet's abilities.
+# =====================================================================
+
+
+# Every tool name DogAgent can offer. Used by the prompt/tools agreement guard
+# below: a tool named in the prompt must be a tool the model actually got.
+_ALL_TOOL_NAMES = ("send_emote", "run_motion", "stop", "get_status",
+                   "retrieve_kb", "guide_to_room")
+
+
+def test_virtual_prompt_omits_physical_motion_vocabulary():
+    """Regression guard for the real bug: MOTION_INSTRUCTION was appended on the
+    motion_tools_enabled flag alone, so a VIRTUAL session was told it had
+    run_motion/stop/get_status while _enabled_tool_names withheld all three."""
+    prompt = _agent(RecordingRegistry())._system_prompt(
+        dict(DEFAULT_FLAGS), physical=False)
+    assert "run_motion" not in prompt
+    assert "trick" not in prompt.lower()
+    assert "get_status" not in prompt
+
+
+def test_physical_prompt_mentions_emote_and_tricks_not_guide():
+    prompt = _agent(RecordingRegistry())._system_prompt(
+        dict(DEFAULT_FLAGS), physical=True)
+    assert "send_emote" in prompt
+    assert "trick" in prompt.lower()
+    assert "guide_to_room" not in prompt
+
+
+def test_physical_prompt_states_it_cannot_navigate_to_rooms():
+    prompt = _agent(RecordingRegistry())._system_prompt(
+        dict(DEFAULT_FLAGS), physical=True)
+    lowered = prompt.lower()
+    assert "cannot navigate" in lowered
+    assert "cannot drive" in lowered
+
+
+def test_virtual_prompt_states_it_can_navigate_to_rooms():
+    prompt = _agent(RecordingRegistry())._system_prompt(
+        dict(DEFAULT_FLAGS), physical=False)
+    lowered = prompt.lower()
+    assert "can navigate to any room" in lowered
+    assert "escort" in lowered
+
+
+def test_virtual_prompt_calls_emote_an_avatar_expression():
+    """A virtual session has no robot to emote on (ws_chat's target is None), so
+    the prompt must not claim a robot performs it."""
+    prompt = _agent(RecordingRegistry())._system_prompt(
+        dict(DEFAULT_FLAGS), physical=False)
+    assert "avatar" in prompt.lower()
+
+
+def _tool_names_in(prompt):
+    import re
+    return {n for n in _ALL_TOOL_NAMES if re.search(rf"\b{n}\b", prompt)}
+
+
+def test_prompt_never_names_a_tool_the_model_was_not_given():
+    """The single regression guard for the bug class: for BOTH modes, every tool
+    name the prompt mentions must be in that mode's offered tool list."""
+    agent = _agent(RecordingRegistry())
+    for physical in (True, False):
+        flags = dict(DEFAULT_FLAGS)
+        prompt = agent._system_prompt(flags, physical=physical)
+        offered = set(agent._enabled_tool_names(flags, physical=physical))
+        mentioned = _tool_names_in(prompt)
+        assert mentioned <= offered, (
+            f"physical={physical}: prompt names {sorted(mentioned - offered)} "
+            f"but offered tools are {sorted(offered)}"
+        )
+
+
 def test_chat_legacy_no_session_id_unchanged(monkeypatch):
     _fake_bedrock(monkeypatch)
     reg = RecordingRegistry()

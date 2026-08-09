@@ -45,6 +45,34 @@ GUIDE_INSTRUCTION = (
     "room or location in the building, call it with that room's name so a virtual "
     "guide robot is dispatched to escort them there."
 )
+# --- what kind of robot am I driving? ---------------------------------------
+# The two fleets have OPPOSITE capabilities, and the model has to be told which
+# one it is holding or it will confidently promise the wrong thing:
+#   physical TurtleBot: emote + in-place trick + stop, and NO navigation at all
+#     (guidemate_msgs.choreography raises on a navigate command, there is no
+#     handler for it), so it can never walk a visitor to a room.
+#   virtual fleet robot: navigate ONLY (world/src/iot/bridge.ts handles navigate
+#     per robot plus fleet assign, and rejects emote/motion/stop), so it can
+#     escort to any destination but cannot perform a single physical move.
+# One of these two statements is always appended, paired with the same
+# physical/virtual switch that _enabled_tool_names uses, so the prompt can never
+# advertise capabilities the offered tool list does not back.
+PHYSICAL_CAPABILITY_INSTRUCTION = (
+    "You are connected to a PHYSICAL robot dog that is really standing in the "
+    "building right now. It can play emotes and do tricks in place, and it can "
+    "be halted. It CANNOT drive itself anywhere and CANNOT navigate to a room: it has no "
+    "navigation at all. If a visitor asks you to take them somewhere, say plainly "
+    "that you cannot walk them there, then give them clear walking directions "
+    "instead."
+)
+VIRTUAL_CAPABILITY_INSTRUCTION = (
+    "You are connected to a VIRTUAL guide robot in the 3D world of the building. "
+    "It CAN navigate to any room and escort visitors to a destination, and that "
+    "is what this session is for: getting people to the place they are looking "
+    "for. It CANNOT perform any physical action in the real world, so never offer "
+    "to move, drive, or perform for someone in person. Any emote you play is the "
+    "expression on your on-screen avatar, not something a robot does."
+)
 KB_INSTRUCTION = (
     "For factual questions about the project or about yourself, call the "
     "retrieve_kb tool and ground your answer in what it returns."
@@ -184,9 +212,22 @@ class DogAgent:
         else:
             base = NEUTRAL_PROMPT
         parts = [base]
+        # State up front WHICH robot this session is driving. The two fleets have
+        # opposite capabilities (see the constants above), so this is the single
+        # sentence that stops the model promising a virtual robot's escort from a
+        # physical robot, or a physical trick from a virtual one.
+        parts.append(
+            PHYSICAL_CAPABILITY_INSTRUCTION if physical
+            else VIRTUAL_CAPABILITY_INSTRUCTION
+        )
         if flags.get("emotes_enabled", True):
             parts.append(EMOTE_INSTRUCTION)
-        if flags.get("motion_tools_enabled", True):
+        # MOTION_INSTRUCTION names run_motion/stop/get_status, and _enabled_tool_names
+        # offers all three ONLY when physical is True. Gating this on the flag alone
+        # was a real bug: a virtual session was told it had motion tools that were
+        # never in its tool list, so the model would announce tricks it could not
+        # run. The prompt now follows the same physical gate as the tools.
+        if physical and flags.get("motion_tools_enabled", True):
             parts.append(MOTION_INSTRUCTION)
         # Only mentioned for a virtual session -- see _enabled_tool_names: a
         # physical session never has the guide_to_room tool, so it must never be
