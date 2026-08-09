@@ -199,6 +199,7 @@ export class SimulatedVisitorSpawner {
       escortPhase: null,
       greetSecondsRemaining: 0,
       escortDestination: null,
+      escortLeadTarget: null,
       escortElapsedSeconds: 0,
       escortSinceLastTrailUpdateSeconds: 0,
       robotPositionHistory: [],

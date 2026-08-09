@@ -405,7 +405,7 @@ async function testAssignChainEndToEnd(): Promise<void> {
     // door and the visitor releases within VISITOR_ARRIVAL_DISTANCE_M (2.5m) of the robot, so
     // the visitor can be up to ~3.5m from the door at release. (The old ~1m emergent packing was
     // an artifact of the idle-only gate, which is not robust when parked fleet robots crowd a
-    // busy door -- see ROBOT_ARRIVAL_TOLERANCE_M in escortManager.ts.)
+    // busy door -- see ROBOT_DESTINATION_RADIUS_M in escortManager.ts.)
     assert.ok(
       visitorFinalDoorDist <= DOOR_TOLERANCE_M + 2.5,
       `visitor "${visitorId}" should end up near "${roomName}"'s door (within ${(DOOR_TOLERANCE_M + 2.5).toFixed(1)}m, ` +

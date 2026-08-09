@@ -6,7 +6,7 @@
  * showing a handful of timeout lines in the first few minutes told nobody whether that was
  * a healthy minority alongside many silent successes, or nearly every escort failing --
  * because nothing ever logged (or counted) a SUCCESSFUL arrival to compare against. Given
- * commit 7a9b171 changed completion to require BOTH `robotIdleAtDestination` AND
+ * commit 7a9b171 changed completion to require BOTH `robotAtDestination` AND
  * `visitorCaughtUpToRobot` (VISITOR_ARRIVAL_DISTANCE_M = 2.5m -- see that constant's doc
  * comment in escortManager.ts), a systemic follow-behavior defect would present as exactly
  * "escorts time out instead of completing", i.e. the original "people are stuck" complaint
@@ -41,10 +41,24 @@
  * re-deriving it from polled positions.
  *
  * ---- what's asserted vs. reported ----
- * The completion-rate regression guard (MIN_ACCEPTABLE_COMPLETION_RATE) is a floor set from
- * THIS script's own first measured run (see the number in the assertion's own comment) --
- * not a number invented in advance -- so future runs are checked against actual observed
- * healthy behavior, not a guess.
+ * The regression guard (MIN_ACCEPTABLE_DELIVERY_RATE) is a floor set from THIS script's own
+ * measured runs (see the numbers in the assertion's own comment) -- not a number invented in
+ * advance -- so future runs are checked against actual observed healthy behavior, not a guess.
+ *
+ * ---- what this harness got WRONG for a while, and why (read before trusting a number here) ----
+ * Every escort outcome used to be summarised by `separationM` (robot-to-visitor distance at
+ * release) and nothing else, and the headline number was the share of escorts EscortManager
+ * itself reported as "completed". Both are blind in the same place. The robot is standing right
+ * next to the person at the END OF THE FETCH LEG just as much as at the destination, so an
+ * escort released at the PICKUP point produces a ~1.4m `separationM` that is indistinguishable
+ * from a real delivery -- and the reported-completed rate is whatever the completion gate says,
+ * so it cannot possibly audit that gate. A real defect lived behind those numbers: the gate
+ * accepted a bare `robotAgent.state === "idle"` as "robot has arrived at the destination", which
+ * is true the instant the fetch leg ends, so escorts reported `completed` with the person still
+ * 20+ m from the room they asked for -- while this script printed a healthy 98.6-98.7%.
+ * The fix here is the `visitorDistanceToDestinationM` block plus the zero-tolerance delivery
+ * assertion below: distance to the destination THEY ASKED FOR is the only measurement that can
+ * tell a delivery from a plausible-looking release next to a robot.
  *
  * Run with: npm run test:escort   (== npx tsx scripts/escorttest.ts)
  * Configurable via env var (optional): ESCORT_TEST_SIM_SECONDS.
@@ -70,6 +84,25 @@ const TOTAL_TICKS = Math.round((TOTAL_SIM_SECONDS * 1000) / DT_MS);
  * percentage off a handful of samples. "Many hundreds" per the task brief; set well below
  * that as a floor so a slower CI machine doesn't spuriously fail this on tick-count alone. */
 const MIN_TOTAL_ESCORTS = 300;
+
+/**
+ * How far (meters) from the destination THEY ASKED FOR a visitor may be, at the moment the
+ * escort ends, and still count as genuinely DELIVERED.
+ *
+ * Derived from the completion contract in escortManager.ts, not picked to make a number look
+ * good: completion requires the ROBOT within `ROBOT_DESTINATION_RADIUS_M` (1.0m) of the
+ * resolved destination point AND the VISITOR within `VISITOR_ARRIVAL_DISTANCE_M` (2.5m) of
+ * that robot, so by the triangle inequality a legitimately-completed escort can leave the
+ * visitor at most 1.0 + 2.5 = 3.5m from the destination. This is the same bound
+ * `src/test/assignChain.test.ts` already asserts against (`DOOR_TOLERANCE_M + 2.5`).
+ *
+ * Why this metric had to be added: the harness previously reported only `separationM`
+ * (robot-to-visitor), which is ~1.4m for a healthy delivery AND ~1.4m for an escort that
+ * falsely "completed" at the PICKUP point with the person still 20m from where they asked to
+ * go -- the two are indistinguishable in that number. A 98.6% "completion" rate measured that
+ * way was not measuring delivery at all.
+ */
+const DELIVERED_RADIUS_M = 3.5;
 
 function percentile(sortedAsc: number[], p: number): number {
   if (sortedAsc.length === 0) return NaN;
@@ -147,18 +180,77 @@ async function main(): Promise<void> {
   const total = outcomes.length;
   const completionRate = total > 0 ? (completed.length / total) * 100 : 0;
 
+  // The DELIVERY definition (see DELIVERED_RADIUS_M): the escort reported "completed" AND the
+  // visitor actually ended up at the destination they asked for. Reported alongside the raw
+  // reported-completed rate rather than instead of it, so the two can never silently diverge
+  // again without it being visible on this run's own output.
+  const delivered = completed.filter(
+    (o) => o.visitorDistanceToDestinationM !== null && o.visitorDistanceToDestinationM <= DELIVERED_RADIUS_M,
+  );
+  const falselyCompleted = completed.filter(
+    (o) => o.visitorDistanceToDestinationM === null || o.visitorDistanceToDestinationM > DELIVERED_RADIUS_M,
+  );
+  const deliveryRate = total > 0 ? (delivered.length / total) * 100 : 0;
+
   console.log("=== ESCORT OUTCOME DISTRIBUTION ===");
   console.log(`Total escorts ended: ${total}`);
   console.log(
-    `Completed (genuine arrival): ${completed.length} (${completionRate.toFixed(1)}%)`,
+    `Completed (reported by EscortManager): ${completed.length} (${completionRate.toFixed(1)}%)`,
   );
   console.log(
     `Timed out (ESCORT_TIMEOUT_S): ${timedOut.length} (${(100 - completionRate).toFixed(1)}%)`,
   );
   console.log(`Still bound/in-progress at end of run (not counted above): ${finalStats.robotBindings}`);
 
+  console.log("\n=== TRUE COMPLETION (visitor actually delivered to the room they asked for) ===");
+  console.log(
+    `DELIVERED (completed AND visitor <= ${DELIVERED_RADIUS_M}m from the requested destination): ` +
+      `${delivered.length}/${total} (${deliveryRate.toFixed(1)}%)`,
+  );
+  console.log(
+    `FALSE COMPLETIONS (reported "completed" with the visitor still > ${DELIVERED_RADIUS_M}m away): ` +
+      `${falselyCompleted.length}` +
+      (completed.length > 0
+        ? ` (${((falselyCompleted.length / completed.length) * 100).toFixed(1)}% of reported completions)`
+        : ""),
+  );
+
   console.log("\n=== TIME-TO-COMPLETION (seconds, completed escorts only) ===");
   summarize("durationSeconds", completed.map((o) => o.durationSeconds));
+
+  // THE metric the old harness was missing entirely. `separationM` below is robot-to-visitor
+  // and reads the same (~1.4m) whether the pair is standing at the destination or at the
+  // pickup point; only this block can tell those apart. Reported for ALL reported-completed
+  // escorts (not just the delivered subset) precisely so a false completion shows up here as a
+  // long tail instead of being filtered out of its own evidence.
+  console.log(
+    "\n=== VISITOR DISTANCE TO THE REQUESTED DESTINATION AT COMPLETION (m; the delivery metric) ===",
+  );
+  summarize(
+    "visitorDistanceToDestinationM",
+    completed
+      .map((o) => o.visitorDistanceToDestinationM)
+      .filter((d): d is number => d !== null),
+  );
+  console.log(
+    "\n=== ROBOT DISTANCE TO THE REQUESTED DESTINATION AT COMPLETION (m) ===\n" +
+      "  If this is large while separationM is small, the escort ended with the pair together\n" +
+      "  somewhere that is NOT the destination -- i.e. a completion declared at the pickup point.",
+  );
+  summarize(
+    "robotDistanceToDestinationM",
+    completed
+      .map((o) => o.robotDistanceToDestinationM)
+      .filter((d): d is number => d !== null),
+  );
+  if (falselyCompleted.length > 0) {
+    console.log("\n  --- the FALSE completions, in full (worst 10 by visitor distance) ---");
+    for (const o of [...falselyCompleted]
+      .sort((a, b) => (b.visitorDistanceToDestinationM ?? 0) - (a.visitorDistanceToDestinationM ?? 0))
+      .slice(0, 10)) {
+      console.log(`    ${JSON.stringify(o)}`);
+    }
+  }
 
   console.log("\n=== FINAL SEPARATION AT COMPLETION (m; sanity check, should all be <= 2.5) ===");
   summarize("separationM", completed.map((o) => o.separationM));
@@ -208,10 +300,16 @@ async function main(): Promise<void> {
     );
     summarize("separationM", timedOut.map((o) => o.separationM));
 
-    const timedOutRobotIdle = timedOut.filter((o) => o.robotIdleAtDestination);
-    const timedOutRobotNotIdle = timedOut.filter((o) => !o.robotIdleAtDestination);
+    console.log("\n=== VISITOR DISTANCE TO THE REQUESTED DESTINATION AT TIMEOUT (m) ===");
+    summarize(
+      "visitorDistanceToDestinationM",
+      timedOut.map((o) => o.visitorDistanceToDestinationM).filter((d): d is number => d !== null),
+    );
+
+    const timedOutRobotIdle = timedOut.filter((o) => o.robotAtDestination);
+    const timedOutRobotNotIdle = timedOut.filter((o) => !o.robotAtDestination);
     console.log(
-      `\n  Of ${timedOut.length} timed-out escorts, the ROBOT had reached "idle at destination" in ` +
+      `\n  Of ${timedOut.length} timed-out escorts, the ROBOT had reached the destination in ` +
         `${timedOutRobotIdle.length} (${((timedOutRobotIdle.length / timedOut.length) * 100).toFixed(1)}%) -- the rest (${
           timedOutRobotNotIdle.length
         }) timed out with the robot ITSELF still not settled (crowd congestion / a slow route), not a visitor-follow problem at all.`,
@@ -236,29 +334,61 @@ async function main(): Promise<void> {
   );
   console.log(`PASS: drove ${total} escorts to completion or timeout (>= ${MIN_TOTAL_ESCORTS} floor)`);
 
-  // Regression guard: this is a floor pinned to what THREE independent 6000s runs of this
-  // exact harness measured at real demo scale/timing (2026-08-03 investigation into the
-  // "12 timeouts in the first few minutes" log observation -- see escortManager.ts's
-  // `EscortOutcome`/`onEscortOutcome` for how this is collected): 89.5%, 90.7%, 89.7%
-  // completed. Escorts are NOT systematically timing out -- the ~10% that do are
-  // overwhelmingly (~80-85% of timeouts, confirmed via `robotIdleAtDestination`) explained
-  // by the ROBOT itself still not having reached its destination within 90s under real
-  // 95-agent crowd congestion, not a visitor-follow defect; the residual slice where the
-  // robot WAS idle and the visitor still never caught up is small (~1.7% of ALL escorts)
-  // and its separation distribution (median ~4.7m, max ~18.6m) is nowhere near the 2.5m
-  // VISITOR_ARRIVAL_DISTANCE_M threshold, so it isn't a threshold-tuning issue either. 85%
-  // leaves ~4.5 points of margin below the lowest of the three measured runs for ordinary
-  // Math.random()-driven run-to-run variance (dwell times, spawn stagger, which rooms get
-  // picked) while still catching a genuine regression in the follow/arrival logic -- not an
-  // arbitrary number chosen to make the test pass.
-  const MIN_ACCEPTABLE_COMPLETION_RATE = 85;
-  assert.ok(
-    completionRate >= MIN_ACCEPTABLE_COMPLETION_RATE,
-    `completion rate ${completionRate.toFixed(1)}% is below the ${MIN_ACCEPTABLE_COMPLETION_RATE}% regression floor ` +
-      `(${completed.length}/${total} completed, ${timedOut.length} timed out) -- see the distributions above for root cause`,
+  // THE assertion this harness was missing. A "completed" escort is a CLAIM that the person
+  // was delivered; this checks the claim against where the person actually is. Zero tolerance
+  // is not a strict-for-strictness choice, it is the completion contract restated: the gate in
+  // escortManager.ts requires the robot within ROBOT_DESTINATION_RADIUS_M of the destination
+  // and the visitor within VISITOR_ARRIVAL_DISTANCE_M of the robot, so every completion it
+  // emits is <= DELIVERED_RADIUS_M from the destination BY CONSTRUCTION. Any exception means
+  // the gate is not enforcing what it claims -- which is exactly the defect that let a
+  // completion fire at the PICKUP point while the person was still 20.8m from the Kitchen they
+  // asked for, behind a 98.6% "completion" rate measured on robot-to-visitor separation alone.
+  assert.equal(
+    falselyCompleted.length,
+    0,
+    `${falselyCompleted.length}/${completed.length} escort(s) reported "completed" with the visitor still more than ` +
+      `${DELIVERED_RADIUS_M}m from the destination they asked for -- completion is not actually gated on delivery ` +
+      "(see the FALSE completions listed above for the raw records)",
   );
   console.log(
-    `PASS: completion rate ${completionRate.toFixed(1)}% is at or above the ${MIN_ACCEPTABLE_COMPLETION_RATE}% regression floor`,
+    `PASS: all ${completed.length} reported completions had the visitor within ${DELIVERED_RADIUS_M}m of the ` +
+      "destination they asked for (no completion declared at the pickup point)",
+  );
+
+  // Regression guard, applied to the DELIVERY rate rather than the reported-completed rate.
+  // Guarding the reported rate was worse than useless while the two could diverge: the reported
+  // rate stayed at 98.7% across the very runs in which escorts were completing at the pickup
+  // point, so the guard would have gone on passing through the defect. The delivered rate is the
+  // number that can only go up when people actually get where they asked to go.
+  //
+  // The floor is pinned to what THIS harness measured, at real demo scale/timing, over three
+  // independent 6000s runs each side of the completion-gate fix (2026-08-08):
+  //   BEFORE: reported completed 98.7% / 97.6% / 98.4%, but DELIVERED only 96.9% / 96.3% /
+  //           96.0%, with 7 / 5 / 9 false completions per run (visitor up to 20.82m from the
+  //           room they asked for while the escort said "completed").
+  //   AFTER:  DELIVERED 98.7% / 97.9% / 98.7%, false completions 0 / 0 / 0, every remaining
+  //           failure an ESCORT_TIMEOUT_S timeout in the "approaching" (fetch) leg, zero
+  //           lead-leg timeouts.
+  // The timeout count did not rise across the fix (5 before vs 5, 8, 5 after -- inside ordinary
+  // run-to-run spread), which is the evidence that tightening the robot-side gate to
+  // ROBOT_DESTINATION_RADIUS_M did not convert genuine arrivals into timeouts. Worth noting
+  // from those runs: robot-to-destination at completion reaches 0.98-0.99m, i.e. real arrivals
+  // do use most of that 1.0m radius under crowding, so it is not over-generous.
+  // 90% leaves ~8 points of margin below the lowest measured delivery rate for ordinary
+  // Math.random()-driven run-to-run variance (dwell times, spawn stagger, which rooms get
+  // picked) while still catching a real regression in the fetch/follow/arrival logic. It is
+  // deliberately NOT set just under the measured number: a delivery rate is allowed to wobble a
+  // few points on crowd luck, and a guard that fires on luck gets ignored.
+  const MIN_ACCEPTABLE_DELIVERY_RATE = 90;
+  assert.ok(
+    deliveryRate >= MIN_ACCEPTABLE_DELIVERY_RATE,
+    `TRUE completion (delivery) rate ${deliveryRate.toFixed(1)}% is below the ${MIN_ACCEPTABLE_DELIVERY_RATE}% regression ` +
+      `floor (${delivered.length}/${total} delivered, ${completed.length} reported completed, ${timedOut.length} timed out) ` +
+      "-- see the distributions above for root cause",
+  );
+  console.log(
+    `PASS: TRUE completion (delivery) rate ${deliveryRate.toFixed(1)}% is at or above the ` +
+      `${MIN_ACCEPTABLE_DELIVERY_RATE}% regression floor (reported-completed rate was ${completionRate.toFixed(1)}%)`,
   );
 
   console.log("\nDONE: escorttest.ts");

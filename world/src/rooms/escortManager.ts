@@ -26,8 +26,8 @@ type SimulatedPhase = "waiting_for_robot" | "walking_to_room" | "dwelling" | "wa
  *  - "greeting": the robot has reached the person; both stay put for a randomized
  *    GREET_MIN_S..GREET_MAX_S pause.
  *  - "leading": the robot heads to the stored destination and the person now follows behind
- *    it (the existing "conga line" trailing), releasing on the existing distance-based
- *    arrival logic.
+ *    it (the existing "conga line" trailing), releasing only once the ROBOT is measurably at
+ *    that destination and the person has caught up to it.
  * `null` whenever the visitor isn't bound to a robot (mirrors `robotId` being null).
  */
 type EscortPhase = "approaching" | "greeting" | "leading";
@@ -68,6 +68,34 @@ export interface VisitorRecord {
    * remembered for the later "leading" phase instead of being used immediately. `null`
    * whenever `robotId == null`. */
   escortDestination: RoomTarget | null;
+  /**
+   * The destination point the ROBOT was ACTUALLY dispatched to when the guide leg started --
+   * set (from `escortDestination`) only once `moveAgentTo` has accepted the move at the
+   * "greeting" -> "leading" transition, `null` at every other moment of the escort's life.
+   *
+   * Deliberately a SEPARATE field from `escortDestination` rather than a re-read of it, because
+   * it carries a different fact. `escortDestination` means "where this person asked to go" and
+   * is set the instant the escort binds -- it is already true throughout the fetch leg, before
+   * the robot has been pointed at it at all. This field means "the guide leg is genuinely under
+   * way: the robot has been told to go there", which is the precondition the completion test
+   * needs and the one whose absence caused the defect below. Being non-null is therefore both
+   * the point to measure the robot against AND the "was actually dispatched" flag; if the
+   * dispatch is ever refused, this stays `null`, no completion test can pass, and the escort
+   * ends on the ESCORT_TIMEOUT_S valve instead of falsely reporting success.
+   *
+   * DEFECT THIS CLOSES (reproduced against the real WorldRoom on floor-14.json): a visitor
+   * standing in "Classroom 1425" asked to be taken to the "Kitchen" (20.3m away) and the nearest
+   * idle robot happened to spawn 2.96m from them. The robot finished its FETCH leg normally, so
+   * at the instant the phase flipped to "leading" it was standing next to the person AND
+   * schema-idle (it had just stopped). The robot half of the completion test accepted a bare
+   * `robotAgent.state === "idle"` as "the robot has arrived", and the visitor half was satisfied
+   * because the person it had just walked over to was 1.37m away -- so the escort reported
+   * `{"outcome":"completed","phase":"leading","separationM":1.37,"robotIdleAtDestination":true}`
+   * 4.0s into the guide leg with BOTH of them still ~20.7m from the Kitchen. The person was never
+   * taken anywhere. "Robot is idle" was standing in for "robot is idle AT THE DESTINATION", and
+   * those two differ by exactly the length of the trip that had not happened yet.
+   */
+  escortLeadTarget: RoomTarget | null;
   /** Simulated-time seconds elapsed within the CURRENT escort phase; reset to 0 on bind and
    * on every phase transition, only meaningful while `robotId != null`. Drives the
    * ESCORT_TIMEOUT_S safety valve per-phase (so a normal long escort -- approach + up to
@@ -115,16 +143,28 @@ const GREET_MIN_S = 10;
 const GREET_MAX_S = 15;
 
 /**
- * Minimum simulated seconds an escort must have existed before its robot's schema `state
- * === "idle"` is trusted as "arrived". Without this, binding can misfire on its very first
- * real crowd tick: empirically (two agents added at nearly the same point, one of them
- * immediately re-targeted), the newly-bound robot's realized speed on that first tick can
- * still read below IDLE_SPEED_THRESHOLD_MPS -- not because it arrived, but because Detour
- * hasn't ramped up its avoidance-adjusted velocity yet with another agent that close --
- * which would otherwise read as instant arrival and un-bind the escort before the robot
- * ever moved. 0.3s is many multiples of a single ~16ms tick (so it fully absorbs that
- * startup blip) but negligible against real inter-room travel times of several seconds+,
- * so it doesn't meaningfully delay genuine arrivals.
+ * Minimum simulated seconds a LEG must have been under way before its arrival test is
+ * trusted -- measured from the start of the leg, since `escortElapsedSeconds` is reset on
+ * every phase transition. It is the "the robot has had a chance to actually start moving"
+ * window, and it applies to both legs: the fetch leg (where the robot's schema `state ===
+ * "idle"` IS the pickup signal) and the guide leg (where it gates the positional
+ * ROBOT_DESTINATION_RADIUS_M test from being evaluated on the very tick the robot is
+ * dispatched, before it has moved at all).
+ *
+ * Without it, the fetch leg can misfire on its very first real crowd tick: empirically (two
+ * agents added at nearly the same point, one of them immediately re-targeted), the
+ * newly-bound robot's realized speed on that first tick can still read below
+ * IDLE_SPEED_THRESHOLD_MPS -- not because it arrived, but because Detour hasn't ramped up its
+ * avoidance-adjusted velocity yet with another agent that close -- which would otherwise read
+ * as instant arrival and un-bind the escort before the robot ever moved. 0.3s is many
+ * multiples of a single ~16ms tick (so it fully absorbs that startup blip) but negligible
+ * against real inter-room travel times of several seconds+, so it doesn't meaningfully delay
+ * genuine arrivals.
+ *
+ * On the guide leg it is a backstop, not the load-bearing guard: what actually prevents the
+ * "leading" transition from being mistaken for an arrival is that the robot must be within
+ * ROBOT_DESTINATION_RADIUS_M of the point it was dispatched to, which a robot standing at the
+ * PICKUP point of a real trip is not, no matter how long the grace window is.
  */
 const ARRIVAL_GRACE_PERIOD_S = 0.3;
 
@@ -145,15 +185,21 @@ const TRAIL_DISTANCE_M = 1.0;
  * else, and `tick()` never re-aims an unbound visitor's trailing target again, so the first
  * visitor was genuinely abandoned mid-floor.
  *
- * The fix gates completion on the VISITOR having caught up to the (now-idle) robot too -- see
- * `tick()`'s `visitorWithinArrivalDistance`, which is DISTANCE-BASED: the visitor is within
- * this bound of the (idle-at-destination) robot, sustained for the VISITOR_ARRIVAL_SETTLE_S
- * window (see that constant, and the "distance + settle window" note below). Checking distance
- * to the ROBOT (not a separately-resolved destination point) is deliberate: the robot's own
- * `state === "idle"` already means Detour considers IT at the destination (see DOOR_TOLERANCE_M
- * in WorldRoom.test.ts/visitors.test.ts/assignChain.test.ts), so "visitor near the now-idle
- * robot" transitively means "visitor near the actual destination" -- with no new nav
- * resolution or extra per-visitor bookkeeping needed.
+ * The fix gates completion on the VISITOR having caught up to the robot too -- see `tick()`'s
+ * `visitorWithinArrivalDistance`, which is DISTANCE-BASED: the visitor is within this bound of
+ * the robot, sustained for the VISITOR_ARRIVAL_SETTLE_S window (see that constant, and the
+ * "distance + settle window" note below).
+ *
+ * This is only HALF of "the escort arrived", and treating it as the whole thing was a second
+ * defect in its own right. The original reasoning here was transitive: the robot's own `state
+ * === "idle"` supposedly meant Detour considered IT at the destination, so "visitor near the
+ * idle robot" would transitively mean "visitor near the destination", with no destination point
+ * to resolve or store. That transitivity is false -- an idle robot is idle wherever it stopped,
+ * including at the PICKUP point at the end of the fetch leg -- and it produced completions with
+ * the person 20m from the room they asked for (see `VisitorRecord.escortLeadTarget`'s doc
+ * comment). So the robot side is now measured directly against the destination point the robot
+ * was dispatched to (ROBOT_DESTINATION_RADIUS_M), and this constant covers only what it can
+ * actually attest to: that the PERSON is with the robot. Both halves are required.
  *
  * It does NOT require the visitor's own schema `state === "idle"`. That was tried first and is
  * exactly the bug this rule replaces: once the robot parks, the trailing visitor packs right up
@@ -187,10 +233,11 @@ const TRAIL_DISTANCE_M = 1.0;
  * up" -- so completion additionally requires the within-radius condition to HOLD for
  * VISITOR_ARRIVAL_SETTLE_S (see that constant), by which point the visitor has genuinely settled
  * next to the robot. That settle window is why distance is a sound arrival signal without the
- * old visitor-idle flag: sustained proximity to an idle-at-destination robot cannot occur
- * mid-route (a robot still en route is not idle at its destination, so `arrived` stays false
- * the whole way regardless of the visitor's distance), and it cannot be faked by a visitor that
- * merely brushes the radius while passing (it would have to loiter inside it for the full window).
+ * old visitor-idle flag: sustained proximity to a robot that is provably AT the destination
+ * cannot occur mid-route (a robot still en route is outside ROBOT_DESTINATION_RADIUS_M of its
+ * dispatched target, so `arrived` stays false the whole way regardless of the visitor's
+ * distance), and it cannot be faked by a visitor that merely brushes the radius while passing
+ * (it would have to loiter inside it for the full window).
  *
  * No deadlock: this can never make "arrived" permanently unreachable, because once the robot
  * stops, `tick()` keeps calling `recordHistoryAndRetarget` every TRAIL_UPDATE_INTERVAL_S
@@ -238,25 +285,55 @@ const PICKUP_RADIUS_M = 2.5;
 const VISITOR_ARRIVAL_SETTLE_S = 0.48;
 
 /**
- * How close (meters) the LEADING robot must be to its stored destination point to count as
- * "arrived there", used ALONGSIDE the schema `state === "idle"` signal (either one suffices).
- * The robot converges to well under 0.5m of a door; 1.0m matches the door-convergence
- * tolerance the tests use.
+ * How close (meters) the LEADING robot must ACTUALLY BE to the destination point it was
+ * dispatched to (`escortLeadTarget`) for the robot half of "this escort has arrived" to hold.
+ * This is the ONLY robot-side arrival signal: it is positional, and the schema `state ===
+ * "idle"` flag is deliberately NOT accepted as an alternative to it (see below).
  *
- * This distance path exists because `state === "idle"` alone is not robust at a BUSY
- * destination: when several parked fleet robots sit near the requested room's door and the
- * trailing visitor packs in behind, the just-arrived robot gets shoved by all of them and its
- * realized speed keeps flickering above IDLE_SPEED_THRESHOLD_MPS, so its schema state
- * oscillates moving/idle and never holds "idle" for the VISITOR_ARRIVAL_SETTLE_S window --
- * observed to keep an escort that had genuinely arrived (robot ~0.17m from the door, visitor
- * ~1.4m behind, both plainly there) running the full ESCORT_TIMEOUT_S clock and then "timing
- * out" instead of completing. Gating "robot has arrived" on distance-to-the-destination-point
- * (an EMPTY point the robot only nears at the very end of its route, so it cannot false-fire
- * mid-route) instead of the flaky idle flag makes completion robust to that crowding, while
- * the visitor-side VISITOR_ARRIVAL_DISTANCE_M + settle checks below still gate on the VISITOR
- * having actually caught up.
+ * ---- why not `state === "idle"` (this is the defect) ----
+ * The robot-side gate used to be `state === "idle" || within-tolerance-of-destination`, i.e.
+ * a bare "the robot has stopped" satisfied it on its own. But the robot has JUST stopped at
+ * the moment the fetch leg ends -- it is standing next to the person it came to collect --
+ * so the gate was already true on the first tick of the guide leg, before the robot had gone
+ * anywhere, and the visitor half was true too (the person is 1.4m away by construction at
+ * pickup). Both halves of "arrived" were therefore satisfied at the PICKUP point, and the
+ * escort reported `completed` with the person still 20.7m from the room they asked for. See
+ * `VisitorRecord.escortLeadTarget`'s doc comment for the full reproduction. "The robot is
+ * idle" is simply not the same claim as "the robot is idle AT THE DESTINATION", and only the
+ * second one means the person was delivered.
+ *
+ * ---- why dropping the idle path does not reintroduce the problem it was added for ----
+ * The distance path was originally added ALONGSIDE the idle flag because idle alone is not
+ * robust at a BUSY destination: parked fleet robots plus the trailing visitor keep shoving
+ * the just-arrived robot, its realized speed flickers above IDLE_SPEED_THRESHOLD_MPS, and its
+ * schema state oscillates moving/idle instead of holding "idle" for the
+ * VISITOR_ARRIVAL_SETTLE_S window -- which used to keep genuinely-arrived escorts running the
+ * full ESCORT_TIMEOUT_S clock. Distance-to-the-destination is strictly the more robust of the
+ * two signals (it survives that shoving unchanged), so keeping only it fixes the false
+ * completions WITHOUT re-opening the false timeouts. The idle flag was never adding
+ * information the distance check lacked; it was only ever adding a way to be wrong early.
+ *
+ * ---- why 1.0m, from the geometry rather than a guess ----
+ * Two independent bounds, and 1.0m is the only round number comfortably inside both:
+ *  - FLOOR (must be reachable): measured on this floor plan, a robot leading a trailing
+ *    visitor to `findRoomTarget(room)` settles 0.007m-0.224m from that point -- all 18 rooms
+ *    of data/floor-14.json, median 0.012m, worst case 0.224m ("Male Washroom"). 1.0m is ~4.5x
+ *    that worst case, so a genuine arrival clears it with room to spare even when a crowded
+ *    door shoves the arriving robot a body-width (AGENT_RADIUS_M = 0.2m) off the exact point.
+ *    A tighter radius would start converting real deliveries into ESCORT_TIMEOUT_S timeouts,
+ *    the failure mode VISITOR_ARRIVAL_DISTANCE_M's doc comment records for its own 1.2m
+ *    attempt.
+ *  - CEILING (must be unambiguous): the two CLOSEST distinct room targets on this floor
+ *    ("Male Washroom" and "Gender Neutral Washroom") are 2.054m apart, so a 1.0m radius is
+ *    just under half the minimum inter-room spacing -- a robot inside one destination's radius
+ *    can never simultaneously be inside another's, i.e. "at the destination" can never be
+ *    satisfied by standing at the WRONG room.
+ * It cannot false-fire mid-route either: the dispatched point is the END of the robot's
+ * corridor, so the robot is only ever within 1.0m of it at the end of the trip. 1.0m also
+ * happens to be the same DOOR_TOLERANCE_M the room's tests already use for door convergence,
+ * so the shipped gate and the tests' notion of "at the door" agree by value.
  */
-const ROBOT_ARRIVAL_TOLERANCE_M = 1.0;
+const ROBOT_DESTINATION_RADIUS_M = 1.0;
 
 /** How often the visitor's trailing target is re-aimed while under escort (and how often a
  * robot-position sample is recorded into the history buffer below). Re-issuing
@@ -337,12 +414,31 @@ export interface EscortOutcome {
    * genuinely was, which is the number that answers "did the visitor almost make it, or was
    * it never following at all". */
   readonly separationM: number;
-  /** Whether the ROBOT half of `arrived` (`robotIdleAtDestination`) was true at the moment
-   * the binding ended -- lets a caller tell "robot arrived, visitor just didn't catch up in
+  /** Whether the ROBOT half of `arrived` (`robotAtDestination`) was true at the moment the
+   * binding ended -- lets a caller tell "robot arrived, visitor just didn't catch up in
    * time" apart from "robot itself never finished its own trip either". Always `true` for a
    * completed escort (both halves of `arrived` are required); may be `true` or `false` for a
    * timeout. */
-  readonly robotIdleAtDestination: boolean;
+  readonly robotAtDestination: boolean;
+  /**
+   * How far (meters) the VISITOR was from the destination THEY ASKED FOR at the moment the
+   * binding ended -- i.e. "was this person actually delivered?". `null` only if the escort
+   * ended with no destination on record (structurally impossible for a bound escort;
+   * `requestGuide` resolves and stores one before it binds anything).
+   *
+   * This field exists because `separationM` alone CANNOT answer that question, and its
+   * absence hid a real defect: `separationM` is robot-to-visitor, and the robot is standing
+   * next to the person at the END of the fetch leg too, so an escort released at the PICKUP
+   * point reports exactly the same healthy-looking ~1.4m separation as one released at the
+   * destination 20m away. `scripts/escorttest.ts` reported a 98.6% "completion" rate off
+   * that metric while escorts were completing at pickup with the person never delivered.
+   * Distance to the requested destination is the only number that distinguishes the two.
+   */
+  readonly visitorDistanceToDestinationM: number | null;
+  /** How far (meters) the ROBOT was from the escort's stored destination point when the
+   * binding ended. The robot-side counterpart to `visitorDistanceToDestinationM`: together
+   * they separate "nobody got there" from "the robot got there but the person didn't". */
+  readonly robotDistanceToDestinationM: number | null;
 }
 
 export interface EscortManagerOptions {
@@ -424,10 +520,12 @@ export class EscortManager {
    * -- see those fields' doc comments. */
   private completedEscorts = 0;
   private timedOutEscorts = 0;
-  /** Per-visitor accumulator (simulated seconds) of how long the arrival condition (robot idle
-   * at destination + visitor within VISITOR_ARRIVAL_DISTANCE_M) has held CONTINUOUSLY. Drives
-   * the VISITOR_ARRIVAL_SETTLE_S settle debounce in `tick()`; reset to 0 the moment the
-   * condition lapses, deleted entirely on `endEscort`. Keyed by visitor id. */
+  /** Per-visitor accumulator (simulated seconds) of how long the arrival condition (robot
+   * within ROBOT_DESTINATION_RADIUS_M of its dispatched destination + visitor within
+   * VISITOR_ARRIVAL_DISTANCE_M of the robot) has held CONTINUOUSLY. Drives the
+   * VISITOR_ARRIVAL_SETTLE_S settle debounce in `tick()`; reset to 0 the moment the condition
+   * lapses, cleared on the "greeting" -> "leading" transition so no credit can carry across a
+   * phase change, and deleted entirely on `endEscort`. Keyed by visitor id. */
   private readonly arrivalSettleSeconds = new Map<string, number>();
 
   /** Every visitor this subsystem knows about, keyed by visitor id. Single source of truth
@@ -489,6 +587,7 @@ export class EscortManager {
         escortPhase: null,
         greetSecondsRemaining: 0,
         escortDestination: null,
+        escortLeadTarget: null,
         escortElapsedSeconds: 0,
         escortSinceLastTrailUpdateSeconds: 0,
         robotPositionHistory: [],
@@ -545,6 +644,7 @@ export class EscortManager {
     record.robotId = bestRobotId;
     record.escortPhase = "approaching";
     record.escortDestination = destination;
+    record.escortLeadTarget = null; // not dispatched to the destination yet -- the fetch leg runs first
     record.greetSecondsRemaining = 0;
     record.escortElapsedSeconds = 0;
     record.escortSinceLastTrailUpdateSeconds = 0;
@@ -612,10 +712,13 @@ export class EscortManager {
    *   - "approaching": the robot navigates to the PERSON; the person waits in place. When
    *     the robot reaches the person (robot idle + within VISITOR_ARRIVAL_DISTANCE_M of the
    *     person), transition to "greeting" with a randomized GREET_MIN_S..GREET_MAX_S pause.
-   *   - "greeting": count the pause down; both agents stay put. At <= 0, send the robot to
-   *     the stored destination, seed the trailing target, and transition to "leading".
-   *   - "leading": the existing trailing-update + distance-based arrival/release logic (see
-   *     VISITOR_ARRIVAL_DISTANCE_M's doc comment).
+   *   - "greeting": count the pause down; both agents stay put. At <= 0, dispatch the robot to
+   *     the stored destination (recording the dispatched point as `escortLeadTarget`), clear
+   *     the arrival-settle accumulator, seed the trailing target, and transition to "leading".
+   *   - "leading": trailing-update plus the two-sided arrival/release test -- the ROBOT within
+   *     ROBOT_DESTINATION_RADIUS_M of the point it was dispatched to AND the VISITOR within
+   *     VISITOR_ARRIVAL_DISTANCE_M of the robot, both held for VISITOR_ARRIVAL_SETTLE_S (see
+   *     those constants' doc comments).
    * `escortElapsedSeconds` is reset on each transition so the ESCORT_TIMEOUT_S safety valve
    * bounds the approach leg and the lead leg independently, and never counts the greeting
    * pause as "stuck" (the greeting phase does not check the timeout at all).
@@ -626,11 +729,11 @@ export class EscortManager {
    * this step evaluates escorts bound on a PREVIOUS frame against agent state that already
    * had a real crowd tick applied since binding (WorldRoom.update() calls `crowd.tick()` +
    * syncs schema state before calling into this subsystem at all), which is what makes
-   * "robot schema state settled back to idle" a safe, race-free arrival signal (both for
-   * "robot reached the person" in "approaching" and "robot reached the destination" in
-   * "leading"): a robot can never go idle -> (bound this call) -> re-checked-idle within the
-   * same tick(), because new bindings only happen in the spawner step, which runs after this
-   * one.
+   * "robot schema state settled back to idle" a safe, race-free signal for "robot reached the
+   * person" in "approaching": a robot can never go idle -> (bound this call) -> re-checked-idle
+   * within the same tick(), because new bindings only happen in the spawner step, which runs
+   * after this one. ("robot reached the destination" in "leading" does not use the idle flag at
+   * all any more -- see ROBOT_DESTINATION_RADIUS_M's doc comment for why it must not.)
    */
   tick(dtSeconds: number): void {
     for (const visitor of this.visitors.values()) {
@@ -685,7 +788,7 @@ export class EscortManager {
         visitor.greetSecondsRemaining -= dtSeconds;
         if (visitor.greetSecondsRemaining > 0) continue; // both stay put; deliberately untimed
 
-        // Greeting done -> begin "leading": send the robot to the stored destination and
+        // Greeting done -> begin "leading": dispatch the robot to the stored destination and
         // start the visitor trailing behind it (seed the first history sample + retarget now
         // rather than waiting a TRAIL_UPDATE_INTERVAL_S window, so the visitor starts
         // following the same tick the robot sets off).
@@ -693,36 +796,61 @@ export class EscortManager {
         visitor.escortElapsedSeconds = 0; // fresh timeout budget for the lead leg
         visitor.escortSinceLastTrailUpdateSeconds = 0;
         visitor.robotPositionHistory = [];
+        // A phase transition must never be mistakable for an arrival. Everything the
+        // completion test reads is re-armed HERE, at the transition, so nothing accumulated
+        // during the fetch/greeting legs can carry into the guide leg's arrival verdict:
+        //  - the settle accumulator is cleared (it is only ever advanced by the "leading"
+        //    branch below, so it is normally already absent -- clearing it explicitly is what
+        //    makes that a stated invariant of this transition instead of an accident of where
+        //    the other write happens to live);
+        //  - `escortElapsedSeconds` is reset above, so ARRIVAL_GRACE_PERIOD_S below is a fresh
+        //    "the robot has had a tick to start moving" window measured from the dispatch;
+        //  - `escortLeadTarget` is set ONLY if the dispatch below is actually accepted, and the
+        //    completion test cannot pass at all while it is null.
+        this.arrivalSettleSeconds.delete(visitor.id);
+        visitor.escortLeadTarget = null;
         if (visitor.escortDestination) {
-          this.host.moveAgentTo(visitor.robotId, visitor.escortDestination);
+          const dispatched = this.host.moveAgentTo(visitor.robotId, visitor.escortDestination);
+          if (dispatched) {
+            visitor.escortLeadTarget = visitor.escortDestination;
+          } else {
+            // The destination resolved fine at bind time, so this should not happen; if it
+            // ever does, the robot was never sent anywhere and the person cannot be delivered.
+            // Leaving `escortLeadTarget` null makes completion structurally unreachable, so
+            // the escort ends on the ESCORT_TIMEOUT_S valve as a "timed_out" -- never as a
+            // "completed" that nobody travelled for.
+            console.warn(
+              `EscortManager: robot "${visitor.robotId}" refused the guide-leg move to the destination for ` +
+                `visitor "${visitor.id}"; the escort can now only end via the ${this.escortTimeoutS}s timeout`,
+            );
+          }
         }
         this.recordHistoryAndRetarget(visitor, robotAgent);
         continue;
       }
 
-      // "leading": the robot heads to the destination and the visitor follows. Completion is
-      // gated on the VISITOR catching up to the (idle-at-destination) robot, not just the
-      // robot's own idle state -- see VISITOR_ARRIVAL_DISTANCE_M's doc comment for why that
-      // distinction exists and why the check is distance-based + settle-debounced rather than
-      // the visitor's own `state === "idle"`.
-      // Robust "robot has arrived at the destination" (see ROBOT_ARRIVAL_TOLERANCE_M's doc
-      // comment): the flaky schema-"idle" flag OR being within ROBOT_ARRIVAL_TOLERANCE_M of the
-      // stored destination point. The distance path is what survives a busy destination where
-      // parked fleet robots + the trailing visitor keep the arrived robot from ever holding
-      // "idle". It cannot false-fire mid-route: the destination is the endpoint, so the robot
-      // is only within tolerance of it at the very end.
-      const robotIdleAtDestination =
+      // "leading": the robot heads to the destination and the visitor follows. Completion needs
+      // BOTH halves -- the robot measurably AT the destination, and the VISITOR caught up to it
+      // -- see VISITOR_ARRIVAL_DISTANCE_M's doc comment for why the visitor half is
+      // distance-based + settle-debounced rather than the visitor's own `state === "idle"`.
+      // "The robot has arrived at the destination" is a POSITIONAL claim and is tested as one
+      // (see ROBOT_DESTINATION_RADIUS_M's doc comment): the robot must have been dispatched to
+      // the destination at the start of this leg (`escortLeadTarget` non-null), have had
+      // ARRIVAL_GRACE_PERIOD_S since that dispatch to start moving, and actually be within
+      // ROBOT_DESTINATION_RADIUS_M of that point. The schema `state === "idle"` flag is NOT
+      // accepted in place of any of that -- accepting it is what let an escort "complete" at
+      // the pickup point, where the just-finished fetch leg leaves the robot stopped next to
+      // the person and 20m from the room they asked for.
+      const leadTarget = visitor.escortLeadTarget;
+      const robotAtDestination =
+        leadTarget !== null &&
         visitor.escortElapsedSeconds >= ARRIVAL_GRACE_PERIOD_S &&
-        (robotAgent.state === "idle" ||
-          (visitor.escortDestination !== null &&
-            Math.hypot(
-              robotAgent.x - visitor.escortDestination.x,
-              robotAgent.z - visitor.escortDestination.z,
-            ) <= ROBOT_ARRIVAL_TOLERANCE_M));
+        Math.hypot(robotAgent.x - leadTarget.x, robotAgent.z - leadTarget.z) <=
+          ROBOT_DESTINATION_RADIUS_M;
       const visitorWithinArrivalDistance =
         Math.hypot(visitorAgent.x - robotAgent.x, visitorAgent.z - robotAgent.z) <=
         VISITOR_ARRIVAL_DISTANCE_M;
-      const arrivalConditionMet = robotIdleAtDestination && visitorWithinArrivalDistance;
+      const arrivalConditionMet = robotAtDestination && visitorWithinArrivalDistance;
       const settledSeconds = arrivalConditionMet
         ? (this.arrivalSettleSeconds.get(visitor.id) ?? 0) + dtSeconds
         : 0;
@@ -736,7 +864,7 @@ export class EscortManager {
           visitorAgent,
           robotAgent,
           timedOut ? "timed_out" : "completed",
-          robotIdleAtDestination,
+          robotAtDestination,
         );
         continue;
       }
@@ -762,8 +890,12 @@ export class EscortManager {
     visitorAgent: { x: number; z: number },
     robotAgent: { x: number; z: number },
     outcome: "completed" | "timed_out",
-    robotIdleAtDestination: boolean,
+    robotAtDestination: boolean,
   ): void {
+    // Captured BEFORE endEscort() nulls `escortDestination` out -- see
+    // `EscortOutcome.visitorDistanceToDestinationM`'s doc comment for why the
+    // distance-to-DESTINATION pair is reported and not just robot-to-visitor separation.
+    const destination = visitor.escortDestination;
     if (outcome === "timed_out") {
       console.warn(
         `EscortManager: escort timeout for visitor "${visitor.id}" / robot "${visitor.robotId}" ` +
@@ -784,7 +916,13 @@ export class EscortManager {
       phase: visitor.escortPhase === "approaching" ? "approaching" : "leading",
       durationSeconds: visitor.escortElapsedSeconds,
       separationM: Math.hypot(visitorAgent.x - robotAgent.x, visitorAgent.z - robotAgent.z),
-      robotIdleAtDestination,
+      robotAtDestination,
+      visitorDistanceToDestinationM: destination
+        ? Math.hypot(visitorAgent.x - destination.x, visitorAgent.z - destination.z)
+        : null,
+      robotDistanceToDestinationM: destination
+        ? Math.hypot(robotAgent.x - destination.x, robotAgent.z - destination.z)
+        : null,
     });
     this.endEscort(visitor);
   }
@@ -811,6 +949,7 @@ export class EscortManager {
     visitor.escortPhase = null;
     visitor.greetSecondsRemaining = 0;
     visitor.escortDestination = null;
+    visitor.escortLeadTarget = null;
     visitor.escortElapsedSeconds = 0;
     visitor.escortSinceLastTrailUpdateSeconds = 0;
     visitor.robotPositionHistory = [];
