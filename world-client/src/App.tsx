@@ -9,6 +9,7 @@ import { useWorldRoom, type ConnectionStatus } from './net/useWorldRoom'
 import { useFloorPlan } from './net/useFloorPlan'
 import { useFurniture } from './net/useFurniture'
 import { AgentInstances } from './scene/AgentInstances'
+import { AgentLabels } from './scene/AgentLabels'
 import { Furniture } from './scene/Furniture'
 import { ChargingPads } from './scene/ChargingPads'
 import { RouteLines } from './scene/RouteLine'
@@ -291,6 +292,12 @@ function App() {
           <ChargingPads stations={stations} />
 
           <AgentInstances agentIds={agentIds} agents={agents} />
+          {/* Floating name tag above each agent's head, saying who that person is (or which
+              robot that robot is). Must sit INSIDE this reflection group with the agents it
+              labels: the tag anchors are positioned in the same raw floor-plan meters the agent
+              models are, so anchoring them outside the group would mirror every tag to the
+              opposite side of the building from its agent. See AgentLabels.tsx. */}
+          <AgentLabels agentIds={agentIds} agents={agents} />
           <RouteLines agentIds={agentIds} agents={agents} />
         </group>
 

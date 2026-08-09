@@ -21,8 +21,12 @@ const ROBOT_MODEL_URL = assetUrl('/models/robot.glb')
  * body's footprint overran the 0.25m navmesh/crowd radius and clipped walls. At 0.5m the
  * visual body sits inside the agent footprint, so robots stop poking through walls, and they
  * still read as clearly distinct from the 1.7m visitor avatars (see Visitor.tsx).
+ *
+ * Exported so AgentLabels.tsx can pin a robot's name tag just above the actual height this file
+ * scales the model to, rather than restating 0.5 in a second file where the two could silently
+ * drift apart (this constant has already been changed once, 1.4 -> 0.5).
  */
-const ROBOT_HEIGHT_M = 0.5
+export const ROBOT_HEIGHT_M = 0.5
 
 /**
  * Upper bound on simultaneous robot instances, sized for drei's <Instances> instance-attribute

@@ -44,10 +44,53 @@ declare module '@react-three/fiber' {
  */
 const ROUTE_LINE_Y = 0.02
 
-/** Line width in world meters (sizeAttenuation=1 below makes lineWidth a world-space size,
- * not a screen-pixel size -- see MeshLineMaterial's `sizeAttenuation` param). Thin, matte
- * marker on the floor. */
-const ROUTE_LINE_WIDTH_M = 0.06
+/**
+ * Line width, in MeshLineMaterial's screen-space units. Paired with `sizeAttenuation={0}` on the
+ * material below, which is the actual fix for "the route is only visible at extreme zoom".
+ *
+ * ## What was wrong
+ *
+ * The width used to be a WORLD size (`sizeAttenuation={1}`, 0.06m). A world-space width has to
+ * survive this scene's entire zoom range on one number, and it cannot: the default kiosk camera
+ * (App.tsx frames the whole ~36x21m floor from ~37m out at fov 50) shows about 35m of world
+ * across the viewport height, so on a ~900px canvas a 0.06m line is ~1.5 CSS pixels before the
+ * floor's tilt foreshortens it further. A 1.5px semi-transparent dark red line on a light grey
+ * floor is what the user was looking at, and it is why zooming in "fixed" it: zooming multiplies
+ * pixels-per-meter, so the same line becomes tens of pixels wide once the camera is inside one
+ * room.
+ *
+ * ## Why screen-space rather than a bigger world width
+ *
+ * Simply raising the world width trades one end of the zoom range for the other. To reach a
+ * comfortable ~7px at the default framing it would need to be ~0.30m, and that same 0.30m
+ * becomes a ~40px ribbon once the camera drops to room level, i.e. a fat band wider than the
+ * 0.5m robot drawing it. There is no world number that is both.
+ *
+ * `sizeAttenuation={0}` removes the trade entirely: meshline's vertex shader then divides the
+ * ribbon's expansion by the projection so the line holds a constant width ON SCREEN at any
+ * camera distance (verified in the installed meshline@3.3.1 source, not assumed -- the
+ * `if (sizeAttenuation == 0.)` branch multiplies the offset by the clip-space w and divides by
+ * `resolution * projectionMatrix`, which cancels the perspective divide that otherwise shrinks
+ * it with distance). That is also exactly the behaviour the rest of this scene's annotation
+ * layer already committed to: RoomLabels.tsx deliberately drops drei's `distanceFactor` for the
+ * same reason, because a route line and a room name are both map annotation, not furniture.
+ *
+ * ## The number
+ *
+ * meshline's screen-space width is NOT pixels; it is scaled by the camera's projection, so the
+ * on-screen width works out to roughly `lineWidth / (2 / tan(fov/2))` px, i.e. ~lineWidth/4.3 px
+ * at App.tsx's fov of 50. 30 therefore lands around 7 px, which is a clear, obviously-deliberate
+ * marker at the default framing without being a band. It is resolution-independent, so it does
+ * not thin out on a big kiosk display.
+ *
+ * ## Bloom
+ *
+ * Unchanged, deliberately: App.tsx's <Bloom luminanceThreshold={0.3}> thresholds PER PIXEL
+ * luminance, and ROUTE_LINE_COLOR's luminance (~0.20, see its comment) is untouched by this.
+ * Widening the line only puts more pixels below the threshold, so the route stays matte and
+ * still does not glow -- the width fix cannot smuggle the removed glow back in.
+ */
+const ROUTE_LINE_WIDTH_SCREEN = 30
 
 /** Plain solid red, DELIBERATELY dim enough NOT to bloom. App.tsx runs a scene-wide <Bloom>
  * with luminanceThreshold=0.3; its luminance is the standard dot(color, [0.2125,0.7154,0.0721]),
@@ -116,9 +159,34 @@ function RouteLineInstance({ snapshot }: { snapshot: AgentSnapshot }) {
       <meshLineMaterial
         args={materialArgs}
         color={ROUTE_LINE_COLOR}
-        lineWidth={ROUTE_LINE_WIDTH_M}
-        sizeAttenuation={1}
+        lineWidth={ROUTE_LINE_WIDTH_SCREEN}
+        sizeAttenuation={0}
         resolution={[size.width, size.height]}
+        // REQUIRED, not cosmetic: without this the route line is not thin, it is INVISIBLE.
+        //
+        // App.tsx wraps every in-scene component in <group scale={[1, 1, -1]}> for the north-up
+        // convention. That is a mirror, so the mesh's world matrix has a NEGATIVE determinant,
+        // and three.js reacts by flipping the winding convention for the whole draw
+        // (WebGLRenderer computes `frontFaceCW = object.matrixWorld.determinant() < 0` and calls
+        // gl.frontFace(CW)). For ordinary geometry that is exactly right, because mirroring the
+        // vertices really does reverse their projected winding.
+        //
+        // A meshline ribbon is not ordinary geometry. Its two triangles per segment are expanded
+        // in SCREEN space by the vertex shader: each vertex is offset along +/- the perpendicular
+        // of the PROJECTED segment direction (meshline@3.3.1's vertexShader, `normal = vec4(-dir.y,
+        // dir.x, ...)` with the +1/-1 `side` attribute). Working the signed area out from that
+        // source, the triangles come out counter-clockwise in NDC for ANY segment, mirrored parent
+        // or not, because the offset is derived from the direction AFTER projection. So the mirror
+        // flips the culling convention while the ribbon's winding does not follow, and every route
+        // line is back-face culled.
+        //
+        // Measured, not deduced: with the line at its new screen-space width (~7px, unmissable)
+        // and the default FrontSide material, a full-frame gl.readPixels of the live scene found
+        // ZERO red pixels while the server was publishing 12-22m routes for all five robots.
+        // Adding this one prop, changing nothing else, made them draw. A flat unlit ribbon has no
+        // meaningful back face, so drawing both sides costs nothing and makes the line immune to
+        // the parent transform.
+        side={THREE.DoubleSide}
         transparent
         depthWrite={false}
       />

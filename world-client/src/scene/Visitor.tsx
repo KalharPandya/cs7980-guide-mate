@@ -12,8 +12,11 @@ import { lerpXZToward } from './agentMotion'
 // handed to useGLTF() is a runtime fetch the bundler never rewrites. See assetUrl.ts.
 const VISITOR_MODEL_URL = assetUrl('/models/visitor.glb')
 
-/** Target standing height in meters -- an average adult person. See Robot.tsx for the robot's. */
-const VISITOR_HEIGHT_M = 1.7
+/** Target standing height in meters -- an average adult person. See Robot.tsx for the robot's.
+ * Exported so AgentLabels.tsx can pin a visitor's name tag just above the actual head height
+ * this file scales the model to, instead of restating 1.7 in a second file where the two could
+ * silently drift apart (the same reasoning RoomLabels.tsx applies to coreHeightForWalls). */
+export const VISITOR_HEIGHT_M = 1.7
 
 /**
  * Real clip names embedded in visitor.glb (Quaternius CC0 human, Task 0.4), inspected directly

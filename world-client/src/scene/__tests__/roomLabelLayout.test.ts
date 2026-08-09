@@ -31,6 +31,12 @@ import type { FloorPlan, FloorPlanWall } from '../floorPlanTypes'
 import { roomLabelHeightForWalls } from '../RoomLabels'
 import { tallestWallHeight } from '../floorPlanUtils'
 import {
+  VISITOR_NAMES,
+  displayNameForAgent,
+  stableHash,
+  trailingNumber,
+} from '../agentLabel'
+import {
   ESTIMATED_LABEL_HEIGHT_PX,
   LABEL_GAP_PX,
   estimateLabelWidthPx,
@@ -346,6 +352,87 @@ function candidate(
   console.log(
     `  label height ${labelHeight.toFixed(2)}m = core height ${coreHeight.toFixed(2)}m ` +
       `(tallest wall ${tallest}m) + ${clearance.toFixed(2)}m clearance`,
+  )
+}
+
+// =============================================================================================
+// AGENT NAME TAGS (../agentLabel.ts, ../AgentLabels.tsx)
+//
+// The floating per-agent name tags added 2026-08-09 reuse this module's placement rule outright
+// (selectVisibleLabels, constant screen size, drop-don't-nudge), so their layout is already
+// covered by cases 1-10 above and is not re-proven here. What IS new and worth pinning is the
+// DISPLAY NAME derivation, which is the only part of that feature that can be quietly wrong:
+// the world-server publishes no human-readable name at all, so the tag text is derived from the
+// agent id on the client, and it has to be deterministic (the same agent must be the same person
+// on every frame, after a reconnect, and on every machine) and generic (no hardcoded `virtual/`
+// or `sim-visitor-` prefix matching).
+//
+// These live in this file rather than a new one deliberately: this package wires each test file
+// into `npm test` through package.json's script list, and this change owns only src/, so a new
+// test file would never actually run in CI. This is the label-layout test and these are labels.
+// =============================================================================================
+{
+  // Real robot ids, exactly as world/src/iot/messages.ts and the wire-conformance fixture mint
+  // them. The number is the robot's identity and must survive onto the tag.
+  assert.equal(displayNameForAgent('virtual/1', 'robot'), 'Robot 1')
+  assert.equal(displayNameForAgent('virtual/12', 'robot'), 'Robot 12')
+  assert.equal(displayNameForAgent('virtual/50', 'robot'), 'Robot 50')
+
+  // Generic, not pinned to the `virtual/` fleet naming: any id ending in digits reads the same
+  // way. This is the assertion that fails if someone "simplifies" the rule to a prefix strip.
+  assert.equal(displayNameForAgent('turtlebot468', 'robot'), 'Robot 468')
+  assert.equal(displayNameForAgent('fleet-b/robot-7', 'robot'), 'Robot 7')
+
+  // No trailing number: falls back to the last path segment rather than printing a whole topic
+  // path or an empty pill.
+  assert.equal(displayNameForAgent('virtual/spare', 'robot'), 'Robot spare')
+
+  // Total, including the degenerate input: never an empty tag.
+  assert.ok(displayNameForAgent('', 'robot').length > 0, 'an empty robot id must still name something')
+  assert.ok(displayNameForAgent('', 'visitor').length > 0, 'an empty visitor id must still name something')
+}
+
+{
+  // Visitors get a human first name from the pool, because `sim-visitor-3` on a person's head
+  // communicates nothing to a kiosk viewer. Slot-pooled ids map onto the pool one-to-one via
+  // their trailing number, so the concurrent simulated visitors (target ~5, well under the pool
+  // size) can never share a name.
+  const simIds = Array.from({ length: VISITOR_NAMES.length }, (_, i) => `sim-visitor-${i}`)
+  const simNames = simIds.map((id) => displayNameForAgent(id, 'visitor'))
+  assert.deepEqual(
+    simNames,
+    [...VISITOR_NAMES],
+    'sim-visitor-N must map onto the name pool in order, so concurrent visitors cannot collide',
+  )
+
+  // DETERMINISM is the whole requirement: same id, same name, every call. A Math.random() pick
+  // at spawn would pass a single-call eyeball check and rename people on any remount.
+  for (const id of ['sim-visitor-3', 'chain-visitor-1', 'walk-in-9f2a7c', '']) {
+    const first = displayNameForAgent(id, 'visitor')
+    for (let i = 0; i < 50; i++) {
+      assert.equal(displayNameForAgent(id, 'visitor'), first, `"${id}" must name the same person every call`)
+    }
+    assert.ok(VISITOR_NAMES.includes(first), `"${id}" must resolve to a name from the pool, got "${first}"`)
+  }
+
+  // An opaque id (no trailing number, the shape an agent-command `visitor_id` can take) still
+  // resolves through the hash, and the hash itself is stable and 32-bit unsigned.
+  const opaque = 'visitor-3f2ad91c'
+  assert.equal(stableHash(opaque), stableHash(opaque))
+  assert.ok(Number.isInteger(stableHash(opaque)) && stableHash(opaque) >= 0)
+  assert.ok(VISITOR_NAMES.includes(displayNameForAgent(opaque, 'visitor')))
+
+  // Anything that is not explicitly a robot is a person: the failure direction is a friendly
+  // name, never a machine id leaking onto the screen.
+  assert.ok(VISITOR_NAMES.includes(displayNameForAgent('virtual/1', 'something-new')))
+
+  // Trailing-number extraction is by SUFFIX, not "first number anywhere in the string".
+  assert.equal(trailingNumber('floor14-guide-3'), 3)
+  assert.equal(trailingNumber('virtual/spare'), null)
+
+  console.log(
+    `  agent tags: ${VISITOR_NAMES.length} visitor names, e.g. sim-visitor-0 -> ${simNames[0]}, ` +
+      `sim-visitor-3 -> ${simNames[3]}, virtual/12 -> ${displayNameForAgent('virtual/12', 'robot')}`,
   )
 }
 
