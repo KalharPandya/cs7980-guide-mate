@@ -75,9 +75,29 @@ Infra:
   route, base=/viz/ and VITE_WORLD_SERVER_URL=wss://$GUIDEMATE_DOMAIN/world are ONE coupled
   decision). Merged the live voice branch in before deploying.
 
-## IN PROGRESS (resume here)
-**Wiring the IoT bridge so Moses ACTUALLY dispatches virtual robots in production.**
-The identity is CREATED (user approved "do it"):
+## DONE 2026-08-09: Moses dispatches virtual robots in production (IoT bridge LIVE)
+Verified end to end on the live instance: published an `assign` (from_room="Classroom 1425",
+room="Kitchen") to `guidemate/virtual/fleet/cmd`, joined the live world room, and watched the
+visitor spawn AT Classroom 1425 (5.73, 14.45), a robot fetch it, then escort it toward the
+Kitchen (state idle -> moving). App is IoT-connected (`/readyz` mqtt:true, real registry via
+SigV4 WebSocket signing with the instance role, NOT a cert). World-server bridge connects with
+the X.509 Virtual-Fleet cert.
+
+How it was wired (so it can be reproduced / repaired):
+- Cert/key/CA live on the host at `/opt/guidemate/certs/{cert,key,AmazonRootCA1}.pem`, bind
+  mounted read only into world-server at `/certs` (compose commit ee3bb05). They PERSIST across
+  redeploys (host dir, not in the image).
+- `/etc/guidemate.env` sets `GUIDEMATE_CERT=/certs/cert.pem GUIDEMATE_KEY=/certs/key.pem
+  GUIDEMATE_CA=/certs/AmazonRootCA1.pem` (endpoint was already set).
+- The key + cert are backed up in SSM Parameter Store: `/guidemate/fleet/key` (SecureString),
+  `/guidemate/fleet/cert` (String). To re-provision after an instance replacement, pull them
+  with `aws ssm get-parameter --with-decryption` straight to files (never echo the key), curl
+  AmazonRootCA1.pem, chmod 600 the key, set the env, redeploy.
+- IoT identity: thing `Virtual-Fleet`, cert 542a66c4..., policy `guidemate-fleet-policy` (scoped
+  to `guidemate/virtual/*`, cannot reach the physical robot), shadow default-deny.
+
+### Historical note (this section was "in progress"; kept for the how)
+The identity was CREATED (user approved "do it"):
 - Thing `Virtual-Fleet`, active cert
   `arn:aws:iot:us-west-2:852373397000:cert/542a66c4174aa28de72931949ceae3bc5021b5c148636f4860bad22c3b38bf8f`,
   policy `guidemate-fleet-policy` (scoped to `guidemate/virtual/*` + this thing's shadow, cannot
