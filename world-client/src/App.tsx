@@ -265,7 +265,11 @@ function App() {
               land mirrored across the building from the holes they fill. See Cores.tsx. */}
           <Cores holes={floorPlan.holes} walls={floorPlan.walls} />
           <Walls walls={floorPlan.walls} walkableOutline={floorPlan.walkableOutline} />
-          <RoomLabels rooms={floorPlan.rooms} />
+          {/* `walls` is passed for the label HEIGHT only (see RoomLabels.tsx): the labels are
+              pinned above the plan's own tallest geometry, derived from the same
+              coreHeightForWalls() the cores above are extruded to, so they clear the building
+              instead of being occluded by it. */}
+          <RoomLabels rooms={floorPlan.rooms} walls={floorPlan.walls} />
 
           {/* Charging pads sit on the carpet under the robots that park on them, inside the
               reflection group so they mirror with the floor/walls/agents. Rendered before the

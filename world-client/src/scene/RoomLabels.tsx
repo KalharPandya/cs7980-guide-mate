@@ -3,7 +3,8 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 import { Group, Vector3 } from 'three'
 
-import type { FloorPlanRoom } from './floorPlanTypes'
+import { coreHeightForWalls } from './Cores'
+import type { FloorPlanRoom, FloorPlanWall } from './floorPlanTypes'
 import {
   ESTIMATED_LABEL_HEIGHT_PX,
   estimateLabelWidthPx,
@@ -11,7 +12,41 @@ import {
   type LabelCandidate,
 } from './roomLabelLayout'
 
-const LABEL_HEIGHT = 1.6 // meters above the floor
+/**
+ * How far a room label floats ABOVE the tallest thing in the building, in meters.
+ *
+ * The label used to sit at a flat 1.6m, i.e. BELOW both the 2.7m walls and the ~2.85m cores, which
+ * made drei's `occlude` raycast hide any label whose anchor happened to sit behind a core from the
+ * current camera. Measured in the running app at the DEFAULT opening camera position, 13 of the 18
+ * labels drew: the five missing ones were all three washrooms, 1408 and North Collaboration Space,
+ * so the first frame a viewer sees never named a washroom. A room label is a map ANNOTATION, not a
+ * physical object in the room, so the fix is for it to clear the building's own geometry rather
+ * than hide behind it. (Four of those five came back purely from this height change. North
+ * Collaboration Space is a separate, marginal case: its rectangle also lands ~1px inside the
+ * collision gutter against 1409's, so the layout pass in roomLabelLayout.ts drops it on its own at
+ * some viewport sizes, which is that rule working as designed rather than an occlusion problem.)
+ *
+ * Only a small step is needed and a small step is all this takes: the camera always looks DOWN at
+ * the floor plate, so a ray from the camera to an anchor at height h never dips below h, and an
+ * anchor at or above the tallest geometry therefore cannot be crossed by that geometry at all.
+ * The clearance exists so the anchor is not sitting exactly ON the core's top face, where it would
+ * graze it (and be at the mercy of float rounding in the raycast) rather than clear it. Kept small
+ * so the annotation still reads as belonging to the room under it rather than floating in the sky.
+ */
+const LABEL_CLEARANCE_ABOVE_CORE_M = 0.25
+
+/**
+ * Height (meters above the floor) to pin room labels at, for a given wall list.
+ *
+ * Derived from the plan's OWN geometry, never hardcoded: `coreHeightForWalls` (Cores.tsx) is
+ * already the single definition of how tall the tallest thing in the scene is (the plan's tallest
+ * wall plus the core's step above it), so this reuses that function instead of restating 2.85 in a
+ * second file where the two could silently drift apart. A floor plan authored at different
+ * absolute heights therefore gets labels that clear ITS geometry, not floor-14.json's.
+ */
+export function roomLabelHeightForWalls(walls: FloorPlanWall[]): number {
+  return coreHeightForWalls(walls) + LABEL_CLEARANCE_ABOVE_CORE_M
+}
 
 /**
  * How often the screen-space layout pass runs, in seconds. The labels are DOM nodes that drei
@@ -93,10 +128,21 @@ interface LabelRuntime {
  * exactly what we want: occlusion and collision then resolve through ONE opacity write instead
  * of two components fighting over the same node's visibility. It also lets an occluded label be
  * marked ineligible so it does not reserve screen space against a label that CAN be seen.
+ *
+ * Occlusion is kept deliberately ON even though the anchors now clear the building (see
+ * LABEL_CLEARANCE_ABOVE_CORE_M): the height fix is what stops labels hiding behind the cores for
+ * the normal looking-down-at-the-plate camera, and `occlude` is still the right behaviour for the
+ * cases height cannot solve, e.g. a camera dragged down to near floor level where a room really is
+ * behind a wall. Height and occlusion are complementary here, not alternatives, so this fix does
+ * not switch a safeguard off to get its result.
  */
-export function RoomLabels({ rooms }: { rooms: FloorPlanRoom[] }) {
+export function RoomLabels({ rooms, walls }: { rooms: FloorPlanRoom[]; walls: FloorPlanWall[] }) {
   const groupRef = useRef<Group>(null)
   const { camera, size } = useThree()
+
+  // One height for every label, from the plan's own geometry. Recomputed only when the plan's
+  // walls change, which in practice is once (the floor plan is fetched once and never mutated).
+  const labelHeight = useMemo(() => roomLabelHeightForWalls(walls), [walls])
 
   // Keyed by room name. Rebuilt only when the floor plan itself changes, so the ref callbacks
   // and onOcclude handlers below keep a stable identity across renders (a fresh ref callback
@@ -163,7 +209,7 @@ export function RoomLabels({ rooms }: { rooms: FloorPlanRoom[] }) {
         entry.measured = true
       }
 
-      scratch.set(room.center[0], LABEL_HEIGHT, room.center[1])
+      scratch.set(room.center[0], labelHeight, room.center[1])
       group.localToWorld(scratch)
       scratch.project(camera)
 
@@ -197,7 +243,7 @@ export function RoomLabels({ rooms }: { rooms: FloorPlanRoom[] }) {
       {handlers.map(({ room, setNode, setOccluded }) => (
         <Html
           key={room.name}
-          position={[room.center[0], LABEL_HEIGHT, room.center[1]]}
+          position={[room.center[0], labelHeight, room.center[1]]}
           center
           occlude
           onOcclude={setOccluded}

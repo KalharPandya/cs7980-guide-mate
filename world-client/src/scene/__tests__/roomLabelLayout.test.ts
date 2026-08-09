@@ -13,6 +13,12 @@
  * which of the three survive at each. That is the same function the component calls, on the same
  * shape of input, so it is the actual shipped decision and not a restatement of it.
  *
+ * (Update 2026-08-09: the embedded browser DID composite frames in a later session, and the label
+ * anchor-height fix in case 11 was verified by counting `data-room-label` opacity in the live DOM
+ * as well as asserted here. The numeric approach above is kept because it does not depend on that
+ * being true on any given day, and because it pins the rule at zoom levels a single screenshot
+ * cannot cover.)
+ *
  * Plain node:assert script, run with tsx -- matches this package's test convention.
  * Run with: npx tsx src/scene/__tests__/roomLabelLayout.test.ts
  */
@@ -20,7 +26,10 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import type { FloorPlan } from '../floorPlanTypes'
+import { coreHeightForWalls } from '../Cores'
+import type { FloorPlan, FloorPlanWall } from '../floorPlanTypes'
+import { roomLabelHeightForWalls } from '../RoomLabels'
+import { tallestWallHeight } from '../floorPlanUtils'
 import {
   ESTIMATED_LABEL_HEIGHT_PX,
   LABEL_GAP_PX,
@@ -283,6 +292,61 @@ function candidate(
   )
   console.log(`  whole-floor @ ${pixelsPerMeter} px/m: ${drawn.length}/18 labels drawn`)
   console.log(`  dropped: ${all.filter((c) => !visible.includes(c.key)).map((c) => c.key).join(', ') || '(none)'}`)
+}
+
+// ---------------------------------------------------------------------------------------------
+// 11. Label ANCHOR HEIGHT (2026-08-09). The labels used to sit at a flat 1.6m, below both the
+//     2.7m walls and the ~2.85m cores, so drei's `occlude` raycast hid any label whose anchor sat
+//     behind a core from the current camera. Confirmed in a real browser at the default opening
+//     camera: 13 of 18 labels drew, and the 5 missing ones were all three washrooms plus 1408 and
+//     North Collaboration Space. RoomLabels.tsx now pins the anchor above the plan's tallest
+//     geometry instead, reusing Cores.tsx's coreHeightForWalls rather than restating its number.
+//
+//     What is asserted here is the DERIVATION, which is the part that can silently rot: that the
+//     height genuinely clears the cores, that the clearance is a small step and not an arbitrary
+//     leap into the sky, and that it tracks a plan authored at different absolute heights instead
+//     of being a hardcoded 3.1. Whether the labels are actually visible on screen is a rendering
+//     question and was verified in the browser, not here.
+// ---------------------------------------------------------------------------------------------
+{
+  const floorPlan: FloorPlan = JSON.parse(readFileSync(FLOOR_PLAN_PATH, 'utf8'))
+  const tallest = tallestWallHeight(floorPlan.walls)
+  const coreHeight = coreHeightForWalls(floorPlan.walls)
+  const labelHeight = roomLabelHeightForWalls(floorPlan.walls)
+
+  assert.ok(
+    labelHeight > coreHeight,
+    `labels must clear the cores (${coreHeight}m), got ${labelHeight}m`,
+  )
+  assert.ok(
+    labelHeight > tallest,
+    `labels must clear the tallest wall (${tallest}m), got ${labelHeight}m`,
+  )
+  // A step, not a leap: far enough off the core's top face that the anchor cannot graze it, close
+  // enough that the annotation still reads as belonging to the room beneath it.
+  const clearance = labelHeight - coreHeight
+  assert.ok(
+    clearance > 0.05 && clearance < 1,
+    `clearance above the core should be a small positive step, got ${clearance}m`,
+  )
+
+  // Generic, not tuned to floor-14.json: halving every wall height must halve what the labels sit
+  // above (modulo the fixed steps), which a hardcoded 3.1 would not do. Same shape of check as
+  // floorGeometry.test.ts's core-height case, because it is the same derivation underneath.
+  const halved: FloorPlanWall[] = floorPlan.walls.map((w) => ({ ...w, height: w.height / 2 }))
+  assert.equal(roomLabelHeightForWalls(halved), coreHeightForWalls(halved) + clearance)
+  assert.ok(
+    roomLabelHeightForWalls(halved) < labelHeight,
+    'a plan authored at lower absolute heights must get lower labels, not the same hardcoded one',
+  )
+
+  // Degenerate plan: still a positive height, so the labels never collapse to the floor.
+  assert.ok(roomLabelHeightForWalls([]) > 0, 'a wall-less plan must still get a positive label height')
+
+  console.log(
+    `  label height ${labelHeight.toFixed(2)}m = core height ${coreHeight.toFixed(2)}m ` +
+      `(tallest wall ${tallest}m) + ${clearance.toFixed(2)}m clearance`,
+  )
 }
 
 console.log('roomLabelLayout.test.ts: all assertions passed')
