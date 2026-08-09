@@ -13,8 +13,10 @@ const LABEL_HEIGHT = 1.6 // meters above the floor
  * verification bar for this task is zero console errors. <Html> renders a real DOM node using
  * the system font stack, so there's no external asset that can fail to load.
  *
- * Coordinate convention matches Floor.tsx/Walls.tsx/AgentInstances.tsx: world (x, z) = floor-plan
- * (x, z) directly, no recentering.
+ * Coordinate convention matches Floor.tsx/Walls.tsx/AgentInstances.tsx: labels are positioned in
+ * raw floor-plan (x, z) meters, no recentering; App.tsx's single <group scale={[1, 1, -1]}>
+ * reflects floor-plan z (north) to world -z so the top-down view reads north-up like the exit
+ * map, with every in-scene component reflecting together.
  *
  * `occlude` (Task 3.2 forward-note): without it, the label's DOM node has no depth test against
  * the WebGL scene, so it bleeds through walls at some camera angles. The plain boolean form

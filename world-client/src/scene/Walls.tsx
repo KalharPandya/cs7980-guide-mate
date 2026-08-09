@@ -66,7 +66,9 @@ export const SOLID_MATERIAL = new THREE.MeshStandardMaterial({
  * Extrudes one floor-plan wall segment into a box running from `a` to `b`, `height` meters tall,
  * standing on the floor (base at y=0, matching Floor.tsx's mesh which sits just below y=0 to
  * avoid z-fighting). Coordinate convention matches Floor.tsx/RoomLabels.tsx/AgentInstances.tsx:
- * world (x, z) = floor-plan (x, z) directly, no recentering.
+ * geometry is authored in raw floor-plan (x, z) meters, no recentering; App.tsx's single
+ * <group scale={[1, 1, -1]}> then reflects floor-plan z (north) to world -z so the top-down
+ * view reads north-up like the exit map, with every in-scene component reflecting together.
  *
  * BoxGeometry is authored with its length along local +X. To align that with the wall's actual
  * direction in the XZ plane, the mesh is rotated about Y by directionToYRotation(dx, dz), where

@@ -175,19 +175,33 @@ function App() {
   // uses for agent positions (see world/src/rooms/WorldRoom.ts) -- the camera and MapControls
   // target are computed from the floor plan's actual bounding box every render, so this keeps
   // working even if floor-14.json's extent changes later.
+  //
+  // NORTH-UP CONVENTION: floor-plan z is NORTH and matches the authoritative exit map, but a
+  // top-down three.js camera in right-handed space puts +z toward the BOTTOM of the screen,
+  // which renders the map mirrored north<->south versus the exit map. The fix is a single
+  // <group scale={[1, 1, -1]}> below that reflects ALL in-scene floor-plan content (floor,
+  // walls, labels, agents, route lines) together, so floor-plan z (north) lands at world -z
+  // (top of a north-up view) and everything stays mutually consistent. Because the camera,
+  // MapControls target, and lights live OUTSIDE that group (in world space), each of their z
+  // coordinates is negated here so they aim at the now-reflected content. computeOutlineBounds
+  // stays in raw floor-plan meters; only the resulting world-space z coordinates are negated.
   const bounds = computeOutlineBounds(floorPlan.walkableOutline)
-  const target: [number, number, number] = [bounds.centerX, 0, bounds.centerZ]
+  const target: [number, number, number] = [bounds.centerX, 0, -bounds.centerZ]
   const maxExtent = Math.max(bounds.sizeX, bounds.sizeZ)
   const cameraPosition: [number, number, number] = [
     bounds.centerX + bounds.sizeX * 0.45,
     maxExtent * 0.85,
-    bounds.centerZ + bounds.sizeZ * 0.7,
+    -(bounds.centerZ + bounds.sizeZ * 0.7),
   ]
 
+  // Same fixed lighting offset as before, but the z component is subtracted (not added) because
+  // the scene content is reflected across z: this keeps the light in the SAME relative position
+  // to the geometry it lights, so the rendered picture is a clean north-up mirror rather than
+  // re-lit from the opposite side. (target[2] is already the reflected -bounds.centerZ.)
   const lightPosition: [number, number, number] = [
     target[0] + LIGHT_OFFSET[0],
     LIGHT_OFFSET[1],
-    target[2] + LIGHT_OFFSET[2],
+    target[2] - LIGHT_OFFSET[2],
   ]
 
   // Half-width/height of the shadow camera's orthographic frustum -- see SHADOW_MARGIN_M's doc
@@ -231,12 +245,21 @@ function App() {
             mounted in the scene graph, not just referenced, so its matrixWorld is real. */}
         <primitive object={lightTarget} position={target} />
 
-        <Floor floorPlan={floorPlan} />
-        <Walls walls={floorPlan.walls} />
-        <RoomLabels rooms={floorPlan.rooms} />
+        {/* NORTH-UP reflection group: everything that lives in floor-plan coordinates is a
+            child of this ONE group, so reflecting z (north) to world -z happens once and all of
+            it -- floor, walls, labels, agents, route lines -- stays mutually consistent (agents
+            keep standing on the right walls, route lines keep following the geometry). three.js
+            flips front-face winding automatically for this negative-determinant world matrix, so
+            normals, culling, and shadows for the floor and walls stay correct. The camera, lights,
+            and MapControls target sit OUTSIDE this group and have their z negated (see above). */}
+        <group scale={[1, 1, -1]}>
+          <Floor floorPlan={floorPlan} />
+          <Walls walls={floorPlan.walls} />
+          <RoomLabels rooms={floorPlan.rooms} />
 
-        <AgentInstances agentIds={agentIds} agents={agents} />
-        <RouteLines agentIds={agentIds} agents={agents} />
+          <AgentInstances agentIds={agentIds} agents={agents} />
+          <RouteLines agentIds={agentIds} agents={agents} />
+        </group>
 
         <MapControls
           ref={mapControlsRef}

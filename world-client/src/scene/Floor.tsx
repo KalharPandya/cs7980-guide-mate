@@ -10,8 +10,12 @@ import type { FloorPlan, Point2D } from './floorPlanTypes'
  * map is optional future work, not required here.
  *
  * Coordinate convention (shared with Walls.tsx, RoomLabels.tsx, and AgentInstances.tsx's
- * Robot.tsx/Visitor.tsx): world (x, y-up, z) maps directly to floor-plan (x, up, z) -- NOT
- * recentered on the origin. This matters because the world-server already emits agent
+ * Robot.tsx/Visitor.tsx): this component authors geometry in raw floor-plan (x, up, z) meters,
+ * NOT recentered on the origin. App.tsx wraps this and every other in-scene component in ONE
+ * <group scale={[1, 1, -1]}> so floor-plan z (north) is reflected to world -z, making the
+ * top-down view read north-up like the exit map. All these components reflect together, so they
+ * stay mutually consistent; only the camera/lights/target (outside that group) have z negated.
+ * This matters because the world-server already emits agent
  * positions in these same raw meters (see world/src/rooms/WorldRoom.ts, which sets
  * agent.x/z straight from plan.entrance.point / room.door, and Robot.tsx/Visitor.tsx, which
  * render snapshot.x/z as-is). Recentering the geometry here would desync it from the agents
@@ -23,9 +27,10 @@ import type { FloorPlan, Point2D } from './floorPlanTypes'
  * THREE.ShapeGeometry is authored in a local XY plane; to lay it flat with its normal facing +Y
  * (so it's lit and shadow-receiving like a normal floor) each 2D point is authored as (x, -z) in
  * that local plane, then the mesh is rotated -90 degrees about X. That "negate Y, then rotate"
- * pairing is what makes the final world Z come out as +z (matching the other components) while
- * still getting an upward-facing normal -- flipping either half of that pairing on its own would
- * either mirror the shape or point the normal down.
+ * pairing is what makes the group-local Z come out as +z (matching the other components, before
+ * App.tsx's reflection group flips them all to world -z) while still getting an upward-facing
+ * normal -- flipping either half of that pairing on its own would either mirror the shape or
+ * point the normal down.
  */
 function toShapePoint([x, z]: Point2D): THREE.Vector2 {
   return new THREE.Vector2(x, -z)
