@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Floor-14 Glass Marker</title>
+<style>
+  :root {
+    --bg: #1e1f22; --panel: #2a2c30; --line: #3a3d42; --ink: #e8e8ea;
+    --muted: #9aa0a6; --accent: #4ea1ff; --glass: #59b0ff; --solid: #c9c3b6;
+    --sel: #ffd23f; --danger: #e5534b; --ok: #46b56b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 13px/1.4 system-ui, sans-serif; overflow: hidden; }
+  #app { display: grid; grid-template-columns: 1fr 288px; height: 100vh; }
+  #stage { position: relative; overflow: hidden; }
+  canvas { display: block; position: absolute; inset: 0; }
+  #side { background: var(--panel); border-left: 1px solid var(--line);
+    padding: 12px; overflow-y: auto; }
+  h1 { font-size: 14px; margin: 0 0 2px; }
+  .sub { color: var(--muted); font-size: 11px; margin-bottom: 12px; }
+  .group { border-top: 1px solid var(--line); padding: 10px 0; }
+  .group:first-of-type { border-top: 0; padding-top: 0; }
+  .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase;
+    letter-spacing: .04em; margin-bottom: 6px; }
+  button { background: #34373c; color: var(--ink); border: 1px solid var(--line);
+    border-radius: 6px; padding: 7px 9px; cursor: pointer; font-size: 12px; }
+  button:hover { background: #3d4147; }
+  button.wide { width: 100%; }
+  button.glass { background: var(--glass); color: #06121f; border-color: var(--glass); }
+  button.solid { background: var(--solid); color: #1a1a1a; border-color: var(--solid); }
+  button.danger { border-color: var(--danger); color: #ff9a94; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .row.tight { gap: 4px; }
+  label.ck { display: flex; align-items: center; gap: 6px; cursor: pointer; margin: 4px 0; }
+  input[type=range] { width: 100%; }
+  .stat { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; padding: 1px 0; }
+  .stat b { font-weight: 600; }
+  .chip { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+  .hint { color: var(--muted); font-size: 11px; }
+  kbd { background: #3a3d42; border-radius: 4px; padding: 1px 5px; font-size: 11px; border: 1px solid #4a4d53; }
+  #toast { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+    background: #000a; border: 1px solid var(--line); padding: 6px 12px; border-radius: 8px;
+    opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #readout { position: absolute; left: 10px; bottom: 10px; background: #000a;
+    border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px;
+    font-variant-numeric: tabular-nums; color: var(--muted); }
+  #compass { position: absolute; right: 10px; top: 10px; background: #000a;
+    border: 1px solid var(--line); border-radius: 50%; width: 40px; height: 40px;
+    display: grid; place-items: center; color: var(--accent); font-weight: 700; }
+  #banner { position: absolute; left: 50%; top: 14px; transform: translateX(-50%);
+    background: #3a1d1d; border: 1px solid var(--danger); color: #ffd8d5; padding: 8px 14px;
+    border-radius: 8px; max-width: 70%; display: none; }
+  code { background: #22242a; border-radius: 4px; padding: 1px 4px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="compass">N&#8593;</div>
+    <div id="readout">&mdash;</div>
+    <div id="banner"></div>
+    <div id="toast"></div>
+  </div>
+  <div id="side">
+    <h1>Floor-14 Glass Marker</h1>
+    <div class="sub">Click a wall to flip it glass &harr; solid. Drag a box (or <kbd>Shift</kbd>+click)
+      to pick many, then mark them all at once. North up, drawn over the handbook plan.</div>
+
+    <div class="group">
+      <div class="lbl">Legend</div>
+      <div class="stat"><span><span class="chip" style="background:var(--solid)"></span>Solid wall</span><b id="nSolid">0</b></div>
+      <div class="stat"><span><span class="chip" style="background:var(--glass)"></span>Glass wall</span><b id="nGlass">0</b></div>
+      <div class="stat"><span><span class="chip" style="background:var(--sel)"></span>Selected</span><b id="nSel">0</b></div>
+    </div>
+
+    <div class="group">
+      <div class="lbl">Mark selection</div>
+      <div class="row tight">
+        <button id="markGlass" class="glass" disabled>Mark glass</button>
+        <button id="markSolid" class="solid" disabled>Mark solid</button>
+      </div>
+      <div class="row tight" style="margin-top:6px">
+        <button id="selAll">Select all</button>
+        <button id="selNone" disabled>Clear selection</button>
+        <button id="invert">Invert</button>
+      </div>
+      <div class="hint" style="margin-top:6px">Plain <b>click</b> = toggle one wall now.
+        <b>Shift</b>+click adds/removes from the selection. <b>Drag a rectangle</b> to grab every
+        wall it touches (hold <kbd>Shift</kbd> to add to the current selection).
+        <kbd>Alt</kbd>+drag or middle-drag pans, wheel zooms.</div>
+    </div>
+
+    <div class="group">
+      <div class="lbl">Plan overlay</div>
+      <input id="opacity" type="range" min="0" max="100" value="60" />
+      <label class="ck"><input type="checkbox" id="showImg" checked /> show handbook drawing</label>
+      <div class="row tight" style="margin-top:6px">
+        <button id="fitBtn">Fit view</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="lbl">Load plan</div>
+      <div class="row tight">
+        <button id="reload">Reload from server</button>
+        <button id="loadFile">Load JSON file&hellip;</button>
+      </div>
+      <div class="hint" id="srcNote" style="margin-top:6px">&mdash;</div>
+      <input id="file" type="file" accept="application/json,.json" style="display:none" />
+    </div>
+
+    <div class="group">
+      <div class="lbl">Export</div>
+      <button id="export" class="wide" style="background:var(--ok);color:#04140a;border-color:var(--ok)" disabled>Download floor-14.json</button>
+      <div class="hint" style="margin:6px 0">Overwrite <b>both</b> copies with the download:<br>
+        <code>world/data/floor-14.json</code><br>
+        <code>world-client/public/data/floor-14.json</code></div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// The handbook drawing, embedded so the underlay always works. Never changes.
+const EXIT_MAP_SRC = "__PNG_DATA_URI__";
+
+// --- world <-> handbook-pixel transform (documented in floor-14.json's own note) ---
+const S = 0.055644;          // meters per pixel
+const PY0 = 472;             // building bbox bottom row (+1 offset)
+const PNG_W = 636, PNG_H = 489;
+const worldToPx = (x, z) => [x / S, PY0 - z / S];
+const pxToWorld = (px, py) => [px * S, (PY0 - py) * S];
+
+// Candidate plan locations, tried in order. Covers the deployed client, a
+// python -m http.server rooted at world-client/public, and a server rooted at
+// world-client/ (so this tool at /tools/ can reach ../public/data).
+const PLAN_CANDIDATES = [
+  "/viz/data/floor-14.json",        // deployed client
+  "/data/floor-14.json",            // http.server in world-client/public
+  "../public/data/floor-14.json",   // tool at world-client/tools, server at world-client
+  "/public/data/floor-14.json",     // server at world-client
+  "../data/floor-14.json",          // tool sitting next to a data/ dir
+  "data/floor-14.json"              // last-ditch relative
+];
+
+// --- state ---
+let plan = null;                 // the full parsed plan; only walls[].glass is ever mutated
+const selection = new Set();     // selected wall indices
+let hoverWall = -1;
+let showImg = true;
+let overlayAlpha = 0.60;
+
+// --- view (pan/zoom over pixel space) ---
+let zoom = 1, panX = 0, panY = 0;
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+const $ = id => document.getElementById(id);
+
+const img = new Image();
+let imgReady = false;
+img.onload = () => { imgReady = true; draw(); };
+img.onerror = () => { imgReady = false; };
+img.src = EXIT_MAP_SRC;
+
+// screen <-> pixel
+const sx = px => px * zoom + panX;
+const sy = py => py * zoom + panY;
+const ipx = X => (X - panX) / zoom;
+const ipy = Y => (Y - panY) / zoom;
+
+function resize() {
+  const r = $("stage").getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = r.width * dpr; canvas.height = r.height * dpr;
+  canvas.style.width = r.width + "px"; canvas.style.height = r.height + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+}
+function fit() {
+  const r = $("stage").getBoundingClientRect();
+  const pad = 40;
+  zoom = Math.min((r.width - pad) / PNG_W, (r.height - pad) / PNG_H);
+  panX = (r.width - PNG_W * zoom) / 2;
+  panY = (r.height - PNG_H * zoom) / 2;
+  draw();
+}
+
+// wall endpoints in screen space
+function wallScreen(w) {
+  const a = worldToPx(w.a[0], w.a[1]);
+  const b = worldToPx(w.b[0], w.b[1]);
+  return [sx(a[0]), sy(a[1]), sx(b[0]), sy(b[1])];
+}
+function distToSeg(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+  let t = l2 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+function nearestWall(mx, my, radPx) {
+  if (!plan) return -1;
+  let best = -1, bestD = radPx;
+  plan.walls.forEach((w, i) => {
+    const [ax, ay, bx, by] = wallScreen(w);
+    const d = distToSeg(mx, my, ax, ay, bx, by);
+    if (d < bestD) { bestD = d; best = i; }
+  });
+  return best;
+}
+
+// segment vs axis-aligned rect (screen space) intersection test
+function segInRect(ax, ay, bx, by, x0, y0, x1, y1) {
+  const inside = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+  if (inside(ax, ay) || inside(bx, by)) return true;
+  // test against the 4 rect edges
+  const edges = [
+    [x0, y0, x1, y0], [x1, y0, x1, y1],
+    [x1, y1, x0, y1], [x0, y1, x0, y0]
+  ];
+  for (const [ex0, ey0, ex1, ey1] of edges)
+    if (segSeg(ax, ay, bx, by, ex0, ey0, ex1, ey1)) return true;
+  return false;
+}
+function segSeg(ax, ay, bx, by, cx, cy, dx, dy) {
+  const d1 = cross(cx, cy, dx, dy, ax, ay);
+  const d2 = cross(cx, cy, dx, dy, bx, by);
+  const d3 = cross(ax, ay, bx, by, cx, cy);
+  const d4 = cross(ax, ay, bx, by, dx, dy);
+  return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+}
+function cross(ax, ay, bx, by, px, py) { return (bx - ax) * (py - ay) - (by - ay) * (px - ax); }
+
+// --- drawing ---
+function draw() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#2b2c30"; ctx.fillRect(0, 0, w, h);
+
+  if (imgReady && showImg && overlayAlpha > 0) {
+    ctx.globalAlpha = overlayAlpha;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(img, sx(0), sy(0), PNG_W * zoom, PNG_H * zoom);
+    ctx.globalAlpha = 1;
+  }
+
+  if (!plan) return;
+
+  // selection halo (drawn under the wall so glass/solid colour still reads)
+  plan.walls.forEach((wl, i) => {
+    if (!selection.has(i)) return;
+    const [ax, ay, bx, by] = wallScreen(wl);
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+    ctx.strokeStyle = "rgba(255,210,63,0.55)"; ctx.lineWidth = 9; ctx.lineCap = "round"; ctx.stroke();
+  });
+  ctx.lineCap = "butt";
+
+  // walls
+  plan.walls.forEach((wl, i) => {
+    const [ax, ay, bx, by] = wallScreen(wl);
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+    if (i === hoverWall) {
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = (wl.glass ? 3 : 2.4) + 2;
+    } else {
+      ctx.strokeStyle = wl.glass ? "#59b0ff" : "#c9c3b6";
+      ctx.lineWidth = wl.glass ? 3 : 2.4;
+    }
+    ctx.stroke();
+  });
+
+  // rubber-band rectangle
+  if (rubber) {
+    const { x0, y0, x1, y1 } = rubber;
+    ctx.fillStyle = "rgba(255,210,63,0.10)";
+    ctx.strokeStyle = "rgba(255,210,63,0.8)"; ctx.lineWidth = 1;
+    ctx.setLineDash([5, 4]);
+    ctx.fillRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+    ctx.strokeRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+    ctx.setLineDash([]);
+  }
+}
+
+// --- pointer handling ---
+let lastMouse = null;
+let panning = null;
+let press = null;      // { x, y, shift } from mousedown
+let rubber = null;     // active rectangle { x0, y0, x1, y1, shift }
+const CLICK_SLOP = 5;  // px of movement below which a press is a click, not a drag
+
+function mpos(e) { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+
+canvas.addEventListener("mousedown", e => {
+  const m = mpos(e); lastMouse = m;
+  if (e.button === 1 || e.button === 2 || e.altKey) {
+    panning = { x: e.clientX, y: e.clientY, panX, panY };
+    return;
+  }
+  press = { x: m.x, y: m.y, shift: e.shiftKey };
+});
+window.addEventListener("mousemove", e => {
+  const m = mpos(e); lastMouse = m;
+  if (panning) {
+    panX = panning.panX + (e.clientX - panning.x);
+    panY = panning.panY + (e.clientY - panning.y);
+    draw(); return;
+  }
+  const [wx, wz] = pxToWorld(ipx(m.x), ipy(m.y));
+  $("readout").textContent = `x ${wx.toFixed(2)}  z ${wz.toFixed(2)} m` + (hoverWall >= 0 ? `  · wall #${hoverWall}` : "");
+  if (press) {
+    if (rubber || Math.hypot(m.x - press.x, m.y - press.y) > CLICK_SLOP) {
+      rubber = { x0: press.x, y0: press.y, x1: m.x, y1: m.y, shift: press.shift };
+      draw(); return;
+    }
+  }
+  const nh = nearestWall(m.x, m.y, 8);
+  if (nh !== hoverWall) { hoverWall = nh; draw(); }
+});
+window.addEventListener("mouseup", e => {
+  if (panning) { panning = null; return; }
+  if (!press) return;
+  const m = mpos(e);
+  if (rubber) {
+    // rectangle select: every wall the box touches
+    if (!rubber.shift) selection.clear();
+    const x0 = Math.min(rubber.x0, rubber.x1), x1 = Math.max(rubber.x0, rubber.x1);
+    const y0 = Math.min(rubber.y0, rubber.y1), y1 = Math.max(rubber.y0, rubber.y1);
+    let added = 0;
+    plan.walls.forEach((w, i) => {
+      const [ax, ay, bx, by] = wallScreen(w);
+      if (segInRect(ax, ay, bx, by, x0, y0, x1, y1)) { selection.add(i); added++; }
+    });
+    rubber = null; press = null;
+    toast(`Selected ${added} wall${added === 1 ? "" : "s"} (${selection.size} total)`);
+    refresh(); return;
+  }
+  // it was a click
+  const wi = nearestWall(m.x, m.y, 8);
+  press = null;
+  if (wi < 0) { if (!e.shiftKey) { selection.clear(); refresh(); } return; }
+  if (e.shiftKey) {
+    if (selection.has(wi)) selection.delete(wi); else selection.add(wi);
+    refresh();
+  } else {
+    // plain click toggles this wall's glass flag immediately
+    plan.walls[wi].glass = !plan.walls[wi].glass;
+    toast(`Wall #${wi} → ${plan.walls[wi].glass ? "glass" : "solid"}`);
+    refresh();
+  }
+});
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  const m = mpos(e); const f = Math.exp(-e.deltaY * 0.0012);
+  const px = ipx(m.x), py = ipy(m.y);
+  zoom *= f; panX = m.x - px * zoom; panY = m.y - py * zoom; draw();
+}, { passive: false });
+
+// --- bulk actions ---
+function markSelection(glass) {
+  if (!plan || selection.size === 0) return;
+  selection.forEach(i => { plan.walls[i].glass = glass; });
+  toast(`Marked ${selection.size} wall${selection.size === 1 ? "" : "s"} ${glass ? "glass" : "solid"}`);
+  refresh();
+}
+$("markGlass").onclick = () => markSelection(true);
+$("markSolid").onclick = () => markSelection(false);
+$("selAll").onclick = () => { if (!plan) return; plan.walls.forEach((_, i) => selection.add(i)); refresh(); };
+$("selNone").onclick = () => { selection.clear(); refresh(); };
+$("invert").onclick = () => { if (!plan) return; plan.walls.forEach((_, i) => { if (selection.has(i)) selection.delete(i); else selection.add(i); }); refresh(); };
+
+$("opacity").oninput = e => { overlayAlpha = e.target.value / 100; draw(); };
+$("showImg").onchange = e => { showImg = e.target.checked; draw(); };
+$("fitBtn").onclick = () => fit();
+
+// --- keyboard ---
+window.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.key.toLowerCase() === "g") markSelection(true);
+  if (e.key.toLowerCase() === "b") markSelection(false);
+  if (e.key === "Escape") { selection.clear(); refresh(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") { e.preventDefault(); $("selAll").onclick(); }
+});
+
+// --- load / reload / file ---
+async function loadFromServer() {
+  banner("");
+  const tried = [];
+  for (const url of PLAN_CANDIDATES) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) { tried.push(`${url} (HTTP ${res.status})`); continue; }
+      const p = await res.json();
+      if (!p || !Array.isArray(p.walls)) { tried.push(`${url} (no walls[])`); continue; }
+      adoptPlan(p, url);
+      return true;
+    } catch (err) { tried.push(`${url} (${err.name})`); }
+  }
+  banner(`Could not fetch the plan from the server. Use <b>Load JSON file…</b> to open a floor-14.json from disk.<br><span class="hint">Tried: ${tried.join(" · ")}</span>`);
+  $("srcNote").innerHTML = "Not loaded from server. Use Load JSON file.";
+  return false;
+}
+function adoptPlan(p, sourceLabel) {
+  plan = p;
+  selection.clear();
+  hoverWall = -1;
+  $("export").disabled = false;
+  $("srcNote").innerHTML = `Loaded from <code>${sourceLabel}</code> · ${p.walls.length} walls`;
+  fit();
+  refresh();
+}
+$("reload").onclick = () => loadFromServer();
+$("loadFile").onclick = () => $("file").click();
+$("file").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    try {
+      const p = JSON.parse(rd.result);
+      if (!p || !Array.isArray(p.walls)) throw new Error("no walls[]");
+      banner("");
+      adoptPlan(p, f.name);
+      toast("Loaded " + f.name);
+    } catch (err) { toast("Not a valid floor plan JSON"); banner(`<b>${f.name}</b> is not a valid floor plan (${err.message}).`); }
+  };
+  rd.readAsText(f); e.target.value = "";
+};
+
+// --- export: full plan back out, only glass flags changed ---
+$("export").onclick = () => {
+  if (!plan) return;
+  const text = JSON.stringify(plan, null, 2) + "\n";
+  const blob = new Blob([text], { type: "application/json" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "floor-14.json"; a.click(); URL.revokeObjectURL(a.href);
+  toast("Downloaded floor-14.json");
+};
+
+// --- ui refresh ---
+let toastT;
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.style.opacity = 1; clearTimeout(toastT); toastT = setTimeout(() => t.style.opacity = 0, 1500); }
+function banner(html) { const b = $("banner"); b.innerHTML = html; b.style.display = html ? "block" : "none"; }
+function refresh() {
+  if (plan) {
+    const glass = plan.walls.filter(w => w.glass).length;
+    $("nGlass").textContent = glass;
+    $("nSolid").textContent = plan.walls.length - glass;
+  }
+  $("nSel").textContent = selection.size;
+  const has = selection.size > 0;
+  $("markGlass").disabled = !has;
+  $("markSolid").disabled = !has;
+  $("selNone").disabled = !has;
+  draw();
+}
+
+window.addEventListener("resize", resize);
+resize();
+refresh();
+loadFromServer();
+</script>
+</body>
+</html>
