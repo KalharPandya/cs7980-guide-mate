@@ -524,6 +524,131 @@ def test_guide_impl_reuses_existing_visitor_binding(ddb):
     assert reg.fleet_sent[0].params["visitor_id"] == "visitor-existing"
 
 
+# --- from_room: WHERE THE VISITOR IS (optional on the wire) -------------------
+# The world spawns the visitor at from_room and sends the robot to them first, so a
+# from_room that is present-but-wrong is worse than absent: absent means "entrance",
+# the documented pre-existing behaviour. These pin both halves of that contract.
+
+
+def test_guide_impl_publishes_from_room_when_supplied(ddb):
+    sid = sessions.create_session("Ada", True)
+    reg = FleetRegistry(acks=[Ack(cmd_id="c", state="done", simulated=True,
+                                  assigned_robot_id="virtual/2")])
+
+    _agent(reg)._guide_impl("Kitchen", sid, _captured(), "Classroom 1425")
+
+    params = reg.fleet_sent[0].params
+    assert params["room"] == "Kitchen"
+    assert params["from_room"] == "Classroom 1425"
+
+
+def test_guide_impl_omits_from_room_when_not_supplied(ddb):
+    """Absent, not empty-string: "" is a valid string against the wire schema, so it
+    would reach the world as an unresolvable room name instead of meaning "unknown"."""
+    sid = sessions.create_session("Ada", True)
+    reg = FleetRegistry(acks=[Ack(cmd_id="c", state="done", simulated=True,
+                                  assigned_robot_id="virtual/2")])
+    agent = _agent(reg)
+
+    agent._guide_impl("Kitchen", sid, _captured())            # arg omitted entirely
+    agent._guide_impl("Kitchen", sid, _captured(), "")        # tool-schema default
+    agent._guide_impl("Kitchen", sid, _captured(), "   ")     # whitespace-only answer
+
+    for cmd in reg.fleet_sent:
+        assert "from_room" not in cmd.params
+
+
+def test_guide_impl_from_room_unresolved_tells_the_model_to_re_ask(ddb):
+    """The world resolved nothing and dispatched nobody. The model must hear a
+    re-ask instruction, not something it can paraphrase as "your guide is coming"."""
+    sid = sessions.create_session("Ada", True)
+    reg = FleetRegistry(acks=[Ack(cmd_id="c", state="failed", simulated=True,
+                                  reason="from_room_unresolved")])
+
+    result = _agent(reg)._guide_impl("Kitchen", sid, _captured(), "the blue sofa")
+
+    lowered = result.lower()
+    assert "failed" in lowered
+    assert "ask the visitor again" in lowered
+    assert "do not tell them a guide is coming" in lowered
+    # and it must not read like a success anywhere in the string
+    assert "heading over" not in lowered and "on its way" not in lowered
+
+
+def test_describe_acks_surfaces_from_room_unresolved_as_a_re_ask():
+    """Same wording via the shared ack-summary path, so no caller can turn this
+    failure into the vague "the robot refused: from_room_unresolved" fallback."""
+    acks = [Ack(cmd_id="c", state="failed", simulated=True, reason="from_room_unresolved")]
+    assert DogAgent._describe_acks(acks) == dog_agent._FROM_ROOM_UNRESOLVED
+
+
+def test_guide_impl_target_unresolved_tells_the_model_to_re_ask(ddb):
+    sid = sessions.create_session("Ada", True)
+    reg = FleetRegistry(acks=[Ack(cmd_id="c", state="failed", simulated=True,
+                                  reason="target_unresolved")])
+    result = _agent(reg)._guide_impl("Narnia", sid, _captured(), "Kitchen")
+    assert "failed" in result.lower()
+    assert "guide_to_room again" in result
+
+
+def test_guide_tool_spec_exposes_from_room():
+    """The model can only pass from_room if it is in the tool's input schema."""
+    tools = _agent(FleetRegistry())._build_tools(
+        ["guide_to_room"], None, _captured(), physical=False, session_id="s")
+    schema = tools[0].tool_spec["inputSchema"]["json"]
+    assert "from_room" in schema["properties"]
+    assert schema["properties"]["from_room"]["type"] == "string"
+    assert "room" in schema["required"]
+
+
+# --- room vocabulary comes from the floor plan, not a hardcoded list ----------
+
+
+def test_virtual_prompt_asks_where_the_visitor_is_and_lists_real_rooms():
+    prompt = _agent(FleetRegistry())._system_prompt(dict(DEFAULT_FLAGS), physical=False)
+    lowered = prompt.lower()
+    assert "from_room" in prompt
+    # instructs the model to ASK, and to reuse an already-stated location
+    assert "which room or area they are in" in lowered
+    assert "do not ask again" in lowered
+    # vocabulary really came from the floor plan file (name + alias)
+    assert "Classroom 1425" in prompt
+    assert "Gender Neutral Washroom" in prompt
+    assert "quiet study" in prompt          # an alias, not just the name
+
+
+def test_room_vocabulary_matches_the_floor_plan_file():
+    """Sourced from the data, so renaming a room in the JSON moves the prompt with
+    it. Compared against the file itself rather than a copied-out list."""
+    import json
+    from pathlib import Path
+
+    dog_agent._floor_plan_rooms.cache_clear()
+    repo_root = Path(dog_agent.__file__).resolve().parents[2]
+    plan = json.loads(
+        (repo_root / "world" / "data" / "floor-14.json").read_text(encoding="utf-8"))
+    expected = [r["name"] for r in plan["rooms"]]
+    line = dog_agent._room_vocabulary_line()
+    assert expected                                   # guard: the fixture file has rooms
+    for name in expected:
+        assert name in line
+
+
+def test_room_vocabulary_degrades_to_empty_when_floor_plan_missing(monkeypatch, tmp_path):
+    """Prod containers ship no world/ dir, so an unreadable floor plan must cost the
+    prompt its room list and nothing else -- never an exception on a visitor's turn."""
+    monkeypatch.setenv(dog_agent._FLOOR_PLAN_ENV, str(tmp_path / "nope.json"))
+    monkeypatch.setattr(dog_agent, "_FLOOR_PLAN_CANDIDATES", (("no", "such", "file"),))
+    dog_agent._floor_plan_rooms.cache_clear()
+    try:
+        assert dog_agent._floor_plan_rooms() == ()
+        assert dog_agent._room_vocabulary_line() == ""
+        prompt = _agent(FleetRegistry())._system_prompt(dict(DEFAULT_FLAGS), physical=False)
+        assert "guide_to_room" in prompt              # the tool is still advertised
+    finally:
+        dog_agent._floor_plan_rooms.cache_clear()     # don't poison other tests
+
+
 def test_guide_impl_no_idle_robot(ddb):
     sid = sessions.create_session("Ada", True)
     reg = FleetRegistry(acks=[Ack(cmd_id="c", state="failed", reason="no_idle_robot",

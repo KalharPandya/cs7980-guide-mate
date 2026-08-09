@@ -13,6 +13,8 @@ import os
 import threading
 import time
 import uuid
+from functools import lru_cache
+from pathlib import Path
 from typing import Optional
 
 from pydantic import ValidationError
@@ -41,10 +43,94 @@ MOTION_INSTRUCTION = (
     "always mention that in your reply."
 )
 GUIDE_INSTRUCTION = (
-    "You also have a guide_to_room(room) tool: if the visitor asks to be shown to a "
-    "room or location in the building, call it with that room's name so a virtual "
-    "guide robot is dispatched to escort them there."
+    "You also have a guide_to_room(room, from_room) tool. `room` is the DESTINATION "
+    "the visitor wants to reach; `from_room` is the room or area the visitor is "
+    "standing in RIGHT NOW. The escort is two-legged: the guide robot first drives to "
+    "the visitor, then walks them to the destination, so it needs to know where the "
+    "person actually is or it will start from the building entrance. "
+    "Never guess `from_room`. If the visitor has already said where they are anywhere "
+    "earlier in this conversation, reuse that and do NOT ask again. Otherwise ask them "
+    "once, in one short friendly line, which room or area they are in right now, and "
+    "wait for their answer before calling guide_to_room. "
+    "Use the closest matching name from the room list below for BOTH arguments. If the "
+    "tool reports that a name could not be found, say so and ask again with a name from "
+    "that list; never tell the visitor a robot is coming when the tool did not say so."
 )
+# The room vocabulary the model is given (see _room_vocabulary_line): sourced from the
+# floor plan the world-server actually navigates, NOT hardcoded here, so the names the
+# model may pass and the names world/src/iot/bridge.ts can resolve can never drift
+# apart. A hardcoded list would silently start acking `from_room_unresolved` the day
+# somebody renames a room in the JSON.
+_FLOOR_PLAN_ENV = "GUIDEMATE_FLOOR_PLAN_PATH"
+# Repo-relative fallbacks, tried in order. The two files are byte-identical copies (the
+# world-server's data dir and the client's served copy); we read whichever exists.
+# NOTE the deployed container ships only `shared/` + `agent_service/` (see Dockerfile),
+# so in prod NEITHER path exists -- that is why every lookup here degrades to "no room
+# list" instead of raising: the guide tool still works, the model just does not get the
+# vocabulary hint. Set GUIDEMATE_FLOOR_PLAN_PATH to restore it in a deployment.
+_FLOOR_PLAN_CANDIDATES = (
+    ("world", "data", "floor-14.json"),
+    ("world-client", "public", "data", "floor-14.json"),
+)
+
+
+@lru_cache(maxsize=1)
+def _floor_plan_rooms() -> tuple:
+    """((name, (alias, ...)), ...) from the floor plan, or () if unavailable.
+
+    Cached: the floor plan is static data read once per process, and this is on the
+    per-turn system-prompt path. Tests that point _FLOOR_PLAN_ENV somewhere else must
+    call `_floor_plan_rooms.cache_clear()` first.
+
+    Deliberately total: a missing file, unreadable file, bad JSON or an unexpected shape
+    all return () rather than raising. The room list is a prompt HINT, so losing it must
+    degrade the reply quality, never break a visitor's turn.
+    """
+    paths = []
+    override = os.environ.get(_FLOOR_PLAN_ENV)
+    if override:
+        paths.append(Path(override))
+    # dog_agent.py lives at <repo>/agent_service/guidemate_agent/, so parents[2] is the
+    # repo root that holds world/ and world-client/.
+    repo_root = Path(__file__).resolve().parents[2]
+    paths.extend(repo_root.joinpath(*parts) for parts in _FLOOR_PLAN_CANDIDATES)
+    for path in paths:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        rooms = []
+        for room in (data.get("rooms") or []) if isinstance(data, dict) else []:
+            if not isinstance(room, dict):
+                continue
+            name = room.get("name")
+            if not isinstance(name, str) or not name.strip():
+                continue
+            aliases = tuple(
+                a for a in (room.get("aliases") or []) if isinstance(a, str) and a.strip()
+            )
+            rooms.append((name, aliases))
+        if rooms:
+            return tuple(rooms)
+    log.info("floor plan room vocabulary unavailable, guide prompt will omit it")
+    return ()
+
+
+def _room_vocabulary_line() -> str:
+    """One prompt paragraph naming every room the world can resolve, or "" if the
+    floor plan could not be read. Aliases are included because the resolver accepts
+    them, so telling the model about them widens what a visitor can say and still be
+    matched (e.g. a visitor saying "1426" for "Classroom 1426")."""
+    rooms = _floor_plan_rooms()
+    if not rooms:
+        return ""
+    entries = []
+    for name, aliases in rooms:
+        entries.append(f"{name} (also: {', '.join(aliases)})" if aliases else name)
+    return (
+        "These are the only places on this floor, and the only names guide_to_room "
+        "accepts: " + "; ".join(entries) + "."
+    )
 # --- what kind of robot am I driving? ---------------------------------------
 # The two fleets have OPPOSITE capabilities, and the model has to be told which
 # one it is holding or it will confidently promise the wrong thing:
@@ -86,6 +172,28 @@ NEUTRAL_PROMPT = (
 PERSONA = PERSONA_BASE + " " + EMOTE_INSTRUCTION + " " + MOTION_INSTRUCTION
 
 _OFFLINE = "robot did not respond — I'm probably napping offline"
+
+# The world acked `failed/from_room_unresolved`: it could not turn the from_room string
+# into a real spot on the floor, so NOBODY was spawned and NO robot was dispatched. The
+# model has to hear that as an instruction to re-ask, not as a soft warning: a bare
+# "couldn't start your guide: from_room_unresolved" reads like a transient glitch and
+# the model would happily reply "your guide is on the way". Worded as an explicit
+# next-action so the failure can only end in another question to the visitor.
+_FROM_ROOM_UNRESOLVED = (
+    "FAILED: no robot was sent and the visitor was NOT placed in the world. I could not "
+    "find any room matching where you said the visitor is. Do not tell them a guide is "
+    "coming. Ask the visitor again which room or area they are in, offer them two or "
+    "three nearby names from the room list, and call guide_to_room again with the name "
+    "they pick."
+)
+# Same shape for the DESTINATION half of the same two-name lookup (bridge.ts acks
+# `target_unresolved` for that one), so a bad destination can't be reported as success
+# either.
+_TARGET_UNRESOLVED = (
+    "FAILED: no robot was sent. I could not find any room matching the destination. Do "
+    "not tell the visitor a guide is coming. Ask them where they want to go and call "
+    "guide_to_room again with a name from the room list."
+)
 
 # The trick vocabulary run_motion actually advertises to the model (see
 # MOTION_INSTRUCTION above and the run_motion tool docstring in _build_tools).
@@ -234,6 +342,14 @@ class DogAgent:
         # told about it either.
         if not physical:
             parts.append(GUIDE_INSTRUCTION)
+            # The room vocabulary follows GUIDE_INSTRUCTION because that instruction
+            # refers to "the room list below". Omitted entirely when the floor plan is
+            # unreadable (see _room_vocabulary_line) -- the model then relies on what
+            # the visitor says verbatim, which the world's own alias resolver may still
+            # match.
+            rooms_line = _room_vocabulary_line()
+            if rooms_line:
+                parts.append(rooms_line)
         # Only instruct the model to use retrieve_kb when the tool is actually
         # offered this turn (flag on AND the KB surface present) — no rule for a
         # tool that isn't in the list.
@@ -276,6 +392,14 @@ class DogAgent:
                 return "the robot refused: it is docked"
             if last.reason == "motion_disabled":
                 return "the robot refused: motion is disabled"
+            # The two room-name lookups of a fleet "assign" (see _guide_impl). They are
+            # spelled out here as well as in _guide_impl so ANY caller that summarises
+            # acks through this helper reports them as a re-ask, never as a vague
+            # "the robot refused: from_room_unresolved" the model can gloss over.
+            if last.reason == "from_room_unresolved":
+                return _FROM_ROOM_UNRESOLVED
+            if last.reason == "target_unresolved":
+                return _TARGET_UNRESOLVED
             return f"the robot refused: {last.reason}"
         if last.simulated:
             return "delivered (simulated — dry-run, the robot stayed still)"
@@ -404,7 +528,8 @@ class DogAgent:
             return json.dumps({"presence": "unknown"})
         return json.dumps(self._registry.get_status(target), default=str)
 
-    def _guide_impl(self, room: str, session_id: Optional[str], captured: dict) -> str:
+    def _guide_impl(self, room: str, session_id: Optional[str], captured: dict,
+                    from_room: Optional[str] = None) -> str:
         """Body of the guide_to_room tool -- virtual-fleet-only (see
         _enabled_tool_names). Unlike the robot-targeted tools above, this has no
         `target` robot id closure var: it needs the CALLER's own visitor identity
@@ -414,6 +539,17 @@ class DogAgent:
         publishes a fleet-scoped "assign" command (not robot-addressed -- no
         robot is known yet, requestGuide on the world-server picks one) and
         reports the outcome.
+
+        `from_room` is where the VISITOR currently stands, and it is what makes the
+        escort start at the person instead of at the building entrance: the world
+        spawns the visitor's avatar there, then the robot drives to them (phase
+        "approaching") before leading them on (phase "leading"). It is OPTIONAL on the
+        wire, so it is omitted from params entirely when the model did not supply one
+        rather than sent as an empty string -- an empty string is a *string*, so it
+        would pass the schema's "must be a string when present" check and then arrive at
+        the world as a room name that cannot possibly resolve, turning "the model didn't
+        ask yet" into a hard from_room_unresolved failure. Absent means "not provided",
+        which is exactly the pre-existing entrance-spawn behaviour.
         """
         if session_id is None:
             return "I can't guide you anywhere without a session — try reloading the page"
@@ -425,10 +561,14 @@ class DogAgent:
             visitor_id = f"visitor-{uuid.uuid4().hex[:12]}"
             sessions.bind_visitor(session_id, visitor_id)
 
-        cmd = Command(
-            type="assign", name="assign",
-            params={"visitor_id": visitor_id, "room": room},
-        )
+        params = {"visitor_id": visitor_id, "room": room}
+        # Strip whitespace before deciding: the tool schema gives from_room a "" default
+        # (see _build_tools), and a model that "answers" with " " must be treated as
+        # not-provided too, not shipped as a blank room name.
+        cleaned_from_room = (from_room or "").strip()
+        if cleaned_from_room:
+            params["from_room"] = cleaned_from_room
+        cmd = Command(type="assign", name="assign", params=params)
         acks = self._registry.send_fleet_command(cmd)
         captured["acks"].extend(a.model_dump() for a in acks)
         if not acks:
@@ -437,6 +577,13 @@ class DogAgent:
         if last.state == "failed":
             if last.reason == "no_idle_robot":
                 return "every guide robot is busy right now — try again in a moment"
+            # The world could not turn one of the two room names into a place. Both are
+            # recoverable by asking the visitor again, so they get explicit re-ask
+            # instructions instead of the generic refusal string below.
+            if last.reason == "from_room_unresolved":
+                return _FROM_ROOM_UNRESOLVED
+            if last.reason == "target_unresolved":
+                return _TARGET_UNRESOLVED
             return f"couldn't start your guide: {last.reason}"
         robot_id = getattr(last, "assigned_robot_id", None)
         if robot_id:
@@ -532,10 +679,20 @@ class DogAgent:
         if "guide_to_room" in names:
 
             @tool
-            def guide_to_room(room: str) -> str:
+            def guide_to_room(room: str, from_room: str = "") -> str:
                 """Dispatch a virtual guide robot to escort the visitor to a room.
-                room is a room name, e.g. 'Classroom 1425' or 'Kitchen'."""
-                return self._guide_impl(room, session_id, captured)
+
+                room is the DESTINATION room name, e.g. 'Classroom 1425' or 'Kitchen'.
+                from_room is the room the visitor is standing in RIGHT NOW, so the robot
+                can come to them; ask the visitor where they are before calling this and
+                pass their answer. Leave from_room out only if they truly will not say,
+                in which case they are placed at the building entrance.
+                """
+                # Defaulted to "" rather than made required so a model that has not
+                # asked yet still gets a working call (the visitor starts at the
+                # entrance) instead of a schema error mid-conversation; _guide_impl
+                # turns "" back into "key absent" on the wire.
+                return self._guide_impl(room, session_id, captured, from_room)
 
             tools.append(guide_to_room)
         return tools
