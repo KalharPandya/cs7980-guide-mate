@@ -75,6 +75,25 @@ Infra:
   route, base=/viz/ and VITE_WORLD_SERVER_URL=wss://$GUIDEMATE_DOMAIN/world are ONE coupled
   decision). Merged the live voice branch in before deploying.
 
+## E2E TESTED 2026-08-09 (full chat -> delivery, traced live)
+Drove the real production chat API (`POST /api/session` then `POST /api/chat`, real Bedrock, real
+IoT publish). Single-user run traced meter by meter: Moses asked location, published the assign,
+a visitor spawned at Classroom 1425, robot virtual/2 fetched it, then led it to the Kitchen
+(distToKitchen 21.7m -> 0.1m). Two bugs found and fixed during E2E:
+1. **Room-name resolution** was exact-only, so Moses saying "Classroom 1408" (room is "1408") got
+   a failure. `findRoomTarget` (world/src/nav/buildNavMesh.ts) is now a forgiving 4-layer resolver
+   (exact, filler-word-stripped, 4-digit-number, unique-keyword), with the Moses prompt nudged to
+   pass exact names. All 18 fuzzy phrasings resolve; ambiguous input returns null. Verified live:
+   0 room-name failures on the phrasings that broke before.
+2. **Robot starvation**: 5 robots were idle only ~33% of the time because ambient simulated
+   visitors used them all, so a real request often got `no_idle_robot`. `requestGuide` now RESERVES
+   `RESERVED_ROBOTS_FOR_REAL_USERS = 2`: a simulated visitor may only take a robot if >=2 stay
+   idle; a real (Moses/bridge-spawned) visitor may take any idle robot. Guarantees up to 2
+   concurrent real users always get a robot.
+Known ceiling (not a bug): >2 CONCURRENT real users on the 5-robot fleet can still hit
+`no_idle_robot`; a class demo has 1. Raise `RESERVED_ROBOTS_FOR_REAL_USERS` / `GUIDE_ROBOT_COUNT`
+if many simultaneous users are expected.
+
 ## DONE 2026-08-09: Moses dispatches virtual robots in production (IoT bridge LIVE)
 Verified end to end on the live instance: published an `assign` (from_room="Classroom 1425",
 room="Kitchen") to `guidemate/virtual/fleet/cmd`, joined the live world room, and watched the
