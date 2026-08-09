@@ -15,6 +15,14 @@ services:
         awslogs-group: /guidemate/world-server
         awslogs-create-group: "true"
 
+  world-client:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-west-2
+        awslogs-group: /guidemate/world-client
+        awslogs-create-group: "true"
+
   caddy:
     logging:
       driver: awslogs

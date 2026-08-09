@@ -1,0 +1,33 @@
+# Static server that runs INSIDE the world-client container (see world-client/Dockerfile).
+# This is NOT the edge proxy: agent_service/Caddyfile is the public, TLS-terminating one, and it
+# reverse-proxies here over the compose network.
+#
+# Plain `:8080`, no site hostname: a bare port address turns Caddy's automatic HTTPS off, which
+# is what we want for an internal upstream (the edge already did TLS, and this container has no
+# public name and no way to solve an ACME challenge).
+:8080 {
+	# Liveness endpoint for the container HEALTHCHECK, matching how `app` and `world-server`
+	# both health-check themselves over their own HTTP port. A static file server has no
+	# natural one, so serve a constant instead of probing index.html: this stays a 200 for
+	# exactly one reason (Caddy is up and routing), with no dependency on the build output.
+	# Externally this lands on /viz/healthz, since the edge strips the /viz prefix.
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	handle {
+		root * /srv
+		encode gzip zstd
+
+		# SPA fallback. The app has no client-side router today (kiosk mode is a ?query param,
+		# not a path), so the case that actually matters is a reload of /viz/ itself, which
+		# arrives here as "/" and is served by file_server's index. try_files is here so a
+		# deep link under /viz/ degrades to the app rather than a bare 404 if a route-based
+		# view is ever added -- and it deliberately does NOT swallow missing assets: a real
+		# request for a nonexistent /assets/*.js still falls through to index.html, but that
+		# only happens for a genuinely broken build, which is louder as a JS parse error than
+		# as a silent 404.
+		try_files {path} /index.html
+		file_server
+	}
+}

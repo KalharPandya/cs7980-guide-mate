@@ -1,4 +1,21 @@
 {$GUIDEMATE_DOMAIN} {
+	# world-client (the Three.js / R3F 3D floor plan) on /viz/*, on the same TLS domain as the
+	# chat app. /viz (no trailing slash) is NOT matched by the /viz/* path matcher below, so
+	# redirect it rather than let it fall through to the chat app at the root -- that fallthrough
+	# would serve the chat app's HTML under a /viz URL, which looks like a routing bug at exactly
+	# the moment someone types the short form. `redir` runs before `handle` in Caddy's directive
+	# order, so this wins without a `route` block.
+	redir /viz /viz/
+	# handle_path strips /viz before proxying, so the container's own static server (see
+	# world-client/Caddyfile) serves straight from its root: a browser request for
+	# /viz/assets/index-xxxx.js arrives here, is rewritten to /assets/index-xxxx.js, and resolves
+	# against dist/. The browser asks for the /viz/-prefixed URL because the client is BUILT with
+	# base=/viz/ (world-client/Dockerfile's VITE_BASE_PATH build arg, wired in
+	# agent_service/compose.yaml). The strip and the base are two halves of one decision: change
+	# either alone and every asset 404s.
+	handle_path /viz/* {
+		reverse_proxy world-client:8080
+	}
 	# Task 5.1: world-server (Colyseus) routed under /world/* on the same TLS domain,
 	# instead of a bare exposed port. handle_path strips the /world prefix before
 	# proxying, so the Colyseus client's own root-relative paths (/matchmake/..., and

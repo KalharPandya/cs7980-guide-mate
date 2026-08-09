@@ -2,11 +2,14 @@ import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Instance, Instances, useGLTF, type PositionMesh } from '@react-three/drei'
 
+import { assetUrl } from '../assetUrl'
 import type { AgentSnapshot } from '../net/useWorldRoom'
 import { lerpXZToward } from './agentMotion'
 import { bakeToStandingGeometry } from './modelBake'
 
-const ROBOT_MODEL_URL = '/models/robot.glb'
+// assetUrl(), not the bare literal: production serves this client from `/viz/`, and a string
+// handed to useGLTF() is a runtime fetch the bundler never rewrites. See assetUrl.ts.
+const ROBOT_MODEL_URL = assetUrl('/models/robot.glb')
 
 /**
  * Target standing height in meters. RobotExpressive.glb (Task 0.4's CC0 asset, three.js's

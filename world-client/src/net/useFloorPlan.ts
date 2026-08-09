@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { assetUrl } from '../assetUrl'
 import type { FloorPlan } from '../scene/floorPlanTypes'
 
 /**
@@ -11,8 +12,12 @@ import type { FloorPlan } from '../scene/floorPlanTypes'
  * so a plain fetch('/data/floor-14.json') just works with zero config. world/data/floor-14.json
  * (loaded server-side by world/src/nav/loadFloorPlan.ts) remains the source of truth; this is a
  * demo-time duplicate that must be re-copied by hand if the source file changes.
+ *
+ * The default is run through assetUrl() because production serves this client from a sub-path
+ * (`/viz/`), where the root-absolute literal would 404 -- see assetUrl.ts for why the bundler
+ * cannot fix that literal on its own.
  */
-export function useFloorPlan(url = '/data/floor-14.json'): {
+export function useFloorPlan(url = assetUrl('/data/floor-14.json')): {
   floorPlan: FloorPlan | null
   error: Error | null
 } {

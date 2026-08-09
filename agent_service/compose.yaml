@@ -37,12 +37,39 @@ services:
       - GUIDEMATE_KEY=${GUIDEMATE_KEY:-}
       - GUIDEMATE_CA=${GUIDEMATE_CA:-}
 
+  world-client:
+    build:
+      context: ..
+      dockerfile: world-client/Dockerfile
+      args:
+        # Sub-path this build is served from. MUST match the /viz/* handle_path in ./Caddyfile
+        # (the edge strips the prefix, this base puts it back on the URLs the browser asks for)
+        # -- see world-client/Dockerfile for the full explanation.
+        - VITE_BASE_PATH=/viz/
+        # The Colyseus endpoint the BROWSER dials, baked in at build time (Vite inlines
+        # import.meta.env.* -- a static bundle has no runtime env). Derived from GUIDEMATE_DOMAIN
+        # rather than hardcoded, so the production hostname lives only in /etc/guidemate.env
+        # (deploy/user_data.sh writes it there as a bare hostname, e.g. echo.kalhar.ca) and this
+        # resolves to wss://echo.kalhar.ca/world, matching the /world/* route in ./Caddyfile.
+        # GUIDEMATE_WORLD_WS_URL is the explicit override for anything that is not "same domain,
+        # /world, TLS" -- e.g. a local Docker run reached over plain http on a mapped port, where
+        # you would set it to ws://localhost:<port>/world.
+        # The inner ":-localhost" mirrors the caddy service's own GUIDEMATE_DOMAIN default below,
+        # so a bare `docker compose up` with no env file still produces a well-formed URL
+        # (wss://localhost/world) rather than the malformed "wss:///world" a bare
+        # ${GUIDEMATE_DOMAIN} would yield.
+        - VITE_WORLD_SERVER_URL=${GUIDEMATE_WORLD_WS_URL:-wss://${GUIDEMATE_DOMAIN:-localhost}/world}
+    restart: unless-stopped
+    expose:
+      - "8080"
+
   caddy:
     image: caddy:2
     restart: unless-stopped
     depends_on:
       - app
       - world-server
+      - world-client
     ports:
       - "80:80"
       - "443:443"

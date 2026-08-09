@@ -44,6 +44,26 @@ npm run build
 Type-checks (`tsc`) then produces a static `dist/` via `vite build`. `npm run preview`
 serves that build locally.
 
+## Production (Docker, served under `/viz/`)
+
+`Dockerfile` here builds `dist/` and serves it from `caddy:2` (config in this directory's
+`Caddyfile`), wired into the stack as the `world-client` service in
+`agent_service/compose.yaml`. The edge proxy publishes it at `https://{domain}/viz/`,
+alongside the chat app at `/` and the Colyseus world-server at `/world/*`.
+
+Two build args carry the deployment decisions, because a Vite bundle has no runtime env:
+- `VITE_BASE_PATH` (default `/viz/`) sets Vite's `base`. The edge route uses Caddy's
+  `handle_path /viz/*`, which **strips** the prefix, so this base and that route are two
+  halves of one decision and must change together. It also drives
+  `import.meta.env.BASE_URL`, which `src/assetUrl.ts` uses for the `public/` assets fetched
+  at runtime (`data/floor-14.json`, `models/*.glb`) -- those are plain strings the bundler
+  never rewrites, so they would 404 under a sub-path without it.
+- `VITE_WORLD_SERVER_URL` is derived in compose from `GUIDEMATE_DOMAIN` as
+  `wss://{domain}/world`; set `GUIDEMATE_WORLD_WS_URL` to override it outright.
+
+Neither affects `npm run dev` or `npm run preview`: with `VITE_BASE_PATH` unset the base
+stays `/`, and `useWorldRoom.ts` still falls back to `ws://localhost:2567`.
+
 ## Kiosk / big-screen mode
 
 Append `?kiosk=1` to the URL (for example `http://localhost:5173/?kiosk=1`) to enable
