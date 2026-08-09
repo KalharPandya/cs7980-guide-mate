@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Floor-14 Plan Editor</title>
+<style>
+  :root {
+    --bg: #1e1f22; --panel: #2a2c30; --line: #3a3d42; --ink: #e8e8ea;
+    --muted: #9aa0a6; --accent: #4ea1ff; --glass: #59b0ff; --solid: #d8d3c8;
+    --danger: #e5534b; --ok: #46b56b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 13px/1.4 system-ui, sans-serif; overflow: hidden; }
+  #app { display: grid; grid-template-columns: 1fr 264px; height: 100vh; }
+  #stage { position: relative; overflow: hidden; }
+  canvas { display: block; position: absolute; inset: 0; }
+  #side { background: var(--panel); border-left: 1px solid var(--line);
+    padding: 12px; overflow-y: auto; }
+  h1 { font-size: 14px; margin: 0 0 2px; }
+  .sub { color: var(--muted); font-size: 11px; margin-bottom: 12px; }
+  .group { border-top: 1px solid var(--line); padding: 10px 0; }
+  .group:first-of-type { border-top: 0; padding-top: 0; }
+  .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase;
+    letter-spacing: .04em; margin-bottom: 6px; }
+  button { background: #34373c; color: var(--ink); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 9px; cursor: pointer; font-size: 12px; }
+  button:hover { background: #3d4147; }
+  button.active { background: var(--accent); color: #06121f; border-color: var(--accent); }
+  button.wide { width: 100%; }
+  button.danger { border-color: var(--danger); color: #ff9a94; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .row.tight { gap: 4px; }
+  label.ck { display: flex; align-items: center; gap: 6px; cursor: pointer; margin: 4px 0; }
+  input[type=range] { width: 100%; }
+  .stat { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+  .stat b { font-weight: 600; }
+  .selbox { background: #22242a; border: 1px solid var(--line); border-radius: 6px;
+    padding: 8px; font-variant-numeric: tabular-nums; }
+  .hint { color: var(--muted); font-size: 11px; }
+  kbd { background: #3a3d42; border-radius: 4px; padding: 1px 5px; font-size: 11px;
+    border: 1px solid #4a4d53; }
+  #toast { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+    background: #000a; border: 1px solid var(--line); padding: 6px 12px; border-radius: 8px;
+    opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #readout { position: absolute; left: 10px; bottom: 10px; background: #000a;
+    border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px;
+    font-variant-numeric: tabular-nums; color: var(--muted); }
+  #compass { position: absolute; right: 10px; top: 10px; background: #000a;
+    border: 1px solid var(--line); border-radius: 50%; width: 40px; height: 40px;
+    display: grid; place-items: center; color: var(--accent); font-weight: 700; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="compass">N&#8593;</div>
+    <div id="readout">&mdash;</div>
+    <div id="toast"></div>
+  </div>
+  <div id="side">
+    <h1>Floor-14 Plan Editor</h1>
+    <div class="sub">Drawn in real exit-map orientation: north up, east right. The grey plan
+      underneath is the handbook drawing &mdash; edit until the walls sit on it.</div>
+
+    <div class="group">
+      <div class="lbl">Tool</div>
+      <div class="row tight">
+        <button id="tool-select" class="active">Select / Move</button>
+        <button id="tool-add">Add wall</button>
+      </div>
+      <div class="hint" style="margin-top:6px">Drag endpoints to move. Endpoints snap-weld to
+        each other. <kbd>Del</kbd> deletes selected wall, <kbd>G</kbd> toggles glass,
+        <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo.</div>
+    </div>
+
+    <div class="group">
+      <div class="lbl">Exit-map overlay</div>
+      <input id="opacity" type="range" min="0" max="100" value="55" />
+      <label class="ck"><input type="checkbox" id="showWalls" checked /> show walls</label>
+      <label class="ck"><input type="checkbox" id="showRooms" checked /> show room labels &amp; doors</label>
+      <label class="ck"><input type="checkbox" id="showOutline" checked /> show walkable outline</label>
+      <label class="ck"><input type="checkbox" id="snap" checked /> snap-weld endpoints</label>
+    </div>
+
+    <div class="group">
+      <div class="lbl">Global alignment (fixes the mirror)</div>
+      <div class="row tight">
+        <button id="flipNS">Flip N&#8596;S</button>
+        <button id="flipEW">Flip E&#8596;W</button>
+        <button id="rot">Rotate 90&deg;</button>
+      </div>
+      <div class="hint" style="margin-top:6px">If the 3D world renders mirrored, flip here,
+        export, and reload &mdash; the whole plan (walls, rooms, agents) moves together.</div>
+    </div>
+
+    <div class="group" id="selGroup" style="display:none">
+      <div class="lbl">Selected wall</div>
+      <div class="selbox" id="selInfo"></div>
+      <div class="row tight" style="margin-top:6px">
+        <button id="toggleGlass">Toggle glass</button>
+        <button id="delWall" class="danger">Delete</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="lbl">Counts</div>
+      <div class="stat"><span>Walls</span><b id="nWalls">0</b></div>
+      <div class="stat"><span>&nbsp;&nbsp;of which glass</span><b id="nGlass">0</b></div>
+      <div class="stat"><span>Rooms</span><b id="nRooms">0</b></div>
+    </div>
+
+    <div class="group">
+      <div class="lbl">File</div>
+      <button id="export" class="wide" style="background:var(--ok);color:#04140a;border-color:var(--ok)">Download floor-14.json</button>
+      <div class="hint" style="margin:6px 0">Overwrite <b>both</b> copies:<br>
+        <code>world/data/floor-14.json</code><br><code>world-client/public/data/floor-14.json</code>,
+        then <code>cd world &amp;&amp; npm run test:nav</code>.</div>
+      <div class="row tight">
+        <button id="load">Load edited JSON&hellip;</button>
+        <button id="reset">Reset</button>
+      </div>
+      <input id="file" type="file" accept="application/json,.json" style="display:none" />
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const EXIT_MAP_SRC = "__PNG_DATA_URI__";
+const EMBEDDED_PLAN = /*__PLAN_JSON__*/null;
+
+// --- world <-> exit-map-pixel transform (documented in floor-14.json's own `note`) ---
+const S = 0.055644;          // meters per pixel
+const PY0 = 472;             // building bbox bottom row (+1 offset), see the note
+const PNG_W = 636, PNG_H = 489;
+const worldToPx = (x, z) => [x / S, PY0 - z / S];
+const pxToWorld = (px, py) => [px * S, (PY0 - py) * S];
+
+// --- state ---
+let plan = clone(EMBEDDED_PLAN);
+const undoStack = [];
+let tool = "select";            // 'select' | 'add'
+let selectedWall = -1;          // index into plan.walls, or -1
+let drag = null;                // active handle drag
+let addStart = null;            // world point while drawing a wall
+let hoverHandle = null;
+const show = { walls: true, rooms: true, outline: true };
+let snapWeld = true;
+let overlayAlpha = 0.55;
+
+// --- view (pan/zoom over pixel space) ---
+let zoom = 1, panX = 0, panY = 0;
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+function clone(o) { return JSON.parse(JSON.stringify(o)); }
+function pushUndo() { undoStack.push(clone(plan)); if (undoStack.length > 100) undoStack.shift(); }
+function undo() { if (undoStack.length) { plan = undoStack.pop(); selectedWall = -1; refresh(); toast("Undo"); } }
+
+const img = new Image();
+let imgReady = false;
+img.onload = () => { imgReady = true; draw(); };
+img.src = EXIT_MAP_SRC;
+
+// screen <-> pixel
+const sx = px => px * zoom + panX;
+const sy = py => py * zoom + panY;
+const ipx = X => (X - panX) / zoom;
+const ipy = Y => (Y - panY) / zoom;
+
+function resize() {
+  const r = document.getElementById("stage").getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = r.width * dpr; canvas.height = r.height * dpr;
+  canvas.style.width = r.width + "px"; canvas.style.height = r.height + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+}
+function fit() {
+  const r = document.getElementById("stage").getBoundingClientRect();
+  const pad = 40;
+  zoom = Math.min((r.width - pad) / PNG_W, (r.height - pad) / PNG_H);
+  panX = (r.width - PNG_W * zoom) / 2;
+  panY = (r.height - PNG_H * zoom) / 2;
+}
+
+// --- handle list, rebuilt each frame: generic drag targets ---
+function buildHandles() {
+  const hs = [];
+  plan.walls.forEach((w, i) => {
+    hs.push({ x: w.a[0], z: w.a[1], set: (X, Z) => { w.a[0] = X; w.a[1] = Z; }, kind: "wall", i });
+    hs.push({ x: w.b[0], z: w.b[1], set: (X, Z) => { w.b[0] = X; w.b[1] = Z; }, kind: "wall", i });
+  });
+  if (show.rooms) plan.rooms.forEach((rm) => {
+    hs.push({ x: rm.center[0], z: rm.center[1], set: (X, Z) => { rm.center[0] = X; rm.center[1] = Z; }, kind: "roomC" });
+    hs.push({ x: rm.door[0], z: rm.door[1], set: (X, Z) => { rm.door[0] = X; rm.door[1] = Z; }, kind: "roomD" });
+  });
+  if (show.outline) plan.walkableOutline.forEach((p) => {
+    hs.push({ x: p[0], z: p[1], set: (X, Z) => { p[0] = X; p[1] = Z; }, kind: "outline" });
+  });
+  return hs;
+}
+function nearestHandle(mx, my, radPx) {
+  let best = null, bestD = radPx * radPx;
+  for (const h of buildHandles()) {
+    const [px, py] = worldToPx(h.x, h.z);
+    const dx = sx(px) - mx, dy = sy(py) - my, d = dx * dx + dy * dy;
+    if (d <= bestD) { bestD = d; best = h; }
+  }
+  return best;
+}
+function nearestWall(mx, my, radPx) {
+  let best = -1, bestD = radPx;
+  plan.walls.forEach((w, i) => {
+    const [ax, ay] = worldToPx(w.a[0], w.a[1]).map((v, k) => k ? sy(v) : sx(v));
+    const [bx, by] = worldToPx(w.b[0], w.b[1]).map((v, k) => k ? sy(v) : sx(v));
+    const d = distToSeg(mx, my, ax, ay, bx, by);
+    if (d < bestD) { bestD = d; best = i; }
+  });
+  return best;
+}
+function distToSeg(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+  let t = l2 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+// --- drawing ---
+function poly(pts, close) {
+  ctx.beginPath();
+  pts.forEach((p, i) => {
+    const [px, py] = worldToPx(p[0], p[1]);
+    i ? ctx.lineTo(sx(px), sy(py)) : ctx.moveTo(sx(px), sy(py));
+  });
+  if (close) ctx.closePath();
+}
+function draw() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#2b2c30"; ctx.fillRect(0, 0, w, h);
+
+  // exit-map underlay
+  if (imgReady && overlayAlpha > 0) {
+    ctx.globalAlpha = overlayAlpha;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(img, sx(0), sy(0), PNG_W * zoom, PNG_H * zoom);
+    ctx.globalAlpha = 1;
+  }
+
+  if (show.outline) {
+    poly(plan.walkableOutline, true);
+    ctx.fillStyle = "rgba(78,161,255,0.06)"; ctx.fill();
+    ctx.strokeStyle = "rgba(78,161,255,0.5)"; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = "#4ea1ff";
+    plan.walkableOutline.forEach(p => dot(p, 3));
+    plan.holes.forEach(hl => { poly(hl.polygon, true); ctx.strokeStyle = "rgba(78,161,255,0.35)"; ctx.stroke(); });
+  }
+
+  // walls
+  if (show.walls) plan.walls.forEach((wl, i) => {
+    const a = worldToPx(wl.a[0], wl.a[1]), b = worldToPx(wl.b[0], wl.b[1]);
+    ctx.beginPath(); ctx.moveTo(sx(a[0]), sy(a[1])); ctx.lineTo(sx(b[0]), sy(b[1]));
+    ctx.strokeStyle = i === selectedWall ? "#ffd23f" : (wl.glass ? "#59b0ff" : "#c9c3b6");
+    ctx.lineWidth = i === selectedWall ? 4 : (wl.glass ? 3 : 2.4);
+    ctx.stroke();
+    dot(wl.a, i === selectedWall ? 4 : 3, "#e8e8ea");
+    dot(wl.b, i === selectedWall ? 4 : 3, "#e8e8ea");
+  });
+
+  // rooms
+  if (show.rooms) plan.rooms.forEach(rm => {
+    const c = worldToPx(rm.center[0], rm.center[1]), d = worldToPx(rm.door[0], rm.door[1]);
+    ctx.strokeStyle = "rgba(70,181,107,0.6)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(sx(c[0]), sy(c[1])); ctx.lineTo(sx(d[0]), sy(d[1])); ctx.stroke();
+    dot(rm.door, 3, "#46b56b");
+    dot(rm.center, 4, "#46b56b");
+    ctx.fillStyle = "#dfeee6"; ctx.font = "12px system-ui"; ctx.textAlign = "center";
+    ctx.fillText(rm.name, sx(c[0]), sy(c[1]) - 8);
+  });
+
+  // hovered handle ring + add-wall preview
+  if (hoverHandle) { const [px, py] = worldToPx(hoverHandle.x, hoverHandle.z);
+    ctx.strokeStyle = "#ffd23f"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(sx(px), sy(py), 8, 0, 7); ctx.stroke(); }
+  if (addStart && lastMouse) {
+    const a = worldToPx(addStart[0], addStart[1]);
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = "#ffd23f"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(sx(a[0]), sy(a[1])); ctx.lineTo(lastMouse.x, lastMouse.y); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+function dot(p, r, color) {
+  const [px, py] = worldToPx(p[0], p[1]);
+  ctx.fillStyle = color || ctx.fillStyle;
+  ctx.beginPath(); ctx.arc(sx(px), sy(py), r, 0, 7); ctx.fill();
+}
+
+// --- pointer handling ---
+let lastMouse = null;
+let panning = null;
+function mpos(e) { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+
+canvas.addEventListener("mousedown", e => {
+  const m = mpos(e); lastMouse = m;
+  if (e.button === 1 || e.button === 2 || e.altKey) { panning = { x: e.clientX, y: e.clientY, panX, panY }; return; }
+  if (tool === "add") {
+    const [wx, wz] = snapPoint(m);
+    addStart = [wx, wz]; return;
+  }
+  const h = nearestHandle(m.x, m.y, 10);
+  if (h) { pushUndo(); drag = h; if (h.kind === "wall") selectedWall = h.i; else selectedWall = -1; refresh(); return; }
+  const wi = nearestWall(m.x, m.y, 8);
+  selectedWall = wi; refresh();
+});
+window.addEventListener("mousemove", e => {
+  const m = mpos(e); lastMouse = m;
+  if (panning) { panX = panning.panX + (e.clientX - panning.x); panY = panning.panY + (e.clientY - panning.y); draw(); return; }
+  const [wx, wz] = pxToWorld(ipx(m.x), ipy(m.y));
+  document.getElementById("readout").textContent = `x ${wx.toFixed(2)}  z ${wz.toFixed(2)} m`;
+  if (drag) { const [nx, nz] = snapPoint(m, drag); drag.set(nx, nz); draw(); return; }
+  hoverHandle = tool === "select" ? nearestHandle(m.x, m.y, 10) : null;
+  draw();
+});
+window.addEventListener("mouseup", e => {
+  if (panning) { panning = null; return; }
+  if (drag) { drag = null; refresh(); return; }
+  if (tool === "add" && addStart) {
+    const m = mpos(e); const [wx, wz] = snapPoint(m);
+    if (Math.hypot(wx - addStart[0], wz - addStart[1]) > 0.05) {
+      pushUndo();
+      plan.walls.push({ a: [round(addStart[0]), round(addStart[1])], b: [round(wx), round(wz)], height: 2.7, glass: false });
+      selectedWall = plan.walls.length - 1; toast("Wall added"); refresh();
+    }
+    addStart = null; draw();
+  }
+});
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  const m = mpos(e); const f = Math.exp(-e.deltaY * 0.0012);
+  const px = ipx(m.x), py = ipy(m.y);
+  zoom *= f; panX = m.x - px * zoom; panY = m.y - py * zoom; draw();
+}, { passive: false });
+
+function round(v) { return Math.round(v * 1000) / 1000; }
+function snapPoint(m, exclude) {
+  let [wx, wz] = pxToWorld(ipx(m.x), ipy(m.y));
+  wx = round(wx); wz = round(wz);
+  if (snapWeld) {
+    let best = null, bestD = 12 * 12;
+    for (const h of buildHandles()) {
+      if (exclude && h.set === exclude.set) continue;
+      const [px, py] = worldToPx(h.x, h.z);
+      const dx = sx(px) - m.x, dy = sy(py) - m.y, d = dx * dx + dy * dy;
+      if (d <= bestD) { bestD = d; best = h; }
+    }
+    if (best) return [best.x, best.z];
+  }
+  return [wx, wz];
+}
+
+// --- global transforms ---
+function bounds() {
+  let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
+  for (const p of plan.walkableOutline) { minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]); minZ = Math.min(minZ, p[1]); maxZ = Math.max(maxZ, p[1]); }
+  return { minX, maxX, minZ, maxZ, cx: (minX + maxX) / 2, cz: (minZ + maxZ) / 2 };
+}
+function eachPoint(fn) {
+  const b = bounds();
+  const apply = p => { const [nx, nz] = fn(p[0], p[1], b); p[0] = round(nx); p[1] = round(nz); };
+  plan.walkableOutline.forEach(apply);
+  plan.holes.forEach(h => h.polygon.forEach(apply));
+  plan.walls.forEach(w => { apply(w.a); apply(w.b); });
+  plan.rooms.forEach(r => { apply(r.center); apply(r.door); });
+  if (plan.entrance) apply(plan.entrance.point);
+}
+function transform(name, fn) { pushUndo(); eachPoint(fn); refresh(); toast(name); }
+
+// --- UI wiring ---
+function $(id) { return document.getElementById(id); }
+function setTool(t) { tool = t; addStart = null; $("tool-select").classList.toggle("active", t === "select"); $("tool-add").classList.toggle("active", t === "add"); draw(); }
+$("tool-select").onclick = () => setTool("select");
+$("tool-add").onclick = () => setTool("add");
+$("opacity").oninput = e => { overlayAlpha = e.target.value / 100; draw(); };
+$("showWalls").onchange = e => { show.walls = e.target.checked; draw(); };
+$("showRooms").onchange = e => { show.rooms = e.target.checked; draw(); };
+$("showOutline").onchange = e => { show.outline = e.target.checked; draw(); };
+$("snap").onchange = e => { snapWeld = e.target.checked; };
+$("flipNS").onclick = () => transform("Flipped N↔S", (x, z, b) => [x, b.minZ + b.maxZ - z]);
+$("flipEW").onclick = () => transform("Flipped E↔W", (x, z, b) => [b.minX + b.maxX - x, z]);
+$("rot").onclick = () => transform("Rotated 90°", (x, z, b) => [b.cx + (z - b.cz), b.cz - (x - b.cx)]);
+$("toggleGlass").onclick = () => { if (selectedWall >= 0) { pushUndo(); plan.walls[selectedWall].glass = !plan.walls[selectedWall].glass; refresh(); } };
+$("delWall").onclick = () => { if (selectedWall >= 0) { pushUndo(); plan.walls.splice(selectedWall, 1); selectedWall = -1; refresh(); toast("Wall deleted"); } };
+$("export").onclick = () => {
+  const blob = new Blob([JSON.stringify(plan, null, 2)], { type: "application/json" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "floor-14.json"; a.click(); URL.revokeObjectURL(a.href); toast("Downloaded floor-14.json");
+};
+$("load").onclick = () => $("file").click();
+$("file").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => { try { const p = JSON.parse(rd.result); if (!p.walls || !p.rooms) throw 0; pushUndo(); plan = p; selectedWall = -1; refresh(); toast("Loaded " + f.name); } catch { toast("Not a valid floor plan JSON"); } };
+  rd.readAsText(f); e.target.value = "";
+};
+$("reset").onclick = () => { pushUndo(); plan = clone(EMBEDDED_PLAN); selectedWall = -1; refresh(); toast("Reset to shipped plan"); };
+
+window.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); return; }
+  if ((e.key === "Delete" || e.key === "Backspace") && selectedWall >= 0) { e.preventDefault(); $("delWall").onclick(); }
+  if (e.key.toLowerCase() === "g" && selectedWall >= 0) { $("toggleGlass").onclick(); }
+  if (e.key.toLowerCase() === "a") setTool("add");
+  if (e.key.toLowerCase() === "s") setTool("select");
+});
+
+let toastT;
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.style.opacity = 1; clearTimeout(toastT); toastT = setTimeout(() => t.style.opacity = 0, 1400); }
+
+function refresh() {
+  $("nWalls").textContent = plan.walls.length;
+  $("nGlass").textContent = plan.walls.filter(w => w.glass).length;
+  $("nRooms").textContent = plan.rooms.length;
+  const g = $("selGroup");
+  if (selectedWall >= 0 && plan.walls[selectedWall]) {
+    const w = plan.walls[selectedWall];
+    g.style.display = "";
+    $("selInfo").innerHTML = `#${selectedWall} &middot; ${w.glass ? "glass" : "solid"} &middot; h ${w.height}m<br>`
+      + `a [${w.a[0].toFixed(2)}, ${w.a[1].toFixed(2)}]<br>b [${w.b[0].toFixed(2)}, ${w.b[1].toFixed(2)}]<br>`
+      + `len ${Math.hypot(w.b[0]-w.a[0], w.b[1]-w.a[1]).toFixed(2)}m`;
+  } else g.style.display = "none";
+  draw();
+}
+
+window.addEventListener("resize", resize);
+fit(); resize(); refresh();
+</script>
+</body>
+</html>
