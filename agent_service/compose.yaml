@@ -41,6 +41,14 @@ services:
       - GUIDEMATE_CERT=${GUIDEMATE_CERT:-}
       - GUIDEMATE_KEY=${GUIDEMATE_KEY:-}
       - GUIDEMATE_CA=${GUIDEMATE_CA:-}
+    # The Virtual-Fleet mTLS cert/key/CA live on the host (provisioned out of band from SSM
+    # Parameter Store, see docs/superpowers/plans/2026-08-09-session-resume.md) and are bind
+    # mounted read only, because the bridge reads them as file paths (readFileSync in
+    # world/src/iot/bridge.ts). GUIDEMATE_CERT/KEY/CA in /etc/guidemate.env point at these
+    # in-container paths. Absent on a local run, the dir is simply empty and startIotBridgeFromEnv
+    # logs and continues without the bridge, so this mount never breaks a no-cert environment.
+    volumes:
+      - /opt/guidemate/certs:/certs:ro
 
   world-client:
     build:
