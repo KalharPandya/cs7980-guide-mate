@@ -136,6 +136,42 @@ DOOR_MAX_GAP_SHRINK_M = clean.DOOR_MAX_GAP_SHRINK_M    # 0.10
 # between Classroom 1418's west jamb and the front the refit had just moved.
 DOOR_TIGHT_GAP_M = clean.DOOR_TIGHT_GAP_M              # 1.00
 
+# --- Room-door anchors are AUTHORED, so no automatic stage may seal one -----------------
+# Every guardrail above is geometric: it compares one wall end against another and asks whether
+# the opening between them still looks like a door. That is blind to the one piece of evidence
+# the plan states outright. `rooms[].door` is an authored anchor this script never rewrites, and
+# it marks an OPENING in that room's own wall line, so a stage that ADDS material across it has
+# not closed "a gap" - it has contradicted the input.
+#
+# This is the bug this constant exists for. floor-14's Gender Neutral Washroom jamb was cut back
+# by hand, with the reason written on the wall itself ("Trimmed back from the raw trace ... to
+# leave a ~0.74m door gap at its south end"), and step 6b re-closed it: the drawing's own line
+# runs on past that doorway, the raster tests therefore read the opening as ink, and nothing in
+# the geometry could tell the difference. An authored decision was overridden by a later
+# automatic stage, which is exactly what a door anchor is authored to prevent.
+#
+# 0.45 m is the agent's own footprint with margin. world/src/nav/agentProfile.ts erodes the
+# navmesh for AGENT_RADIUS_M = 0.20, so an opening narrower than the 0.40 m agent DIAMETER is not
+# an opening at all - no guide robot and no visitor avatar fits through it, and `npm run test:nav`
+# would start reporting the room unreachable. Keeping added material 0.45 m clear of the anchor
+# leaves the anchor at the centre of a clear circle a whole agent wide plus 0.05 m, so a doorway
+# survives this pipeline wide enough to walk through rather than merely wide enough to see.
+# It is also exactly DOOR_PROTECT_MIN_GAP_M, the narrowest opening the inherited door guardrails
+# already call a doorway, so the two agree by construction rather than by coincidence.
+ROOM_DOOR_KEEP_CLEAR_M = 0.45
+# A wall's authored `note` is a human sentence about that wall, and where it says in plain words
+# that the wall was cut back to leave a door gap, that is the same authored decision stated in
+# prose instead of in `rooms[]`. An end of such a wall may be trimmed but never extended. The
+# match is on the PHRASE, so it works on any wall anyone writes such a note on; nothing here keys
+# off a room name, a wall index or a coordinate.
+DOOR_NOTE_PHRASES = (
+    "door gap",
+    "door opening",
+    "doorway",
+    "gap for a door",
+    "gap for the door",
+)
+
 # --- Step 6 dangling-end repair --------------------------------------------------------
 # What counts as DANGLING. An end is ATTACHED if it sits on another wall's body; otherwise it
 # is still legitimate architecture when it faces a near-collinear wall end across a door-sized
@@ -731,6 +767,64 @@ def dedupe_bundles(walls: List[Wall]) -> List[Wall]:
     raise RuntimeError("dedupe_bundles did not converge; check the BUNDLE_* tolerances")
 
 
+def room_door_points(rooms: Sequence[Dict[str, Any]]) -> List[Point]:
+    """Every authored `rooms[].door` anchor. The one piece of door evidence that is stated rather
+    than inferred, and the only one the raster tests cannot contradict."""
+    return [_pt(room["door"]) for room in rooms]
+
+
+def span_clears_room_doors(start: Point, end: Point, rooms: Sequence[Dict[str, Any]]) -> bool:
+    """
+    May this span of NEW material be added? Only if no point of it comes within
+    ROOM_DOOR_KEEP_CLEAR_M of a room's authored door anchor.
+
+    This is the absolute form of the guard, and it is the right one for added material because
+    added material is always avoidable: a stage that cannot extend, bridge or draw here simply
+    leaves the opening the plan says is there. Compare `wall_move_clears_room_doors`, which has to
+    tolerate walls that already crowd an anchor.
+    """
+    span = {"a": [start[0], start[1]], "b": [end[0], end[1]]}
+    return all(
+        segment_point_distance(door, span) >= ROOM_DOOR_KEEP_CLEAR_M
+        for door in room_door_points(rooms)
+    )
+
+
+def wall_move_clears_room_doors(
+    old: Wall, new: Wall, rooms: Sequence[Dict[str, Any]]
+) -> bool:
+    """
+    May this wall be moved from `old` to `new`? Absolute for a wall that was clear of every
+    anchor, monotone for one that was not.
+
+    The monotone half is not a loophole, it is the honest reading of the input. `rooms` is passed
+    through untouched by this script, so an anchor that already sits inside a wall is a fact about
+    the input rather than something a stage did: floor-14's Wellness Room door is 0.017 m from the
+    wall the trace draws straight across its threshold, and it was 0.011 m from it in the raw
+    trace, before this pipeline existed. Refusing every move that leaves it under the clearance
+    would freeze that whole wall for a defect no stage here caused and no stage here may fix
+    (`rooms` is not this script's to rewrite). Refusing every move that makes it WORSE is the part
+    that is actually in this script's gift.
+    """
+    for door in room_door_points(rooms):
+        after = segment_point_distance(door, new)
+        if after >= ROOM_DOOR_KEEP_CLEAR_M:
+            continue
+        if after < segment_point_distance(door, old) - 1e-9:
+            return False
+    return True
+
+
+def note_declares_a_door_gap(wall: Wall) -> bool:
+    """Does this wall's authored note say, in plain language, that it was cut back to leave a
+    door gap? Then its free end is a jamb by authorial intent and no stage may extend it."""
+    note = wall.get("note")
+    if not isinstance(note, str):
+        return False
+    lowered = note.lower()
+    return any(phrase in lowered for phrase in DOOR_NOTE_PHRASES)
+
+
 def _protected_gaps(points: Sequence[Point]) -> List[Tuple[int, int, float]]:
     """Endpoint pairs from different walls sitting a DOOR width apart: candidate doorways, which
     the relative guard may not narrow. Wider openings are room mouths and corridors, and they keep
@@ -777,7 +871,9 @@ def _move_is_door_safe(
     return True
 
 
-def _weld_once(partitions: List[Wall], fixed: Sequence[Wall]) -> List[Wall]:
+def _weld_once(
+    partitions: List[Wall], fixed: Sequence[Wall], rooms: Sequence[Dict[str, Any]]
+) -> List[Wall]:
     """
     Endpoint welding with the envelope/core PINNED. A partition end within WELD_RADIUS_M of a
     fixed wall's corner lands exactly on that corner (the envelope never moves, so it keeps
@@ -842,6 +938,8 @@ def _weld_once(partitions: List[Wall], fixed: Sequence[Wall]) -> List[Wall]:
         moved[key] = [target[0], target[1]]
         if wall_length(moved) < MIN_COLLAPSE_LENGTH_M:
             continue  # a weld may not collapse a partition
+        if not wall_move_clears_room_doors(result[owner], moved, rooms):
+            continue  # a weld may not crowd an authored door anchor
         result[owner] = moved
         all_walls[owner] = moved
     return round_walls(result)
@@ -864,7 +962,9 @@ def _free_partition_endpoints(partitions: Sequence[Wall], fixed: Sequence[Wall])
     return free
 
 
-def _t_snap_once(partitions: List[Wall], fixed: Sequence[Wall]) -> List[Wall]:
+def _t_snap_once(
+    partitions: List[Wall], fixed: Sequence[Wall], rooms: Sequence[Dict[str, Any]]
+) -> List[Wall]:
     """Land every free partition end on the perpendicular foot of the nearest wall BODY
     (partition or fixed). Only partition ends move."""
     result = [dict(w) for w in partitions]
@@ -908,6 +1008,8 @@ def _t_snap_once(partitions: List[Wall], fixed: Sequence[Wall]) -> List[Wall]:
         key = "a" if endpoint_index % 2 == 0 else "b"
         moved = dict(result[owner])
         moved[key] = [new_point[0], new_point[1]]
+        if not wall_move_clears_room_doors(result[owner], moved, rooms):
+            continue  # a T-snap may not crowd an authored door anchor
         result[owner] = moved
     return round_walls(result)
 
@@ -1008,7 +1110,9 @@ def prune_floating_shards(partitions: List[Wall], fixed: Sequence[Wall]) -> List
     return keep
 
 
-def _geometry_fixpoint(partitions: List[Wall], fixed: Sequence[Wall]) -> List[Wall]:
+def _geometry_fixpoint(
+    partitions: List[Wall], fixed: Sequence[Wall], rooms: Sequence[Dict[str, Any]]
+) -> List[Wall]:
     """Bundle fusion, collinear merge, weld, T-snap and crossing-trim, to a fixpoint. No pruning
     happens here: a jamb can need several passes before its end lands, and judging connectivity
     before the geometry has settled would delete walls that were about to attach."""
@@ -1017,10 +1121,10 @@ def _geometry_fixpoint(partitions: List[Wall], fixed: Sequence[Wall]) -> List[Wa
         stepped = clean.drop_degenerate(result)
         stepped = dedupe_bundles(stepped)
         stepped = clean.merge_collinear_chains(stepped)
-        stepped = _weld_once(stepped, fixed)
-        stepped = _t_snap_once(stepped, fixed)
+        stepped = _weld_once(stepped, fixed, rooms)
+        stepped = _t_snap_once(stepped, fixed, rooms)
         stepped = trim_crossings(stepped, fixed)
-        stepped = _weld_once(stepped, fixed)
+        stepped = _weld_once(stepped, fixed, rooms)
         stepped = clean.drop_degenerate(stepped)
         stepped = round_walls(stepped)
         if stepped == result:
@@ -1029,11 +1133,13 @@ def _geometry_fixpoint(partitions: List[Wall], fixed: Sequence[Wall]) -> List[Wa
     raise RuntimeError("_geometry_fixpoint did not converge; check the tolerances")
 
 
-def regularize(partitions: List[Wall], fixed: Sequence[Wall]) -> List[Wall]:
+def regularize(
+    partitions: List[Wall], fixed: Sequence[Wall], rooms: Sequence[Dict[str, Any]]
+) -> List[Wall]:
     """Settle the geometry, then prune, then settle again (a drop can free a landing)."""
     result = round_walls(partitions)
     for _ in range(MAX_PASSES):
-        stepped = prune_floating_shards(_geometry_fixpoint(result, fixed), fixed)
+        stepped = prune_floating_shards(_geometry_fixpoint(result, fixed, rooms), fixed)
         if stepped == result:
             return result
         result = stepped
@@ -1384,6 +1490,14 @@ def repair_dangling_ends(
                     # true of every joint being closed and would veto them all.
                     if span_off_ink(end_point, point) > INK_ON_MAX_M:
                         continue
+                    # ...but the drawing cannot answer it where the plan already has: a drawn line
+                    # runs on past several of this floor's doorways, so "on ink" is true there and
+                    # says nothing. An authored anchor, or the wall's own authored note, outranks
+                    # the raster.
+                    if not span_clears_room_doors(end_point, point, rooms):
+                        continue
+                    if note_declares_a_door_gap(result[owner]):
+                        continue
                 elif not _absolute_door_safe(end_point, point, owner, walls):
                     continue  # a sideways move adds no material, but may still crowd a gap
                 landing = (distance, target_index, point, along)
@@ -1404,6 +1518,10 @@ def repair_dangling_ends(
             bridged = False
             for distance, target_index, point in _bridge_candidates(walls, owner, end_point):
                 if span_off_ink(end_point, point) > INK_ON_MAX_M:
+                    continue
+                if not span_clears_room_doors(end_point, point, rooms):
+                    continue  # a bridge across an authored door anchor is not a lost joint
+                if note_declares_a_door_gap(result[owner]):
                     continue
                 if not _bridge_is_clean(end_point, point, walls):
                     continue
@@ -1504,7 +1622,7 @@ def _pair_move_is_along_axis(
 
 
 def close_invented_breaks(
-    partitions: List[Wall], fixed: Sequence[Wall]
+    partitions: List[Wall], fixed: Sequence[Wall], rooms: Sequence[Dict[str, Any]]
 ) -> Tuple[List[Wall], List[str]]:
     """
     Pull one free partition end onto another wall's free end, closing a gap the trace invented.
@@ -1515,6 +1633,13 @@ def close_invented_breaks(
     opening the drawing shows. One change per pass with a restart, so the result is a pure
     function of the wall list; each closure lands an end ON another wall, so a re-run sees it as
     attached and nothing fires twice.
+
+    Neither justification is admissible over an authored door anchor, and this stage is where that
+    was learned the hard way: it closed the Gender Neutral Washroom's doorway (wall end
+    [21.434, 9.600] onto [21.353, 8.908]) on the "span is on ink" branch, because the drawing does
+    carry its line on past that opening and the ink test can only report what is drawn. The plan
+    said otherwise in two places at once, in `rooms[].door` and in the wall's own authored note,
+    and neither was being read. Both are checked first now.
     """
     result = [dict(w) for w in partitions]
     actions: List[str] = []
@@ -1550,9 +1675,14 @@ def close_invented_breaks(
                     candidates.append((distance, target_index, point))
             candidates.sort(key=lambda item: (round(item[0], 6), item[1], item[2]))
 
+            if note_declares_a_door_gap(result[owner]):
+                continue  # this wall's own note says its free end is a jamb, not a broken run
+
             for distance, target_index, point in candidates:
                 if not _pair_move_is_along_axis(end_point, other_end, point, bearing):
                     continue
+                if not span_clears_room_doors(end_point, point, rooms):
+                    continue  # the plan authored a doorway here; no ink test may overrule it
                 crossing = _span_crosses_a_wall(end_point, point, walls, (owner, target_index))
                 off_ink = span_off_ink(end_point, point)
                 budget = min(
@@ -1709,12 +1839,16 @@ def _uncovered_part_of_run(
 
 
 def draw_missing_ink_runs(
-    partitions: List[Wall], fixed: Sequence[Wall]
+    partitions: List[Wall], fixed: Sequence[Wall], rooms: Sequence[Dict[str, Any]]
 ) -> Tuple[List[Wall], List[str]]:
     """
     Where a loose end faces a genuinely blank gap and the drawing then CARRIES ON with a wall the
     trace never emitted, emit it. The blank gap stays open (it is a door), but the partition on
     the far side of it stops being missing, which is what leaves its neighbours floating.
+
+    The emitted run is new material like any other, so it may not land on an authored door anchor
+    either: where the drawing's line runs straight through a doorway the plan declares, this stage
+    would otherwise draw the doorway shut in one step instead of two.
     """
     result = [dict(w) for w in partitions]
     actions: List[str] = []
@@ -1755,6 +1889,8 @@ def draw_missing_ink_runs(
                 round(end_point[0] + direction[0] * uncovered[1], COORD_DECIMALS),
                 round(end_point[1] + direction[1] * uncovered[1], COORD_DECIMALS),
             )
+            if not span_clears_room_doors(start, finish, rooms):
+                continue  # the run the drawing has crosses a doorway the plan authored
             result.append(make_wall(start, finish))
             actions.append(
                 f"draw the {uncovered[1] - uncovered[0]:.2f} m of wall the source has and the "
@@ -1935,7 +2071,9 @@ def _axis_landing(wall: Wall, key: str, host: Wall) -> Optional[Point]:
     return landing
 
 
-def _reland_on_host(walls: Sequence[Wall], stub: Wall, host_index: int) -> List[Wall]:
+def _reland_on_host(
+    walls: Sequence[Wall], stub: Wall, host_index: int, rooms: Sequence[Dict[str, Any]]
+) -> List[Wall]:
     """
     Re-attach whatever was joined to the stub's body onto the wall the stub shadowed.
 
@@ -1973,11 +2111,15 @@ def _reland_on_host(walls: Sequence[Wall], stub: Wall, host_index: int) -> List[
                 continue
             moved = dict(result[owner])
             moved[key] = [new_point[0], new_point[1]]
+            if not wall_move_clears_room_doors(result[owner], moved, rooms):
+                continue  # re-landing may not carry a wall across an authored door anchor
             result[owner] = moved
     return round_walls(result)
 
 
-def absorb_shadow_stubs(walls: Sequence[Wall], pinned: int = 0) -> Tuple[List[Wall], List[str]]:
+def absorb_shadow_stubs(
+    walls: Sequence[Wall], rooms: Sequence[Dict[str, Any]], pinned: int = 0
+) -> Tuple[List[Wall], List[str]]:
     """
     Remove sub-STUB_MAX_LENGTH_M tabs that only re-draw a longer wall, after moving whatever
     design decision they carry (the glass flag, the authored note) onto the wall they shadow.
@@ -2005,6 +2147,8 @@ def absorb_shadow_stubs(walls: Sequence[Wall], pinned: int = 0) -> Tuple[List[Wa
         for index in range(pinned, len(result)):
             if wall_length(result[index]) >= STUB_MAX_LENGTH_M:
                 continue
+            if note_declares_a_door_gap(result[index]):
+                continue  # a wall whose note says it is a door jamb keeps its own identity
             if not _stub_free_end(index, result):
                 continue
             host = _shadow_host(index, result)
@@ -2018,7 +2162,9 @@ def absorb_shadow_stubs(walls: Sequence[Wall], pinned: int = 0) -> Tuple[List[Wa
         stub = result[index]
         host_after = host if host < index else host - 1
         floating_before = sum(1 for i in range(len(result)) if not wall_is_connected(i, result))
-        trimmed = _reland_on_host([w for i, w in enumerate(result) if i != index], stub, host_after)
+        trimmed = _reland_on_host(
+            [w for i, w in enumerate(result) if i != index], stub, host_after, rooms
+        )
         floating_after = sum(1 for i in range(len(trimmed)) if not wall_is_connected(i, trimmed))
         if floating_after > floating_before:
             actions.append(
@@ -2893,34 +3039,35 @@ def rebuild(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     fixed = envelope + core
 
     outline = [_pt(p) for p in plan["walkableOutline"]]
+    rooms = plan["rooms"]
     partitions, rejected = admit_partitions(originals, fixed, outline, hole_polygons)
-    partitions = regularize(partitions, fixed)
+    partitions = regularize(partitions, fixed, rooms)
     # Re-apply the admission filters: regularization moves ends, so a partition can only now
     # have become a duplicate of the envelope. Re-applying is also what makes the whole script
     # a fixpoint (a second run sees its own output and reproduces it).
     partitions, _ = admit_partitions(partitions, fixed, outline, hole_polygons)
-    partitions, repairs = repair_dangling_ends(partitions, fixed, plan["rooms"])
-    partitions, closures = close_invented_breaks(partitions, fixed)
-    partitions, drawn = draw_missing_ink_runs(partitions, fixed)
+    partitions, repairs = repair_dangling_ends(partitions, fixed, rooms)
+    partitions, closures = close_invented_breaks(partitions, fixed, rooms)
+    partitions, drawn = draw_missing_ink_runs(partitions, fixed, rooms)
     # Settle again: a closure can leave a wall crossing where a T belongs (the wall that runs
     # through a junction gap now pokes a few centimetres past the closed line), and an emitted run
     # is crossed by whatever T-joins it. _geometry_fixpoint's trim turns both into clean junctions.
     # `regularize` is deliberately NOT used here: its shard prune judges connectivity, and the
     # emitted runs are joined mid-span rather than at a tip.
-    partitions = _geometry_fixpoint(partitions, fixed)
+    partitions = _geometry_fixpoint(partitions, fixed, rooms)
     partitions, _ = admit_partitions(partitions, fixed, outline, hole_polygons)
     # Step 9. Everything above judges a wall's ENDS, so a wall that runs uniformly BESIDE the line
     # it represents reads as perfectly healthy to all of it. This is the one stage that looks at a
     # wall's whole body, and the regularizer runs again afterwards so its neighbours follow it.
-    partitions, refits = refit_walls_onto_ink(partitions, fixed, plan["rooms"])
-    partitions = _geometry_fixpoint(partitions, fixed)
+    partitions, refits = refit_walls_onto_ink(partitions, fixed, rooms)
+    partitions = _geometry_fixpoint(partitions, fixed, rooms)
     partitions, _ = admit_partitions(partitions, fixed, outline, hole_polygons)
 
     walls = round_walls(fixed + partitions)
     walls, provenance = carry_provenance(walls, originals)
     # Runs AFTER provenance on purpose: a stub is only safe to delete once whatever it carries is
     # sitting on the wall it shadows, and that is only true after the flags have been placed.
-    walls, absorbed = absorb_shadow_stubs(walls, pinned=len(fixed))
+    walls, absorbed = absorb_shadow_stubs(walls, rooms, pinned=len(fixed))
     # Step 10. Last, so the pieces of an arc are never fed back through stages that would fuse
     # them, and so `glass`/`note` are already in place to be carried onto every piece.
     walls, curves = curve_chord_walls(walls, pinned=len(fixed))
@@ -2938,6 +3085,25 @@ def rebuild(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     for hole, polygon in zip(holes, hole_polygons):
         assert not point_in_polygon(_pt(plan["entrance"]["point"]), polygon), (
             f'entrance landed inside hole {hole["name"]}'
+        )
+
+    # Guardrail: this rebuild may not leave any room's authored `door` anchor more crowded than it
+    # found it. Every stage that can add material already refuses to (span_clears_room_doors,
+    # wall_move_clears_room_doors, note_declares_a_door_gap); this is the end-to-end check that
+    # none of them was bypassed by a stage added later, and it is deliberately stated as a
+    # property of the whole pipeline rather than of any one stage, because the bug it exists for
+    # was precisely a later stage overriding an earlier decision. An anchor that already sat under
+    # the clearance in the input (floor-14's Wellness Room, 0.017 m, a fact of `rooms[]` this
+    # script may not rewrite) only has to come out no worse than it went in.
+    for room in plan["rooms"]:
+        door = _pt(room["door"])
+        before_m = min(segment_point_distance(door, w) for w in originals)
+        after_m = min(segment_point_distance(door, w) for w in walls)
+        floor_m = min(before_m, ROOM_DOOR_KEEP_CLEAR_M)
+        assert after_m >= floor_m - 0.001, (
+            f'room "{room["name"]}" door {room["door"]} ended up {after_m:.3f} m from the nearest '
+            f"wall, down from {before_m:.3f} m: a stage closed an authored doorway "
+            f"(clearance {ROOM_DOOR_KEEP_CLEAR_M:.2f} m)"
         )
 
     result = dict(plan)
