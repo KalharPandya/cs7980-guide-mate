@@ -15,13 +15,13 @@ import type { VisitorRecord } from "./escortManager.js";
  * `tick()` across both, in the order that matters -- see its doc comment.
  */
 
-/** ~45 concurrent simulated visitors is the Phase 4 target headcount (matches
- * scripts/loadtest.ts's "50 robots + 45 visitors" 95-agent design point). Exported so
- * tests can reference the same number instead of a duplicated magic constant. */
-export const SIMULATED_VISITOR_TARGET = 45;
+/** ~5 concurrent simulated visitors: the small, legible-scene target (5 robots + 5
+ * visitors = 10 agents; the earlier ~95-agent design point gridlocked the floor).
+ * Exported so tests can reference the same number instead of a duplicated magic constant. */
+export const SIMULATED_VISITOR_TARGET = 5;
 
 /** Minimum gap between successive spawn attempts, in simulated seconds. This is what
- * staggers the initial ramp-up (spawning 45 visitors 0.5s apart takes ~22.5s of simulated
+ * staggers the initial ramp-up (spawning 5 visitors 0.5s apart takes ~2.5s of simulated
  * time to fill, instead of one instantaneous burst on tick 1) and also throttles retries
  * once at target. */
 const SPAWN_STAGGER_INTERVAL_S = 0.5;
@@ -128,7 +128,7 @@ export class SimulatedVisitorSpawner {
     this.dwellMaxS = options.dwellMaxSeconds ?? DWELL_MAX_S;
 
     // Stagger the very FIRST spawn too (not just subsequent ones) so a freshly-created
-    // room doesn't burst all 45 in the same tick just because spawnCooldownSeconds started
+    // room doesn't burst all 5 in the same tick just because spawnCooldownSeconds started
     // at 0 -- see the "stagger initial spawns" requirement.
     this.spawnCooldownSeconds = this.simulatedTarget > 0 ? randomBetween(0, this.spawnStaggerS) : Infinity;
   }
@@ -196,6 +196,9 @@ export class SimulatedVisitorSpawner {
       id,
       kind: "simulated",
       robotId: null,
+      escortPhase: null,
+      greetSecondsRemaining: 0,
+      escortDestination: null,
       escortElapsedSeconds: 0,
       escortSinceLastTrailUpdateSeconds: 0,
       robotPositionHistory: [],
@@ -217,7 +220,7 @@ export class SimulatedVisitorSpawner {
    * same `requestGuide` a real Moses-driven assign would use. On failure (no idle robot
    * right now), stays in "waiting_for_robot" and arms a short retry cooldown instead of
    * despawning -- a spawned-but-not-yet-escorted visitor is still a "concurrent visitor"
-   * for the purposes of the ~45-target headcount. */
+   * for the purposes of the ~5-target headcount. */
   private tryStartEscort(record: VisitorRecord): void {
     const result = this.escorts.requestGuide(record.id, record.simulatedTargetRoom!);
     if (result.robotId) {
@@ -233,8 +236,13 @@ export class SimulatedVisitorSpawner {
    * "walking_to_entrance" despawns once the visitor's own schema state settles back to
    * "idle" (the same settled-idle signal `EscortManager.tick()` uses for robot arrival,
    * applied here to the visitor's own agent instead of an escorting robot's).
-   * "walking_to_room" is intentionally not handled here -- that phase is entirely driven
-   * by `EscortManager.tick()` (which transitions it to "dwelling" on arrival/timeout). */
+   * "walking_to_room" is intentionally not handled here -- that whole span (the escort's
+   * approaching -> greeting -> leading phases in EscortManager) is entirely driven by
+   * `EscortManager.tick()`, which transitions this to "dwelling" on arrival/timeout. The
+   * simulated visitor deliberately does NOTHING on its own while being fetched/greeted/led
+   * (it is never issued a move target here during those phases -- the escort trailing, which
+   * only starts in "leading", is the sole thing that moves it), so it simply waits in place
+   * for the robot exactly as the 3-phase flow requires. */
   private tickLifecycle(dtSeconds: number): void {
     for (const visitor of this.escorts.allVisitors()) {
       if (visitor.kind !== "simulated") continue;

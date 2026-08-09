@@ -12,10 +12,14 @@ const ROBOT_MODEL_URL = '/models/robot.glb'
  * Target standing height in meters. RobotExpressive.glb (Task 0.4's CC0 asset, three.js's
  * example "RobotExpressive" model) is a humanoid-proportioned cartoon robot, not a literal
  * TurtleBot -- see CLAUDE.md's project description for why this stylized asset was chosen for
- * the virtual-world demo instead of a boxy TurtleBot mesh. Picked slightly shorter than the
- * visitor's 1.7m (see Visitor.tsx) so the two kinds read as visually distinct at a glance.
+ * the virtual-world demo instead of a boxy TurtleBot mesh.
+ *
+ * Shrunk 1.4m -> 0.5m: a real TurtleBot guide-robot is knee-height, and the oversized 1.4m
+ * body's footprint overran the 0.25m navmesh/crowd radius and clipped walls. At 0.5m the
+ * visual body sits inside the agent footprint, so robots stop poking through walls, and they
+ * still read as clearly distinct from the 1.7m visitor avatars (see Visitor.tsx).
  */
-const ROBOT_HEIGHT_M = 1.4
+const ROBOT_HEIGHT_M = 0.5
 
 /**
  * Upper bound on simultaneous robot instances, sized for drei's <Instances> instance-attribute

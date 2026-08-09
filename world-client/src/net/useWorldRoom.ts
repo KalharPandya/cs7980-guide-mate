@@ -47,6 +47,18 @@ export interface AgentSnapshot {
 }
 
 /**
+ * A guide robot's home charging station -- see world/src/rooms/schema/WorldState.ts's Station
+ * schema. Static for the room's lifetime (a robot's pad never moves), so unlike AgentSnapshot
+ * these are held in plain React state, populated once as the server syncs them on join and
+ * handed to scene/ChargingPads.tsx to draw the pads. No per-frame reactivity is needed.
+ */
+export interface StationSnapshot {
+  id: string;
+  x: number;
+  z: number;
+}
+
+/**
  * Surfaced to the UI (see App.tsx's small status indicator) so a human glancing at an
  * unattended kiosk screen can tell the difference between "genuinely live" and "frozen on the
  * last frame it received before the connection dropped" -- the latter is the dangerous failure
@@ -70,10 +82,12 @@ const WORLD_SERVER_URL =
 export function useWorldRoom(): {
   agentIds: string[];
   agents: Map<string, AgentSnapshot>;
+  stations: StationSnapshot[];
   status: ConnectionStatus;
 } {
   const agentsRef = useRef<Map<string, AgentSnapshot>>(new Map());
   const [agentIds, setAgentIds] = useState<string[]>([]);
+  const [stations, setStations] = useState<StationSnapshot[]>([]);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
 
   useEffect(() => {
@@ -92,6 +106,10 @@ export function useWorldRoom(): {
     const clearAgents = () => {
       agentsRef.current.clear();
       setAgentIds([]);
+      // Stations are re-published by the fresh room's onAdd right after this (same reason the
+      // agents map is wiped on every (re)connect -- see the clearAgents() call site), so drop
+      // the previous room's copy rather than leave stale pads on screen during a blip.
+      setStations([]);
     };
 
     const scheduleRetry = () => {
@@ -192,6 +210,14 @@ export function useWorldRoom(): {
             setAgentIds(Array.from(agentsRef.current.keys()));
           });
 
+          // Charging stations are static (never move, never removed for the room's life), so
+          // onAdd is all that's needed: it fires once per station present in the joined room's
+          // initial state, appending each into plain React state for scene/ChargingPads.tsx.
+          // No onChange/onRemove -- a Station's x/z are set once server-side and never mutated.
+          $(room.state).stations.onAdd((station, key) => {
+            setStations((prev) => [...prev, { id: key, x: station.x, z: station.z }]);
+          });
+
           // Room-level protocol errors (e.g. the server calling `client.error(...)`). Purely
           // informational here -- a WebSocket close (handled by onLeave below, which drives
           // reconnection) normally follows shortly after, so this just logs context for
@@ -243,5 +269,5 @@ export function useWorldRoom(): {
     };
   }, []);
 
-  return { agentIds, agents: agentsRef.current, status };
+  return { agentIds, agents: agentsRef.current, stations, status };
 }

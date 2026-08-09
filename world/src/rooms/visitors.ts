@@ -113,6 +113,13 @@ export class VisitorManager {
     return this.escorts.requestGuide(visitorId, roomNameOrCoords);
   }
 
+  /** Passthrough to `EscortManager.isRobotEscorting` -- lets WorldRoom.update() tell a
+   * genuinely-idle robot (send it home to park) apart from one that is schema-idle for a
+   * split second mid-escort (leave its escort-owned move target alone). */
+  isRobotEscorting(robotId: string): boolean {
+    return this.escorts.isRobotEscorting(robotId);
+  }
+
   /** Merges `EscortManager`'s escort-binding stats with `SimulatedVisitorSpawner`'s
    * simulated-visitor count -- see `VisitorDebugStats`'s doc comments for what each field
    * means. */

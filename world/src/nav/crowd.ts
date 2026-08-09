@@ -123,6 +123,28 @@ export class AgentCrowd {
   }
 
   /**
+   * Returns the named agent's live local-path corridor corners: the string-pulled
+   * remaining waypoints from the agent's CURRENT position to its move target, in nav-space
+   * `{x, z}` pairs. Empty array if `id` isn't tracked, or if the agent has no active
+   * corridor (no target, or already arrived).
+   *
+   * This is Detour's ACTUAL remaining path -- `dtCrowd` recomputes it inside `crowd.update`
+   * every tick as the corridor is optimized and consumed -- NOT a one-shot
+   * `navMeshQuery.computePath` snapshot. A display line built from these corners therefore
+   * always matches where the agent is really walking (crowd steering + local avoidance) and
+   * always stays inside the navmesh corridor, and it shrinks as the agent advances.
+   * `CrowdAgent.corners()` is documented in
+   * `node_modules/@recast-navigation/core/dist/crowd.d.ts` ("Returns the local path
+   * corridor corners for the agent"). Exposed here so WorldRoom reads the corridor through
+   * this wrapper instead of reaching into the underlying `CrowdAgent`.
+   */
+  corners(id: string): { x: number; z: number }[] {
+    const agent = this.byId.get(id);
+    if (!agent) return [];
+    return agent.corners().map((c) => ({ x: c.x, z: c.z }));
+  }
+
+  /**
    * Steps the crowd by exactly `dtSeconds` (fixed timestep, no interpolation) and
    * returns every tracked agent's resulting position/heading/speed. Callers own any
    * ms->seconds conversion and clamping (see WorldRoom.update) -- this method takes

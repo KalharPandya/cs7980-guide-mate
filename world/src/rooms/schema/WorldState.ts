@@ -24,7 +24,22 @@ export class Agent extends Schema {
   @type(["number"]) route = new ArraySchema<number>();
 }
 
+/**
+ * A guide-robot's fixed home charging station, drawn as a visible pad on the floor by the
+ * client (world-client/src/scene/ChargingPads.tsx). One per robot, `id` matching the robot's
+ * agent id, `x`/`z` its spawn point (see WorldRoom.onCreate's fleet-seeding loop). Static
+ * after room creation -- never moves -- so the client reads it once when state is ready rather
+ * than reactively per frame. Kept minimal (id + x/z only) on purpose: the client already knows
+ * how to draw the pad, all the schema has to carry is where each one goes.
+ */
+export class Station extends Schema {
+  @type("string") id!: string;
+  @type("number") x = 0;
+  @type("number") z = 0;
+}
+
 export class WorldState extends Schema {
   @type({ map: Agent }) agents = new MapSchema<Agent>();
+  @type({ map: Station }) stations = new MapSchema<Station>();
   @type("number") floor = 0;
 }

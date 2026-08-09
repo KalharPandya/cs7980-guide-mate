@@ -385,29 +385,31 @@ async function testAssignChainEndToEnd(): Promise<void> {
         `final distance to "${roomName}"'s door ${visitorFinalDoorDist.toFixed(2)}m (straight-line entrance-to-door was ` +
         `${entranceToDoorDistance.toFixed(2)}m; robot's own trip was ${robotTripDistance.toFixed(2)}m)`,
     );
-    // "not stationary": the visitor's trailing target follows the ROBOT's own historical
-    // path (see EscortManager.recordHistoryAndRetarget's doc comment -- deliberately a
-    // "conga line" off the robot's past positions, not a beeline to the destination), and
-    // the assigned robot's own path here is a long ~23.6m trip across the floor -- so a
-    // visitor genuinely trailing it accumulates real ground covered, comparable to the
-    // robot's own trip length, even though the visitor's NET displacement (below) is much
-    // smaller (its entrance spawn point is already close to "1408"'s door in a straight
-    // line -- the robot is the one that started far away).
+    // "not stationary": in the fetch-then-lead flow the visitor WAITS at the entrance while
+    // the robot comes to fetch it and greets it, then trails the robot only during the
+    // LEADING phase -- so the visitor's own trip is roughly the entrance-to-door distance
+    // (its trailing conga path, plus wiggle, over that leg), NOT the robot's much longer
+    // spawn-to-door trip (the robot's extra distance was spent BEFORE the visitor ever moved,
+    // coming to get it). So this is measured against entranceToDoorDistance.
     assert.ok(
-      visitorMovedTotal > robotTripDistance * 0.5,
-      `visitor "${visitorId}" should have covered real ground while trailing the robot's ${robotTripDistance.toFixed(2)}m ` +
-        `trip (moved ${visitorMovedTotal.toFixed(2)}m total) -- not stationary`,
+      visitorMovedTotal > entranceToDoorDistance * 0.8,
+      `visitor "${visitorId}" should have covered real ground while trailing the robot over the leading leg ` +
+        `(~${entranceToDoorDistance.toFixed(2)}m entrance-to-door; moved ${visitorMovedTotal.toFixed(2)}m total) -- not stationary`,
     );
     // "actually arrived near the destination": the visitor's net displacement from its own
     // spawn should land it close to the door, not off wandering somewhere else -- measured
     // against the real straight-line entrance-to-door distance (the meaningful bar for
     // "did the visitor get where they asked to go", independent of how far the ROBOT itself
     // had to travel to get there).
+    // Bound derived from the completion contract: the robot is within DOOR_TOLERANCE_M of the
+    // door and the visitor releases within VISITOR_ARRIVAL_DISTANCE_M (2.5m) of the robot, so
+    // the visitor can be up to ~3.5m from the door at release. (The old ~1m emergent packing was
+    // an artifact of the idle-only gate, which is not robust when parked fleet robots crowd a
+    // busy door -- see ROBOT_ARRIVAL_TOLERANCE_M in escortManager.ts.)
     assert.ok(
-      visitorFinalDoorDist <= DOOR_TOLERANCE_M * 3,
-      `visitor "${visitorId}" should end up close to "${roomName}"'s door (within ${(DOOR_TOLERANCE_M * 3).toFixed(1)}m, a ` +
-        `generous multiple of the robot's own convergence tolerance, allowing for the ~1m trailing gap) -- ` +
-        `got ${visitorFinalDoorDist.toFixed(2)}m`,
+      visitorFinalDoorDist <= DOOR_TOLERANCE_M + 2.5,
+      `visitor "${visitorId}" should end up near "${roomName}"'s door (within ${(DOOR_TOLERANCE_M + 2.5).toFixed(1)}m, ` +
+        `the robot-at-door + visitor-arrival-radius contract) -- got ${visitorFinalDoorDist.toFixed(2)}m`,
     );
     assert.ok(
       visitorNetDisplacement > entranceToDoorDistance * 0.5,
@@ -423,11 +425,17 @@ async function testAssignChainEndToEnd(): Promise<void> {
     // ---- hop 5: escort released, robot back in the idle pool (provably selectable again) ----
     const statsAfterArrival = room.getVisitorDebugStats();
     assert.equal(statsAfterArrival.robotBindings, 0, "robot binding should be released on arrival");
-    assert.equal(room.state.agents.get(assignedRobotId!)!.state, "idle", "the escorting robot should be idle again after arrival");
 
-    // Prove "returned to the idle pool" concretely, not just "unbound": spawn a fresh test
-    // visitor right next to the just-arrived robot's current position so it is unambiguously
-    // the nearest idle robot, and confirm requestGuide picks that SAME robot id again.
+    // The robot may still read "moving" the instant it released (a trailing visitor packing
+    // against it keeps its speed flickering above idle, and it heads home once free), and
+    // requestGuide only picks IDLE robots -- so let it settle to idle first, then prove it is
+    // reassignable by spawning a fresh visitor at its then-position (unambiguously the nearest).
+    let arrivedRobotIdle = false;
+    advance(room, 4000, () => {
+      arrivedRobotIdle = room.state.agents.get(assignedRobotId!)!.state === "idle";
+      return arrivedRobotIdle;
+    });
+    assert.ok(arrivedRobotIdle, "the freed robot should settle to idle after finishing its escort");
     const arrivedRobot = room.state.agents.get(assignedRobotId!)!;
     room.addAgent("assign-chain-reuse-probe", "visitor", { x: arrivedRobot.x, z: arrivedRobot.z });
     const reuseResult = room.requestGuide("assign-chain-reuse-probe", entrance);
@@ -443,27 +451,25 @@ async function testAssignChainEndToEnd(): Promise<void> {
 }
 
 // ============================================================================================
-// Scenario 1b (FIX VERIFICATION -- this test used to document a real defect this test file
-// found: the escort released the instant the GUIDE ROBOT's own crowd state settled to idle
-// (EscortManager.tick(): `arrived = ... && robotAgent.state === "idle"`), with NO check on
-// how far the VISITOR itself still was from the destination. `requestGuide` picks the idle
-// robot nearest to the VISITOR's spawn (the entrance) -- not nearest to the DESTINATION -- so
-// a robot that happens to already be sitting close to the requested room (a real, observed
-// case: the deterministic 50-robot spawn grid in guideFleetSpawns.ts puts "virtual/50" only
-// ~4.5m from "South Collaboration Space"'s door, see the NOTE in testAssignChainEndToEnd
-// above) used to finish its own trip in a few seconds and release the escort while the
-// visitor -- which started ~17-20m away at the entrance -- was still most of its own trip
-// away, genuinely abandoned mid-floor. Fixed in escortManager.ts's `tick()`: completion now
-// also requires the VISITOR to have caught up to the (now-idle) robot -- see
-// VISITOR_ARRIVAL_DISTANCE_M's doc comment there. This test proves BOTH halves of the fix:
-// (a) the escort stays bound (and the robot stays un-reassignable) the moment the robot
-// itself goes idle but the visitor hasn't caught up yet, and (b) it genuinely releases once
-// the visitor does catch up, with the visitor actually near the door at that point -- not
-// just "eventually", and not via the ESCORT_TIMEOUT_S safety valve (that path has its own
-// dedicated coverage in visitors.test.ts's
-// `testEscortTimeoutStillFiresWhenVisitorNeverCatchesUp`); this test uses a generous
-// escortTimeoutSeconds override so a genuine slow-but-working catch-up can never be cut off
-// by that valve and misread as "arrived".
+// Scenario 1b (3-phase escort through the real chain + FIX VERIFICATION). Proves the
+// fetch-then-lead flow end to end over the real IotBridge/WorldRoom:
+//   - approaching: the assigned robot goes to FETCH the visitor (which spawned at the
+//     entrance); the visitor waits in place and the escort stays bound the whole time.
+//   - greeting:   once the robot reaches the visitor, both pause together for ~10-15s.
+//   - leading:    the robot leads the visitor to the destination; completion is gated on the
+//     VISITOR catching up (the existing visitor-arrival gating, see
+//     VISITOR_ARRIVAL_DISTANCE_M's doc comment in escortManager.ts), NOT just the robot's own
+//     idle state.
+// It also fixes the "wait for ALL bindings to clear" artifact the old version had: the
+// premature-reassign probe below deliberately binds ANOTHER fleet robot (an incidental second
+// escort), and the charging-station return-home retasks freed robots, so `robotBindings === 0`
+// is the WRONG signal for THIS one escort releasing. Release is detected on the SPECIFIC
+// assigned robot's binding clearing via `VisitorManager.isRobotEscorting(assignedRobotId)`
+// (reached through the room's private `visitors` field, a test-only cast in the same spirit as
+// the existing `room.state as unknown as {...}` casts). A generous escortTimeoutSeconds
+// override keeps the ESCORT_TIMEOUT_S safety valve (covered separately in visitors.test.ts's
+// `testEscortTimeoutStillFiresWhenVisitorNeverCatchesUp`) from cutting a genuine catch-up off
+// and being misread as "arrived".
 // ============================================================================================
 async function testEscortEndsOnVisitorArrivalNotJustRobot(): Promise<void> {
   const { room, shutdown } = await bootRealRoom({
@@ -474,15 +480,21 @@ async function testEscortEndsOnVisitorArrivalNotJustRobot(): Promise<void> {
     visitorManagerOptions: { escortTimeoutSeconds: 180 },
   });
   try {
+    // Test-only reach into the room's private VisitorManager to check the SPECIFIC assigned
+    // robot's escort binding (there is no public per-robot accessor on WorldRoom, and
+    // robotBindings === 0 is the wrong signal here -- see the block comment above).
+    const escorting = (robotId: string): boolean =>
+      (room as unknown as { visitors: { isRobotEscorting(id: string): boolean } }).visitors.isRobotEscorting(robotId);
+
     const plan = loadFloorPlan();
     const entrance = room.getEntrancePoint();
-    const targetRoomName = "South Collaboration Space"; // ~4.5m from virtual/50's deterministic spawn
+    const targetRoomName = "South Collaboration Space"; // the room farthest from the entrance
     const destRoom = plan.rooms.find((r) => r.name === targetRoomName)!;
     const [doorX, doorZ] = destRoom.door;
     const entranceToDoorDistance = Math.hypot(doorX - entrance.x, doorZ - entrance.z);
     assert.ok(
       entranceToDoorDistance > 15,
-      "test setup: the visitor's own entrance-to-door trip must be genuinely long for this fix to be meaningfully exercised",
+      "test setup: the visitor's own entrance-to-door trip must be genuinely long for the leading leg to be meaningful",
     );
 
     const client = new FakeMqttClient();
@@ -500,102 +512,152 @@ async function testEscortEndsOnVisitorArrivalNotJustRobot(): Promise<void> {
     );
     const doneAck = client.acksFor(cmdId).find((a) => a.payload.state === "done")!.payload;
     const assignedRobotId = doneAck.assigned_robot_id!;
-    const robotStart = room.state.agents.get(assignedRobotId)!;
-    const robotTripDistance = Math.hypot(doorX - robotStart.x, doorZ - robotStart.z);
-    assert.ok(
-      robotTripDistance < entranceToDoorDistance / 2,
-      `test setup: for this fix to be meaningfully exercised, the assigned robot's own trip (${robotTripDistance.toFixed(2)}m) must ` +
-        `be much shorter than the visitor's real entrance-to-door trip (${entranceToDoorDistance.toFixed(2)}m) -- if floor-14.json or ` +
-        "the fleet spawn grid changed, re-pick a target room close to virtual/50's spawn",
-    );
+    const robotStart = { ...room.state.agents.get(assignedRobotId)! };
+    const visitorStart = { ...room.state.agents.get("chain-visitor-fix-probe")! };
+    assert.equal(escorting(assignedRobotId), true, "the assigned robot should be escorting immediately after assign");
 
-    // ---- (a) the robot itself settles idle quickly (its own short trip) -- the escort must
-    // still be bound right then; the pre-fix behavior released it exactly here. ----
-    let sawRobotIdle = false;
-    let robotIdleWhileStillBound = false;
-    advance(room, 3000, () => {
+    // ---- PHASE 1 (approaching): the robot fetches the WAITING person ----
+    // Advance until the robot reaches the person (idle within the arrival radius of the
+    // person). Throughout, the escort must stay bound and the person must stay put. Early in
+    // the approach, run the premature-reassign probe: the still-owed robot must NOT be handed
+    // to another visitor.
+    let approachEndTicks = -1;
+    let approachDisp = 0;
+    let prematureChecked = false;
+    for (let i = 0; i < 6000 && approachEndTicks < 0; i++) {
+      room.update(TICK_MS);
       const robot = room.state.agents.get(assignedRobotId)!;
-      if (robot.state === "idle") {
-        sawRobotIdle = true;
-        if (room.getVisitorDebugStats().robotBindings === 1) robotIdleWhileStillBound = true;
-        return true; // stop the moment the robot first goes idle
+      const visitor = room.state.agents.get("chain-visitor-fix-probe")!;
+      assert.equal(escorting(assignedRobotId), true, "the assigned robot must stay bound to its visitor throughout approaching");
+
+      if (!prematureChecked && i === 30) {
+        // The real fleet is present, so requestGuide should hand out some OTHER idle robot for
+        // this probe (or none) -- never the still-owed assignedRobotId.
+        room.addAgent("chain-visitor-fix-premature-probe", "visitor", { x: robotStart.x, z: robotStart.z });
+        const prematureReassign = room.requestGuide("chain-visitor-fix-premature-probe", { x: robotStart.x, z: robotStart.z });
+        assert.notEqual(
+          prematureReassign.robotId,
+          assignedRobotId,
+          "the still-owed robot must NOT be reassignable to a new visitor while it is still escorting its own",
+        );
+        assert.equal(escorting(assignedRobotId), true, "the assigned robot is still bound to its own visitor after the premature probe");
+        prematureChecked = true;
       }
-      return false;
-    });
-    assert.ok(sawRobotIdle, "test setup: the assigned robot should settle idle at its own (short) destination within the budget");
+
+      const dist = Math.hypot(robot.x - visitor.x, robot.z - visitor.z);
+      if (robot.state === "idle" && dist <= 2.5 && i > 30) {
+        approachEndTicks = i;
+        approachDisp = Math.hypot(visitor.x - visitorStart.x, visitor.z - visitorStart.z);
+      }
+    }
+    assert.ok(approachEndTicks > 0, "the robot should reach the waiting person during approaching");
+    assert.ok(prematureChecked, "the premature-reassign probe should have run during approaching");
     assert.ok(
-      robotIdleWhileStillBound,
-      "FIX VERIFIED: the escort must still be bound the moment the robot itself goes idle -- completion must wait for the visitor too",
-    );
-
-    const visitorAtRobotIdle = room.state.agents.get("chain-visitor-fix-probe")!;
-    const visitorDoorDistAtRobotIdle = Math.hypot(visitorAtRobotIdle.x - doorX, visitorAtRobotIdle.z - doorZ);
-    console.log(
-      `[evidence] robot "${assignedRobotId}" went idle at its own ${robotTripDistance.toFixed(2)}m destination; escort STILL bound ` +
-        `(robotBindings=1) with the visitor still ${visitorDoorDistAtRobotIdle.toFixed(2)}m from "${targetRoomName}"'s door ` +
-        `(entrance-to-door is ${entranceToDoorDistance.toFixed(2)}m) -- the pre-fix behavior released the binding right here`,
-    );
-
-    // The SPECIFIC robot ("assignedRobotId") must NOT be reassignable yet -- it is still
-    // owed to the first visitor. (The real 50-robot fleet is present here, unlike the
-    // single-robot scenarios elsewhere in this file, so requestGuide may well hand out some
-    // OTHER idle robot for this probe -- that's fine and expected; the claim is narrowly
-    // about `assignedRobotId` itself staying bound.)
-    room.addAgent("chain-visitor-fix-premature-probe", "visitor", { x: robotStart.x, z: robotStart.z });
-    const prematureReassign = room.requestGuide("chain-visitor-fix-premature-probe", { x: robotStart.x, z: robotStart.z });
-    assert.notEqual(
-      prematureReassign.robotId,
-      assignedRobotId,
-      "the idle-but-still-owed robot must NOT be reassignable to a new visitor while the first visitor hasn't arrived yet",
-    );
-    assert.equal(
-      room.state.agents.get(assignedRobotId)!.state,
-      "idle",
-      "the still-owed robot should remain idle in place, not re-tasked, while it waits for its own visitor to catch up",
+      approachDisp < 1.5,
+      `the person should wait in place while the robot fetches it (net displacement ${approachDisp.toFixed(2)}m during approaching)`,
     );
     console.log(
-      `[evidence] robot "${assignedRobotId}" stayed un-reassigned (idle-but-still-owed to "chain-visitor-fix-probe"; the new ` +
-        `probe got "${prematureReassign.robotId}" instead) -- no double-assignment of the still-owed robot while it waits`,
+      `[evidence] robot "${assignedRobotId}" fetched the waiting visitor (person moved ${approachDisp.toFixed(2)}m during approaching); ` +
+        "escort stayed bound and the still-owed robot was never handed to the premature probe",
     );
 
-    // ---- (b) let the visitor actually catch up -- the escort should release once it does,
-    // genuinely close to the door, not just "eventually". ----
+    // ---- PHASE 2 (greeting): both stay put ~10-15s before leading ----
+    let greetTicks = 0;
+    let maxGreetDist = 0;
+    let leadStarted = false;
+    let greetCum = 0;
+    const v0 = room.state.agents.get("chain-visitor-fix-probe")!;
+    let lastV = { x: v0.x, z: v0.z };
+    for (let i = 0; i < 3000 && !leadStarted; i++) {
+      room.update(TICK_MS);
+      greetTicks++;
+      const robot = room.state.agents.get(assignedRobotId)!;
+      const visitor = room.state.agents.get("chain-visitor-fix-probe")!;
+      maxGreetDist = Math.max(maxGreetDist, Math.hypot(robot.x - visitor.x, robot.z - visitor.z));
+      greetCum += Math.hypot(visitor.x - lastV.x, visitor.z - lastV.z);
+      lastV = { x: visitor.x, z: visitor.z };
+      if (greetCum > 0.5) leadStarted = true; // visitor set off => leading has begun
+    }
+    assert.ok(leadStarted, "leading should begin after the greeting pause");
+    const greetDuration = (greetTicks * TICK_MS) / 1000;
+    assert.ok(
+      greetDuration >= 9 && greetDuration <= 16.5,
+      `greeting pause should last ~10-15s of simulated time before leading (got ${greetDuration.toFixed(2)}s)`,
+    );
+    assert.ok(maxGreetDist <= 2.6, `robot and person should stay together during greeting (max ${maxGreetDist.toFixed(2)}m)`);
+
+    const visitorAtLeadStart = room.state.agents.get("chain-visitor-fix-probe")!;
+    const visitorDoorDistAtLeadStart = Math.hypot(visitorAtLeadStart.x - doorX, visitorAtLeadStart.z - doorZ);
+    console.log(
+      `[evidence] greeting pause lasted ${greetDuration.toFixed(2)}s (max sep ${maxGreetDist.toFixed(2)}m); leading began with the ` +
+        `visitor ${visitorDoorDistAtLeadStart.toFixed(2)}m from "${targetRoomName}"'s door`,
+    );
+
+    // ---- PHASE 3 (leading): the visitor follows; the escort releases only once the visitor
+    // catches up. Detected on the SPECIFIC assigned robot's binding clearing (NOT robotBindings
+    // === 0 -- the premature probe bound another robot). ----
     let released = false;
-    advance(room, 5000, () => {
-      released = room.getVisitorDebugStats().robotBindings === 0;
-      return released;
-    });
-    assert.ok(released, "escort should release once the visitor genuinely catches up to the robot");
+    for (let i = 0; i < 6000 && !released; i++) {
+      room.update(TICK_MS);
+      released = !escorting(assignedRobotId);
+    }
+    assert.ok(released, "the assigned robot's escort should release once its visitor catches up during leading");
 
     const visitorAtRelease = room.state.agents.get("chain-visitor-fix-probe")!;
+    const robotAtRelease = room.state.agents.get(assignedRobotId)!;
     const visitorDoorDistAtRelease = Math.hypot(visitorAtRelease.x - doorX, visitorAtRelease.z - doorZ);
+    const finalSeparation = Math.hypot(visitorAtRelease.x - robotAtRelease.x, visitorAtRelease.z - robotAtRelease.z);
     console.log(
-      `[evidence] escort released with the visitor ${visitorDoorDistAtRelease.toFixed(2)}m from "${targetRoomName}"'s door ` +
-        `(was ${visitorDoorDistAtRobotIdle.toFixed(2)}m away the moment the robot itself first went idle)`,
+      `[evidence] the assigned robot's escort released with the visitor ${visitorDoorDistAtRelease.toFixed(2)}m from "${targetRoomName}"'s door ` +
+        `(was ${visitorDoorDistAtLeadStart.toFixed(2)}m away when leading began), final robot-visitor separation ${finalSeparation.toFixed(2)}m`,
     );
     assert.ok(
-      visitorDoorDistAtRelease < visitorDoorDistAtRobotIdle,
-      "the visitor should have gotten meaningfully closer to the door between the robot's own arrival and the escort's actual release",
+      visitorDoorDistAtRelease < visitorDoorDistAtLeadStart,
+      "the visitor should have gotten meaningfully closer to the door between leading starting and the escort releasing",
     );
+    // Bound derived from the completion contract (robot within DOOR_TOLERANCE_M of the door +
+    // visitor within VISITOR_ARRIVAL_DISTANCE_M of the robot at release), so up to ~3.5m from
+    // the door -- see the matching note in testAssignChainEndToEnd.
     assert.ok(
-      visitorDoorDistAtRelease <= DOOR_TOLERANCE_M * 3,
-      `the visitor should end up close to "${targetRoomName}"'s door (within ${(DOOR_TOLERANCE_M * 3).toFixed(1)}m, a generous ` +
-        "multiple of the robot's own convergence tolerance, allowing for the ~1m trailing gap) once the escort actually releases " +
-        `-- got ${visitorDoorDistAtRelease.toFixed(2)}m`,
+      visitorDoorDistAtRelease <= DOOR_TOLERANCE_M + 2.5,
+      `the visitor should end up near "${targetRoomName}"'s door (within ${(DOOR_TOLERANCE_M + 2.5).toFixed(1)}m, the ` +
+        `robot-at-door + visitor-arrival-radius contract) once the escort releases -- got ${visitorDoorDistAtRelease.toFixed(2)}m`,
     );
-    assert.equal(room.state.agents.get(assignedRobotId)!.state, "idle", "the escorting robot should still be idle once genuinely released");
+    // Release fires once the visitor is within the arrival radius (VISITOR_ARRIVAL_DISTANCE_M =
+    // 2.5m) of the robot-at-destination -- the documented completion contract.
+    assert.ok(
+      finalSeparation <= 2.5,
+      `the visitor should have caught up to within the arrival radius of the robot before the escort released -- got ${finalSeparation.toFixed(2)}m apart`,
+    );
+    // The robot may still read "moving" at release (the trailing visitor packing against it,
+    // plus parked fleet robots crowding a busy door, keep its speed flickering above idle); the
+    // meaningful check is that it has genuinely reached the destination door.
+    assert.ok(
+      Math.hypot(robotAtRelease.x - doorX, robotAtRelease.z - doorZ) <= DOOR_TOLERANCE_M * 2,
+      `the escorting robot should be at the destination door when its escort releases (got ${Math.hypot(robotAtRelease.x - doorX, robotAtRelease.z - doorZ).toFixed(2)}m)`,
+    );
 
-    // NOW the robot is legitimately free -- prove it concretely.
-    room.addAgent("chain-visitor-fix-reuse-probe", "visitor", { x: robotStart.x, z: robotStart.z });
-    const reassign = room.requestGuide("chain-visitor-fix-reuse-probe", { x: robotStart.x, z: robotStart.z });
+    // NOW the specific robot is legitimately free. It may still be "moving" the instant it
+    // released (jittering at the crowded door, then heading home once free), and requestGuide
+    // only picks IDLE robots, so let it settle to idle first, then prove it is reassignable
+    // (spawn the probe at the robot's then-position so it is unambiguously the nearest idle one).
+    let robotSettledIdle = false;
+    advance(room, 4000, () => {
+      robotSettledIdle = room.state.agents.get(assignedRobotId)!.state === "idle" && !escorting(assignedRobotId);
+      return robotSettledIdle;
+    });
+    assert.ok(robotSettledIdle, "the freed robot should settle to idle after finishing its escort (no deadlock)");
+    const robotSettled = room.state.agents.get(assignedRobotId)!;
+    room.addAgent("chain-visitor-fix-reuse-probe", "visitor", { x: robotSettled.x, z: robotSettled.z });
+    const reassign = room.requestGuide("chain-visitor-fix-reuse-probe", { x: robotSettled.x, z: robotSettled.z });
     assert.equal(
       reassign.robotId,
       assignedRobotId,
-      "the robot should be selectable again for a new escort immediately after genuinely finishing the previous one",
+      "the assigned robot should be selectable again for a new escort once it settles after genuinely finishing the previous one",
     );
     console.log(
-      `PASS: escort stayed bound while the robot idled at its own destination waiting for the visitor, released only once the ` +
-        `visitor genuinely arrived (${visitorDoorDistAtRelease.toFixed(2)}m from the door), and the robot was reassignable right after`,
+      `PASS: 3-phase escort over the real chain -- robot fetched the waiting visitor, greeted (${greetDuration.toFixed(2)}s), led it to ` +
+        `the door, released only once the visitor caught up (${visitorDoorDistAtRelease.toFixed(2)}m from the door), and was reassignable right after`,
     );
   } finally {
     await shutdown();

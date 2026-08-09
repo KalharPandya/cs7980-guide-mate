@@ -8,6 +8,7 @@ import type { MapControls as MapControlsImpl } from 'three-stdlib'
 import { useWorldRoom, type ConnectionStatus } from './net/useWorldRoom'
 import { useFloorPlan } from './net/useFloorPlan'
 import { AgentInstances } from './scene/AgentInstances'
+import { ChargingPads } from './scene/ChargingPads'
 import { RouteLines } from './scene/RouteLine'
 import { Floor } from './scene/Floor'
 import { Walls } from './scene/Walls'
@@ -133,7 +134,7 @@ function ConnectionBadge({ status, isKiosk }: { status: ConnectionStatus; isKios
 }
 
 function App() {
-  const { agentIds, agents, status } = useWorldRoom()
+  const { agentIds, agents, stations, status } = useWorldRoom()
   const { floorPlan, error } = useFloorPlan()
   // Stable target the directional light aims at (see the <primitive>/`target` prop below). A
   // THREE.DirectionalLight's `target` is itself an Object3D that three.js reads `matrixWorld`
@@ -227,6 +228,10 @@ function App() {
         camera={{ position: cameraPosition, fov: 50 }}
         style={{ width: '100vw', height: '100vh', display: 'block' }}
       >
+        {/* Plain white background so the glass walls' transmission pass has something to sample
+            instead of the renderer's black clear (which made every glass panel read as a dark
+            box). Mirror-independent, so it is safe alongside the north-up reflection group. */}
+        <color attach="background" args={['#ffffff']} />
         <ambientLight intensity={0.6} />
         <directionalLight
           position={lightPosition}
@@ -256,6 +261,11 @@ function App() {
           <Floor floorPlan={floorPlan} />
           <Walls walls={floorPlan.walls} />
           <RoomLabels rooms={floorPlan.rooms} />
+
+          {/* Charging pads sit on the carpet under the robots that park on them, inside the
+              reflection group so they mirror with the floor/walls/agents. Rendered before the
+              agents so a parked robot draws on top of its own pad. */}
+          <ChargingPads stations={stations} />
 
           <AgentInstances agentIds={agentIds} agents={agents} />
           <RouteLines agentIds={agentIds} agents={agents} />
