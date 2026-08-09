@@ -7,7 +7,9 @@ import type { MapControls as MapControlsImpl } from 'three-stdlib'
 
 import { useWorldRoom, type ConnectionStatus } from './net/useWorldRoom'
 import { useFloorPlan } from './net/useFloorPlan'
+import { useFurniture } from './net/useFurniture'
 import { AgentInstances } from './scene/AgentInstances'
+import { Furniture } from './scene/Furniture'
 import { ChargingPads } from './scene/ChargingPads'
 import { RouteLines } from './scene/RouteLine'
 import { Floor } from './scene/Floor'
@@ -137,6 +139,12 @@ function ConnectionBadge({ status, isKiosk }: { status: ConnectionStatus; isKios
 function App() {
   const { agentIds, agents, stations, status } = useWorldRoom()
   const { floorPlan, error } = useFloorPlan()
+  // Fetched separately from the floor plan, and its error is deliberately NOT surfaced or allowed
+  // to block rendering: furniture is decoration, so a missing furniture file must degrade to the
+  // previous bare-but-correct scene rather than replace the whole view with an error page the way
+  // a missing floor plan does. Called here (outside <Canvas>) for the same reason useFloorPlan is
+  // -- a plain fetch belongs to the DOM-level React tree, not to R3F's separate reconciler.
+  const { furniture } = useFurniture()
   // Stable target the directional light aims at (see the <primitive>/`target` prop below). A
   // THREE.DirectionalLight's `target` is itself an Object3D that three.js reads `matrixWorld`
   // from every frame to aim the shadow camera -- but it only gets a real (non-identity)
@@ -270,6 +278,12 @@ function App() {
               coreHeightForWalls() the cores above are extruded to, so they clear the building
               instead of being occluded by it. */}
           <RoomLabels rooms={floorPlan.rooms} walls={floorPlan.walls} />
+
+          {/* Furniture extracted from the source drawing, so the rooms read as furnished spaces
+              instead of empty grey volumes. Must sit inside this reflection group with the floor
+              and walls or every item lands mirrored across the building. RENDER-ONLY: none of this
+              reaches the navmesh (see Furniture.tsx) -- agents walk through it. */}
+          <Furniture furniture={furniture} />
 
           {/* Charging pads sit on the carpet under the robots that park on them, inside the
               reflection group so they mirror with the floor/walls/agents. Rendered before the
