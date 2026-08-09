@@ -229,6 +229,24 @@ CARRY_ANGLE_DEG = 20.0
 CARRY_PERP_M = 0.60
 CARRY_NOTE_MAX_M = 2.00  # a note falls back to the nearest wall within this if nothing parallel
 
+# --- Step 8 shadow-stub absorption -----------------------------------------------------
+# A SHADOW STUB is a short tab with one free end lying flat against a longer wall: the trace's
+# leftover of a step in a jagged front, which renders as a tab poking past the T junction. The
+# bounds here are deliberately looser in angle than DUP_ANGLE_DEG, because the stubs that survive
+# admission are the ones a few degrees too splayed to have read as duplicates (the Kitchen /
+# 1407 / 1408-vs-Event-Space front's step is ~16 degrees off its own facade), and tighter in
+# distance, because at this length a wall further out than STUB_PERP_M is a real second line.
+STUB_MAX_LENGTH_M = 0.80
+STUB_ANGLE_DEG = 25.0
+STUB_PERP_M = 0.25
+STUB_HOST_MIN_EXTRA_M = 0.20  # the host must be meaningfully longer, not a same-size sibling
+STUB_MIN_T = -0.05            # the shadow must land inside the host's span, not off either tip
+STUB_MAX_T = 1.05
+# How far a wall that T-joined the stub may be extended to reach the host instead. Bounded by the
+# same budget as a T-snap, so absorbing a stub can never move a junction further than the
+# regularizer itself would have.
+STUB_RELAND_MAX_M = T_SNAP_MAX_M
+
 COORD_DECIMALS = clean.COORD_DECIMALS
 MAX_PASSES = 40
 
@@ -1714,6 +1732,210 @@ def carry_provenance(
 
 
 # ---------------------------------------------------------------------------------------
+# Step 8: absorb shadow stubs (transfer the design decision, then drop the tab)
+# ---------------------------------------------------------------------------------------
+
+
+def _stub_free_end(index: int, walls: Sequence[Wall]) -> bool:
+    """True if either end of walls[index] touches nothing else. A stub, not a link in a chain."""
+    return any(
+        not endpoint_is_attached(point, index, walls) for point in wall_points(walls[index])
+    )
+
+
+def _shadow_host(index: int, walls: Sequence[Wall]) -> Optional[int]:
+    """
+    The longer wall that walls[index] merely re-draws, or None.
+
+    A stub qualifies only if it lies flat against a LONGER wall: near-parallel, every one of its
+    own points within STUB_PERP_M of that wall's body, and its shadow landing inside the host's
+    span rather than off either tip (an end-to-end continuation is architecture, not a shadow).
+    Ties break on the closest host and then on the lowest index, so the choice is deterministic.
+    """
+    stub = walls[index]
+    stub_length = wall_length(stub)
+    probes = list(wall_points(stub)) + [midpoint(stub)]
+    best: Optional[Tuple[float, int]] = None
+    for other, host in enumerate(walls):
+        if other == index:
+            continue
+        if wall_length(host) <= stub_length + STUB_HOST_MIN_EXTRA_M:
+            continue
+        if angle_diff_deg(wall_angle_deg(stub), wall_angle_deg(host)) > STUB_ANGLE_DEG:
+            continue
+        distance = max(segment_point_distance(p, host) for p in probes)
+        if distance > STUB_PERP_M:
+            continue
+        feet = [foot_on_wall(p, host) for p in wall_points(stub)]
+        if any(foot is None for foot in feet):
+            continue
+        if any(not (STUB_MIN_T <= foot[0] <= STUB_MAX_T) for foot in feet):
+            continue
+        if best is None or distance < best[0]:
+            best = (distance, other)
+    return None if best is None else best[1]
+
+
+def _merge_note(host_note: Optional[str], stub_note: str) -> str:
+    """
+    Append the stub's paragraphs to the host's. The host's own text is never rewritten, only
+    added to, so a merge can lose no authored wording; a stub paragraph the host already carries
+    verbatim is not appended a second time.
+    """
+    host = (host_note or "").strip()
+    existing = host.split("\n\n")
+    additions = [
+        paragraph.strip()
+        for paragraph in stub_note.split("\n\n")
+        if paragraph.strip() and paragraph.strip() not in existing
+    ]
+    if not host:
+        return "\n\n".join(additions)
+    return "\n\n".join([host] + additions) if additions else host
+
+
+def _axis_landing(wall: Wall, key: str, host: Wall) -> Optional[Point]:
+    """
+    Where `wall`, extended along its OWN axis from end `key`, meets the host's line.
+
+    Extending along its own axis (rather than dropping a perpendicular) is what keeps the wall
+    pointing where the drawing points it: the divider that met a step in a jagged front should
+    still arrive at the front on its own bearing.
+    """
+    point = _pt(wall[key])
+    other = _pt(wall["b" if key == "a" else "a"])
+    dx, dz = point[0] - other[0], point[1] - other[1]
+    (hx, hz), (hbx, hbz) = wall_points(host)
+    ex, ez = hbx - hx, hbz - hz
+    denominator = dx * ez - dz * ex
+    if abs(denominator) < 1e-9:
+        return None  # parallel: no landing on this host
+    t_host = ((other[0] - hx) * dz - (other[1] - hz) * dx) / denominator
+    if not (T_SNAP_MIN_T <= t_host <= T_SNAP_MAX_T):
+        return None  # would land off the end of the host, which is not a junction
+    landing = (hx + t_host * ex, hz + t_host * ez)
+    if math.hypot(landing[0] - point[0], landing[1] - point[1]) > STUB_RELAND_MAX_M:
+        return None
+    if (landing[0] - other[0]) * dx + (landing[1] - other[1]) * dz <= 0.0:
+        return None  # behind the wall's other end: that would flip it
+    return landing
+
+
+def _reland_on_host(walls: Sequence[Wall], stub: Wall, host_index: int) -> List[Wall]:
+    """
+    Re-attach whatever was joined to the stub's body onto the wall the stub shadowed.
+
+    Without this the absorption would trade a visible tab for a visible gap: the wall that
+    T-joined the stub (the 1407/1408 divider meeting the step in the front) would be left
+    stopping short of the front by the stub's own offset.
+    """
+    result = [dict(w) for w in walls]
+    protected = _protected_gaps(endpoint_list(result))
+    for owner in range(len(result)):
+        if owner == host_index:
+            continue
+        for key in ("a", "b"):
+            points = endpoint_list(result)
+            endpoint_index = owner * 2 + (0 if key == "a" else 1)
+            point = points[endpoint_index]
+            if segment_point_distance(point, stub) > ATTACHED_EPS_M:
+                continue  # this end never touched the stub
+            if endpoint_is_attached(point, owner, result):
+                continue  # it has another wall to hold on to
+            host = result[host_index]
+            landing = _axis_landing(result[owner], key, host)
+            if landing is None:
+                hit = foot_on_wall(point, host)
+                if hit is None or not (T_SNAP_MIN_T <= hit[0] <= T_SNAP_MAX_T):
+                    continue
+                if hit[2] > STUB_RELAND_MAX_M:
+                    continue
+                landing = hit[1]
+            new_point = (round(landing[0], COORD_DECIMALS), round(landing[1], COORD_DECIMALS))
+            other_end = points[endpoint_index + 1 if key == "a" else endpoint_index - 1]
+            if math.hypot(new_point[0] - other_end[0], new_point[1] - other_end[1]) < MIN_COLLAPSE_LENGTH_M:
+                continue
+            if not _move_is_door_safe(endpoint_index, new_point, points, result, protected):
+                continue
+            moved = dict(result[owner])
+            moved[key] = [new_point[0], new_point[1]]
+            result[owner] = moved
+    return round_walls(result)
+
+
+def absorb_shadow_stubs(walls: Sequence[Wall], pinned: int = 0) -> Tuple[List[Wall], List[str]]:
+    """
+    Remove sub-STUB_MAX_LENGTH_M tabs that only re-draw a longer wall, after moving whatever
+    design decision they carry (the glass flag, the authored note) onto the wall they shadow.
+
+    This is the third option for a shadow tab. Snapping it onto the wall it shadows would create
+    a parallel duplicate pair; trimming it back to the junction would drop it under
+    PARTITION_MIN_LENGTH_M, so the next admission pass would delete it and take its glass flag
+    and its note with it. Transferring first and deleting second loses neither: the line is
+    already drawn by the host, and the design decision stays at the same place on the host.
+
+    Only a stub with a FREE end is touched, so a short wall that links two others (a jamb, a
+    kink at the end of a run) is never absorbed - deleting one of those would orphan its
+    neighbour. The pass refuses outright if a removal would leave any other wall fully floating.
+
+    The first `pinned` walls are the envelope and the core and are never candidates: they are
+    one-per-edge of walkableOutline and of the hole polygons and must keep matching them exactly.
+
+    Idempotent: its input is the wall list itself, so once a stub is absorbed there is nothing
+    left for a re-run to find, and a re-merged note is deduplicated paragraph by paragraph.
+    """
+    result = [dict(w) for w in walls]
+    actions: List[str] = []
+    for _ in range(MAX_PASSES):
+        victim: Optional[Tuple[int, int]] = None
+        for index in range(pinned, len(result)):
+            if wall_length(result[index]) >= STUB_MAX_LENGTH_M:
+                continue
+            if not _stub_free_end(index, result):
+                continue
+            host = _shadow_host(index, result)
+            if host is not None:
+                victim = (index, host)
+                break
+        if victim is None:
+            break
+
+        index, host = victim
+        stub = result[index]
+        host_after = host if host < index else host - 1
+        floating_before = sum(1 for i in range(len(result)) if not wall_is_connected(i, result))
+        trimmed = _reland_on_host([w for i, w in enumerate(result) if i != index], stub, host_after)
+        floating_after = sum(1 for i in range(len(trimmed)) if not wall_is_connected(i, trimmed))
+        if floating_after > floating_before:
+            actions.append(
+                f"kept {wall_length(stub):.2f} m stub at {midpoint(stub)}: removing it would "
+                f"strand a neighbour"
+            )
+            break
+
+        carried: List[str] = []
+        target = trimmed[host_after]
+        if stub.get("glass"):
+            carried.append("glass (host was already glass)" if target.get("glass") else "glass")
+            target["glass"] = True
+        stub_note = stub.get("note")
+        if stub_note:
+            merged = _merge_note(target.get("note"), stub_note)
+            carried.append(
+                "note (text already on the host)" if merged == target.get("note") else "note"
+            )
+            target["note"] = merged
+        actions.append(
+            f"absorbed {wall_length(stub):.2f} m stub "
+            f"{list(stub['a'])} -> {list(stub['b'])} into the "
+            f"{wall_length(target):.2f} m wall {list(target['a'])} -> {list(target['b'])}"
+            + (f", carrying {' and '.join(carried)}" if carried else ", carrying nothing")
+        )
+        result = trimmed
+    return result, actions
+
+
+# ---------------------------------------------------------------------------------------
 # Defect metrics (before / after)
 # ---------------------------------------------------------------------------------------
 
@@ -1890,6 +2112,12 @@ def rebuild(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     walls = round_walls(fixed + partitions)
     walls, provenance = carry_provenance(walls, originals)
+    # Runs AFTER provenance on purpose: a stub is only safe to delete once whatever it carries is
+    # sitting on the wall it shadows, and that is only true after the flags have been placed.
+    walls, absorbed = absorb_shadow_stubs(walls, pinned=len(fixed))
+    provenance["glass_final"] = sum(1 for w in walls if w.get("glass"))
+    provenance["notes_final"] = sum(1 for w in walls if w.get("note"))
+    partition_count = len(walls) - len(fixed)
 
     # Guardrail: no room anchor or the entrance may end up inside a repaired core hole.
     for room in plan["rooms"]:
@@ -1907,13 +2135,14 @@ def rebuild(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     result["holes"] = holes
     result["walls"] = walls
     result["note"] = clean.strip_previous_sentence(strip_rebuild_sentence(plan["note"])) + rebuild_sentence(
-        len(envelope), len(core), len(partitions), len(dangling_ends(walls, plan["rooms"]))
+        len(envelope), len(core), partition_count, len(dangling_ends(walls, plan["rooms"]))
     )
 
     info = {
         "envelope": len(envelope),
         "core": len(core),
-        "partitions": len(partitions),
+        "partitions": partition_count,
+        "absorbed": absorbed,
         "rejected": rejected,
         "repaired_holes": repaired_names,
         "provenance": provenance,
@@ -1977,11 +2206,20 @@ def rebuild_sentence(
         f"the 1429/1430 jamb. A run only counts if it is a LINE with paper "
         f"{RUN_THIN_OFFSET_M:.2f} m to either side, which is what keeps the washroom pictograms "
         f"and the heavy room labels from being read as walls. {dangling_count} "
-        f"ends remain loose by design, each one a jamb facing an opening the drawing shows as a "
+        f"{'end remains' if dangling_count == 1 else 'ends remain'} loose by design, each one a "
+        f"jamb facing an opening the drawing shows as a "
         f"blank gap. Wall dimensions and angles are therefore "
         f"constructed, not surveyed. No weld or snap was allowed to narrow a door-sized opening, "
         f"and every room stays path-reachable (npm run test:nav, 18/18, no PARTIAL paths); glass "
-        f"flags and authored per-wall notes are carried onto the nearest parallel rebuilt wall."
+        f"flags and authored per-wall notes are carried onto the nearest parallel rebuilt wall. "
+        f"Finally, no wall here is a shadow stub: a tab under {STUB_MAX_LENGTH_M:.2f} m with a "
+        f"free end lying flat against a longer wall (within {STUB_ANGLE_DEG:.0f} degrees and "
+        f"{STUB_PERP_M:.2f} m, its shadow inside that wall's span) is not kept as a wall of its "
+        f"own, because the line is already drawn by the wall it shadows and the tab renders as a "
+        f"spur poking past the junction. Its glass flag and its authored note move onto that "
+        f"wall first, paragraph by paragraph, so the design decision survives at the same place "
+        f"on the front; a short wall joining two others is never absorbed, since deleting one of "
+        f"those would strand its neighbour."
     )
 
 
@@ -2028,6 +2266,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"  - {line}")
     print(f"missing drawn walls : {len(info['drawn'])} emitted")
     for line in info["drawn"]:
+        print(f"  - {line}")
+    print(f"shadow stubs        : {len(info['absorbed'])} absorbed")
+    for line in info["absorbed"]:
         print(f"  - {line}")
     prov = info["provenance"]
     print(
