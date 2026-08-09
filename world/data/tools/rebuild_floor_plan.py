@@ -127,6 +127,14 @@ DOOR_MIN_GAP_M = clean.DOOR_MIN_GAP_M                # 0.60
 DOOR_PROTECT_MIN_GAP_M = clean.DOOR_PROTECT_MIN_GAP_M  # 0.45
 DOOR_PROTECT_MAX_GAP_M = clean.DOOR_PROTECT_MAX_GAP_M  # 2.50
 DOOR_MAX_GAP_SHRINK_M = clean.DOOR_MAX_GAP_SHRINK_M    # 0.10
+# An opening at or below this is door-scale, so the RELATIVE rule (do not narrow it by more than
+# DOOR_MAX_GAP_SHRINK_M) guards it as well as the absolute DOOR_MIN_GAP_M floor. Above it the
+# opening is a room mouth or a corridor and only the absolute floor applies. This is
+# clean_floor_plan.py's own conclusion (its stage F carries the same constant and the same
+# reasoning) and it was missing here: without it, relative-guarding a 2.49 m room mouth vetoed the
+# T-snap that should have followed a refitted wall, and left a real 0.21 m crack at the junction
+# between Classroom 1418's west jamb and the front the refit had just moved.
+DOOR_TIGHT_GAP_M = clean.DOOR_TIGHT_GAP_M              # 1.00
 
 # --- Step 6 dangling-end repair --------------------------------------------------------
 # What counts as DANGLING. An end is ATTACHED if it sits on another wall's body; otherwise it
@@ -246,6 +254,84 @@ STUB_MAX_T = 1.05
 # same budget as a T-snap, so absorbing a stub can never move a junction further than the
 # regularizer itself would have.
 STUB_RELAND_MAX_M = T_SNAP_MAX_M
+
+# --- Step 9 refit a wall that runs BESIDE its own drawn line ----------------------------
+# Four partitions came out of the trace running PARALLEL to the line they represent instead of
+# on it, offset 0.15 to 0.34 m for their whole length, which renders as a red band beside a black
+# one in the overlay. Every earlier stage is blind to this: welding, T-snapping and the ink tests
+# in steps 6/6b/6c all judge a wall's ENDS, and a wall that is uniformly beside its line has ends
+# that are just as wrong as its middle, so nothing reads as a defect.
+#
+# ON INK means ink within REFIT_ON_M of the wall's centreline: at the rendered 0.15 m thickness
+# that is ink underneath the drawn wall, which is the whole question. Measured on this plan the
+# split is unambiguous - a wall sitting on its line covers 0.95 to 1.00 of its own length, the
+# four misfits cover 0.04 to 0.19.
+REFIT_ON_M = 0.09
+REFIT_MIN_COVERAGE = 0.60
+# How far sideways the drawn line may be looked for. Same budget as the perpendicular searches
+# elsewhere in this file; past it, a line is a different wall rather than this wall's own.
+REFIT_SEARCH_M = 0.45
+# The fit is a small 2D search over the perpendicular offset of EACH END, so it corrects a wall
+# that is rotated off its line as well as one that is merely shifted (Classroom 1417's north
+# front is traced across its own drawn line, -0.33 m at one end and +0.39 m at the other). The
+# implied turn is capped so a wall can never be pivoted onto a neighbouring line it merely
+# crosses; the cap matches the dangling-end repair's own LAND_MAX_TURN_DEG budget, loosened a
+# little because that one moves one end while this one moves both.
+REFIT_MAX_TURN_DEG = 12.0
+# The fit has to be a real improvement, not a tie broken by pixel noise. It is also the
+# hysteresis that makes the stage idempotent: once a wall has been moved onto its line there is
+# no gain of this size left to find, so a re-run leaves it alone.
+REFIT_MIN_GAIN = 0.20
+# ...and a real MOVE. Below this the wall is already as close to its line as this trace gets
+# anywhere (bodies that are certainly right run 0.05 to 0.13 m off), so a smaller "correction" is
+# noise, and on a curved wall it is the curve stage's business rather than this one's.
+REFIT_MIN_MOVE_M = 0.15
+# A wall with a drawn line down BOTH sides for essentially its whole length is not misplaced: it
+# is the centreline of a wall the drawing renders as its two faces, which is exactly what
+# dedupe_bundles() fuses traced face-pairs into. Moving it onto one face would leave the other
+# face bare and shift the wall by half the thickness. Measured: the 0.72 m plumbing chase between
+# the Male and Female washrooms scores 0.99 on both sides; no other wall on this plan scores
+# above 0.72 on its weaker side.
+REFIT_TWO_FACE_MIN = 0.80
+REFIT_SIDE_ON_M = 0.03  # a side probe hits ink only when it lands essentially on a pixel
+# A refit may not move a wall in between a room's centre and that room's own `door` anchor.
+# `rooms` is an input this script never rewrites, so a wall that ends up across a room's threshold
+# leaves the plan self-inconsistent: the door is no longer on this room's own wall line, which is
+# exactly what world/src/nav/__tests__/roomDoorSanity.test.ts measures (it rays from centre through
+# door and expects the first wall it meets no more than DOOR_WALL_MARGIN_M short of the door).
+# The margin here is that test's own, so the two agree by construction rather than by luck.
+ROOM_DOOR_WALL_MARGIN_M = 1.00
+# ...and a wall moved off a threshold has to clear it by this much, not by a millimetre. The
+# regularizer runs after this stage and welds and snaps its ends by centimetres; a wall parked
+# exactly on the limit lands back under it, the next run moves it again, and the file never
+# settles. This is the hysteresis that makes the repair converge.
+ROOM_DOOR_CLEARANCE_M = 0.10
+
+# --- Step 10 restore the arcs the trace flattened into chords ---------------------------
+# The drawing has several genuine ARCS (the Kitchen's west glass wall, 1409's outer front, 1430's
+# south edge) and the trace emitted one straight segment across each, cutting up to 0.21 m inside
+# the curve. The signature is a CHORD: the wall's ends sit on ink and its middle does not, all
+# the miss on one side. Measured as a sagitta, the deviation of the ink at mid-span from the
+# straight line joining the ink at the two ends.
+#
+# 0.10 m is two thirds of the rendered wall thickness, so at the threshold the drawn line has
+# just left the wall that is supposed to be drawing it. On this plan the arcs score 0.12 to 0.21
+# and the next wall down scores 0.07, so nothing is decided near the boundary.
+CURVE_MIN_SAGITTA_M = 0.10
+CURVE_SEARCH_M = 0.45     # perpendicular reach when reading the ink's own offset
+CURVE_STEP_M = 0.05       # sample spacing along the chord
+CURVE_MIN_LENGTH_M = 1.50
+# Each emitted piece has to clear the admission floor with margin, or the next run's
+# admit_partitions() would delete the arc one piece at a time.
+CURVE_MIN_PIECE_M = 0.60
+CURVE_MIN_SEGMENTS = 3    # two pieces is a kink, not a curve
+CURVE_MAX_SEGMENTS = 6    # past this it stops reading as architecture and starts reading as mesh
+# Chain detection, which is what makes this stage idempotent: an arc emitted by a previous run is
+# collapsed back to its own chord and rebuilt from the raster, so the stage is a pure function of
+# (chord endpoints, source drawing) rather than of how many times it has run. Only a joint where
+# exactly two walls meet and nothing else touches is followed, and only while the run keeps
+# turning the same way by less than this, so an L corner or a T is never swallowed.
+CURVE_JOINT_MAX_DEG = 25.0
 
 COORD_DECIMALS = clean.COORD_DECIMALS
 MAX_PASSES = 40
@@ -646,14 +732,16 @@ def dedupe_bundles(walls: List[Wall]) -> List[Wall]:
 
 
 def _protected_gaps(points: Sequence[Point]) -> List[Tuple[int, int, float]]:
-    """Endpoint pairs from different walls sitting a door-width apart: candidate doorways."""
+    """Endpoint pairs from different walls sitting a DOOR width apart: candidate doorways, which
+    the relative guard may not narrow. Wider openings are room mouths and corridors, and they keep
+    only the absolute DOOR_MIN_GAP_M floor (see DOOR_TIGHT_GAP_M)."""
     gaps: List[Tuple[int, int, float]] = []
     for i in range(len(points)):
         for j in range(i + 1, len(points)):
             if i // 2 == j // 2:
                 continue
             dist = math.hypot(points[i][0] - points[j][0], points[i][1] - points[j][1])
-            if DOOR_PROTECT_MIN_GAP_M <= dist <= DOOR_PROTECT_MAX_GAP_M:
+            if DOOR_PROTECT_MIN_GAP_M <= dist <= DOOR_TIGHT_GAP_M:
                 gaps.append((i, j, dist))
     return gaps
 
@@ -1000,6 +1088,32 @@ def distance_to_ink(point: Point) -> float:
         if best is not None:
             return best * metres_per_px
     return INK_SEARCH_MAX_PX * metres_per_px
+
+
+def _ink_within(point: Point, radius_m: float) -> bool:
+    """
+    Is there a drawn pixel within `radius_m` of this world point?
+
+    distance_to_ink() answers a harder question (how far IS the ink) and pays for it: when there
+    is none nearby it searches every ring out to INK_SEARCH_MAX_PX, 625 probes, and steps 9 and 10
+    ask this millions of times over a search grid. This one stops at the radius it was asked
+    about, so a miss costs a handful of probes rather than a full sweep.
+    """
+    import render_floor_plan  # noqa: PLC0415
+
+    metres_per_px = render_floor_plan.SOURCE_SCALE_M_PER_PX
+    pixels, width, height = _source_raster()
+    px, py = _world_to_source_px(point)
+    cx, cy = int(round(px)), int(round(py))
+    reach = int(math.ceil(radius_m / metres_per_px))
+    for dy in range(-reach, reach + 1):
+        for dx in range(-reach, reach + 1):
+            if math.hypot(dx, dy) * metres_per_px > radius_m:
+                continue
+            ix, iy = cx + dx, cy + dy
+            if 0 <= ix < width and 0 <= iy < height and pixels[ix, iy] < INK_LEVEL:
+                return True
+    return False
 
 
 def span_off_ink(start: Point, end: Point) -> float:
@@ -1936,6 +2050,688 @@ def absorb_shadow_stubs(walls: Sequence[Wall], pinned: int = 0) -> Tuple[List[Wa
 
 
 # ---------------------------------------------------------------------------------------
+# Step 9: refit a wall that runs BESIDE its own drawn line
+# ---------------------------------------------------------------------------------------
+
+
+def _wall_normal(wall: Wall) -> Point:
+    ux, uz = unit_direction(wall)
+    return (-uz, ux)
+
+
+def _span_ink_coverage(start: Point, end: Point, on_m: float = REFIT_ON_M) -> float:
+    """Fraction of samples along a span that have drawn ink within `on_m` of them."""
+    length = math.hypot(end[0] - start[0], end[1] - start[1])
+    if length <= 0.0:
+        return 0.0
+    steps = max(2, int(length / INK_STEP_M))
+    hits = 0
+    for index in range(steps + 1):
+        t = index / steps
+        sample = (start[0] + t * (end[0] - start[0]), start[1] + t * (end[1] - start[1]))
+        if _ink_within(sample, on_m):
+            hits += 1
+    return hits / (steps + 1)
+
+
+def wall_ink_coverage(wall: Wall) -> float:
+    a, b = wall_points(wall)
+    return _span_ink_coverage(a, b)
+
+
+def _offset_ends(wall: Wall, offset_a: float, offset_b: float) -> Tuple[Point, Point]:
+    (ax, az), (bx, bz) = wall_points(wall)
+    nx, nz = _wall_normal(wall)
+    return ((ax + nx * offset_a, az + nz * offset_a), (bx + nx * offset_b, bz + nz * offset_b))
+
+
+def wall_is_two_faced(wall: Wall) -> bool:
+    """
+    Does the drawing put a line down BOTH sides of this wall for essentially its whole length?
+
+    That is how the source renders a THICK wall (the plumbing chase between the Male and Female
+    washrooms is 0.72 m of it), and the centreline between the two faces is the right answer, the
+    same answer dedupe_bundles() reaches for a face-pair the trace emitted twice. Without this
+    test the refit below would happily slide such a wall onto whichever face it scanned first.
+    """
+    import render_floor_plan  # noqa: PLC0415
+
+    metres_per_px = render_floor_plan.SOURCE_SCALE_M_PER_PX
+    a, b = wall_points(wall)
+    length = wall_length(wall)
+    if length <= 0.0:
+        return False
+    nx, nz = _wall_normal(wall)
+    steps = max(2, int(length / INK_STEP_M))
+    reach = int(REFIT_SEARCH_M / metres_per_px)
+    positive = 0
+    negative = 0
+    for index in range(steps + 1):
+        t = index / steps
+        point = (a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]))
+        found_positive = False
+        found_negative = False
+        for step in range(1, reach + 1):
+            distance = step * metres_per_px
+            if not found_positive and _ink_within(
+                (point[0] + nx * distance, point[1] + nz * distance), REFIT_SIDE_ON_M
+            ):
+                found_positive = True
+            if not found_negative and _ink_within(
+                (point[0] - nx * distance, point[1] - nz * distance), REFIT_SIDE_ON_M
+            ):
+                found_negative = True
+            if found_positive and found_negative:
+                break
+        positive += 1 if found_positive else 0
+        negative += 1 if found_negative else 0
+    return min(positive, negative) / (steps + 1) >= REFIT_TWO_FACE_MIN
+
+
+def _ray_hits_wall(origin: Point, direction: Point, wall: Wall) -> Optional[float]:
+    """Distance from `origin` along `direction` to where the ray crosses this wall, or None."""
+    (ax, az), (bx, bz) = wall_points(wall)
+    seg = (bx - ax, bz - az)
+    denominator = direction[0] * seg[1] - direction[1] * seg[0]
+    if abs(denominator) < 1e-9:
+        return None
+    to_a = (ax - origin[0], az - origin[1])
+    t = (to_a[0] * seg[1] - to_a[1] * seg[0]) / denominator
+    u = (to_a[0] * direction[1] - to_a[1] * direction[0]) / denominator
+    if t < 1e-6 or not (0.0 <= u <= 1.0):
+        return None
+    return t
+
+
+def wall_blocks_a_room_door(
+    wall: Wall, rooms: Sequence[Dict[str, Any]], slack: float = 0.0
+) -> Optional[Tuple[str, float, float]]:
+    """
+    The first room whose own door this wall stands in front of, as (name, crossing, limit).
+
+    Walking from a room's centre straight at its own door, this wall is met before the door is,
+    with more than the threshold margin to spare. A room whose door IS its centre is open plan and
+    has no threshold to stand in front of. `slack` widens the test, which is how a repair is asked
+    for a position that clears the threshold with room to spare rather than exactly.
+    """
+    for room in rooms:
+        centre, door = _pt(room["center"]), _pt(room["door"])
+        span = math.hypot(door[0] - centre[0], door[1] - centre[1])
+        if span <= 1e-6:
+            continue
+        limit = span - ROOM_DOOR_WALL_MARGIN_M
+        if limit <= 0.0:
+            continue
+        direction = ((door[0] - centre[0]) / span, (door[1] - centre[1]) / span)
+        crossing = _ray_hits_wall(centre, direction, wall)
+        if crossing is not None and crossing <= limit + slack:
+            return (str(room["name"]), crossing, limit)
+    return None
+
+
+def refit_clears_room_doors(old: Wall, new: Wall, rooms: Sequence[Dict[str, Any]]) -> bool:
+    """
+    Would moving `old` to `new` park a wall between some room's centre and that room's own door?
+
+    Judged room by room, and only the MOVE is judged: a room whose threshold this wall already
+    stood in front of is not the move's doing, and refusing the move would not put it right.
+    """
+    for room in rooms:
+        one = [room]
+        after = wall_blocks_a_room_door(new, one)
+        if after is None:
+            continue
+        if wall_blocks_a_room_door(old, one) is not None:
+            continue
+        return False
+    return True
+
+
+def best_ink_fit(
+    wall: Wall, accept: Optional[Any] = None
+) -> Optional[Tuple[float, float, float]]:
+    """
+    The (end A offset, end B offset, coverage) that puts the most of this wall on drawn ink.
+
+    A grid search over the two ends rather than a least-squares fit through matched ink points:
+    the matching is the hard part here (a transverse wall crossing this one offers ink at every
+    offset, and the nearest ink to a misplaced wall is often a different wall entirely), and
+    scoring a candidate line by how much of it is ON ink needs no matching at all. The grid is one
+    source pixel, which is the resolution the evidence actually has.
+
+    `accept(offset_a, offset_b)` filters candidates the caller will not take at any coverage.
+
+    Ties are broken toward the SMALLEST move, so a wall that is already right is never nudged,
+    and then lexicographically, so the answer is a pure function of the wall and the raster.
+    """
+    import render_floor_plan  # noqa: PLC0415
+
+    metres_per_px = render_floor_plan.SOURCE_SCALE_M_PER_PX
+    length = wall_length(wall)
+    if length <= 0.0:
+        return None
+    reach = int(REFIT_SEARCH_M / metres_per_px)
+    best: Optional[Tuple[float, float, float, float]] = None  # (-cov, move, o_a, o_b)
+    # `best` stays None when `accept` rejects the whole grid; the caller is told so rather than
+    # handed a fit it has already said it will not take.
+    for index_a in range(-reach, reach + 1):
+        offset_a = index_a * metres_per_px
+        for index_b in range(-reach, reach + 1):
+            offset_b = index_b * metres_per_px
+            if math.degrees(math.atan2(abs(offset_b - offset_a), length)) > REFIT_MAX_TURN_DEG:
+                continue
+            if accept is not None and not accept(offset_a, offset_b):
+                continue
+            start, end = _offset_ends(wall, offset_a, offset_b)
+            coverage = _span_ink_coverage(start, end)
+            key = (-coverage, abs(offset_a) + abs(offset_b), offset_a, offset_b)
+            if best is None or key < best:
+                best = key
+    return None if best is None else (best[2], best[3], -best[0])
+
+
+def _junction_groups(walls: Sequence[Wall]) -> List[List[int]]:
+    """Endpoint indices that currently sit on the same point, grouped."""
+    buckets: Dict[Tuple[float, float], List[int]] = {}
+    for index, point in enumerate(endpoint_list(walls)):
+        key = (round(point[0], COORD_DECIMALS), round(point[1], COORD_DECIMALS))
+        buckets.setdefault(key, []).append(index)
+    return [group for group in buckets.values() if len(group) > 1]
+
+
+def refit_walls_onto_ink(
+    partitions: List[Wall], fixed: Sequence[Wall], rooms: Sequence[Dict[str, Any]]
+) -> Tuple[List[Wall], List[str]]:
+    """
+    Move a partition that runs parallel to its own drawn line onto that line.
+
+    Only partitions are candidates. The envelope and the core are one-per-edge of
+    walkableOutline and of the hole polygons and must keep matching them exactly; the drawing's
+    own hatched core bands are half blank paper by construction, so an ink score means nothing
+    for them anyway.
+
+    Every decision is taken against the wall list as it arrives and the moves are applied
+    afterwards, so the outcome does not depend on the order walls are visited in. Junctions that
+    existed before the refit are then re-formed at the centroid of their moved ends: a refit may
+    move a corner, but it may not take one apart. A T-junction (an end sitting on a BODY rather
+    than on a corner) is left to the regularizer that follows: its T-snap reaches T_SNAP_MAX_M,
+    which is more than a refit can move a wall, so the end follows the body it was landed on.
+
+    No fit here, however well it scores against the ink, may leave a wall standing between a room's
+    centre and that room's own `door`: see ROOM_DOOR_WALL_MARGIN_M.
+    """
+    # (wall index, end A offset, end B offset, the line to log once the move is applied)
+    decisions: List[Tuple[int, float, float, str]] = []
+    actions: List[str] = []
+    for index, wall in enumerate(partitions):
+        coverage = wall_ink_coverage(wall)
+
+        def clears_room_doors(offset_a: float, offset_b: float, subject: Wall = wall) -> bool:
+            start, end = _offset_ends(subject, offset_a, offset_b)
+            moved = {"a": [start[0], start[1]], "b": [end[0], end[1]]}
+            return refit_clears_room_doors(subject, moved, rooms)
+
+        def clear_of_every_room_door(
+            offset_a: float, offset_b: float, subject: Wall = wall
+        ) -> bool:
+            start, end = _offset_ends(subject, offset_a, offset_b)
+            moved = {"a": [start[0], start[1]], "b": [end[0], end[1]]}
+            return wall_blocks_a_room_door(moved, rooms, ROOM_DOOR_CLEARANCE_M) is None
+
+        # A wall standing in front of a room's own door has to move whatever its ink score says,
+        # because `rooms` is an input this script never rewrites and the two would otherwise
+        # disagree about where that room's threshold is. Among the positions that clear the
+        # threshold, the drawing still picks which one: best ink coverage, smallest move on a tie.
+        blocking = wall_blocks_a_room_door(wall, rooms)
+        if blocking is not None:
+            clear = best_ink_fit(wall, clear_of_every_room_door)
+            if clear is None:
+                actions.append(
+                    f"could not clear {blocking[0]}'s door with the {wall_length(wall):.2f} m wall "
+                    f"{list(wall['a'])} -> {list(wall['b'])}: no position within "
+                    f"{REFIT_SEARCH_M:.2f} m of it leaves that threshold open"
+                )
+                continue
+            offset_a, offset_b, fitted = clear
+            name, crossing, limit = blocking
+            decisions.append((
+                index,
+                offset_a,
+                offset_b,
+                f"moved the {wall_length(wall):.2f} m wall {list(wall['a'])} -> "
+                f"{list(wall['b'])} off {name}'s threshold, end a by {offset_a:+.3f} m and end b "
+                f"by {offset_b:+.3f} m across the wall: it stood {crossing:.2f} m from that room's "
+                f"centre on the way to its own door, inside the {limit:.2f} m that door needs; "
+                f"on-ink coverage {coverage:.2f} -> {fitted:.2f}",
+            ))
+            continue
+
+        if coverage >= REFIT_MIN_COVERAGE:
+            continue
+        if wall_is_two_faced(wall):
+            actions.append(
+                f"kept the {wall_length(wall):.2f} m wall {list(wall['a'])} -> {list(wall['b'])} "
+                f"where it is ({coverage:.2f} of it on ink): the drawing has a line down BOTH "
+                f"sides of it, so it is the centreline of a wall drawn as its two faces"
+            )
+            continue
+
+        fit = best_ink_fit(wall, clears_room_doors)
+        # No straight line anywhere near this one lies on the drawing, so the drawn line is not
+        # straight: this is a chord across a curve, and sliding it sideways would only trade the
+        # miss at its middle for a miss at both its ends. Step 10 is what answers that one.
+        if fit is None or fit[2] < REFIT_MIN_COVERAGE:
+            actions.append(
+                f"left the {wall_length(wall):.2f} m wall {list(wall['a'])} -> {list(wall['b'])} "
+                f"alone ({coverage:.2f} of it on ink, best straight fit "
+                f"{0.0 if fit is None else fit[2]:.2f}): no straight line within "
+                f"{REFIT_SEARCH_M:.2f} m lies on the drawing, so the drawn line here is not straight"
+            )
+            continue
+        offset_a, offset_b, fitted = fit
+        if fitted - coverage < REFIT_MIN_GAIN:
+            continue
+        if max(abs(offset_a), abs(offset_b)) < REFIT_MIN_MOVE_M:
+            continue
+        decisions.append((
+            index,
+            offset_a,
+            offset_b,
+            f"refit the {wall_length(wall):.2f} m wall {list(wall['a'])} -> {list(wall['b'])} onto "
+            f"its own drawn line, moving end a by {offset_a:+.3f} m and end b by {offset_b:+.3f} m "
+            f"across the wall: on-ink coverage {coverage:.2f} -> {fitted:.2f}",
+        ))
+
+    if not decisions:
+        return round_walls(partitions), actions
+
+    groups = _junction_groups(list(partitions) + list(fixed))
+    result = [dict(w) for w in partitions]
+    for index, offset_a, offset_b, message in decisions:
+        start, end = _offset_ends(partitions[index], offset_a, offset_b)
+        moved = dict(result[index])
+        moved["a"] = [start[0], start[1]]
+        moved["b"] = [end[0], end[1]]
+        result[index] = round_wall(moved)
+        actions.append(message)
+
+    # Re-form the junctions the moves pulled apart. Only partition ends move; a group that also
+    # holds a fixed endpoint collapses onto that fixed point, so the envelope and core stay put.
+    all_walls = result + list(fixed)
+    for group in groups:
+        points = endpoint_list(all_walls)
+        pinned = [i for i in group if i // 2 >= len(result)]
+        if pinned:
+            target = points[pinned[0]]
+        else:
+            target = (
+                sum(points[i][0] for i in group) / len(group),
+                sum(points[i][1] for i in group) / len(group),
+            )
+        target = (round(target[0], COORD_DECIMALS), round(target[1], COORD_DECIMALS))
+        for endpoint_index in group:
+            owner = endpoint_index // 2
+            if owner >= len(result):
+                continue
+            key = "a" if endpoint_index % 2 == 0 else "b"
+            rejoined = dict(result[owner])
+            rejoined[key] = [target[0], target[1]]
+            if wall_length(rejoined) < MIN_COLLAPSE_LENGTH_M:
+                continue
+            result[owner] = round_wall(rejoined)
+            all_walls[owner] = result[owner]
+    return round_walls(result), actions
+
+
+# ---------------------------------------------------------------------------------------
+# Step 10: restore the arcs the trace flattened into chords
+# ---------------------------------------------------------------------------------------
+
+
+def _median(values: Sequence[float]) -> float:
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / 2.0
+
+
+def _ink_offset(point: Point, normal: Point, search_m: float = CURVE_SEARCH_M) -> Optional[float]:
+    """
+    Signed distance from `point` to the nearest ink ALONG the normal, or None if there is none
+    within `search_m`. Scanning the normal rather than taking the nearest ink in any direction is
+    what keeps a transverse wall from answering: a crossing wall's ink is nearest sideways, and
+    sideways is not a question about where this wall's own line runs.
+    """
+    import render_floor_plan  # noqa: PLC0415
+
+    metres_per_px = render_floor_plan.SOURCE_SCALE_M_PER_PX
+    reach = int(search_m / metres_per_px)
+    for step in range(0, reach + 1):
+        for sign in ((0.0,) if step == 0 else (-1.0, 1.0)):
+            distance = sign * step * metres_per_px
+            probe = (point[0] + normal[0] * distance, point[1] + normal[1] * distance)
+            if _ink_within(probe, REFIT_SIDE_ON_M):
+                return distance
+    return None
+
+
+def chord_ink_profile(start: Point, end: Point) -> List[Tuple[float, Optional[float]]]:
+    """(t, signed offset of the drawn line from the chord) sampled along a chord."""
+    length = math.hypot(end[0] - start[0], end[1] - start[1])
+    if length <= 0.0:
+        return []
+    ux, uz = (end[0] - start[0]) / length, (end[1] - start[1]) / length
+    normal = (-uz, ux)
+    steps = max(6, int(length / CURVE_STEP_M))
+    profile: List[Tuple[float, Optional[float]]] = []
+    for index in range(steps + 1):
+        t = index / steps
+        point = (start[0] + t * (end[0] - start[0]), start[1] + t * (end[1] - start[1]))
+        profile.append((t, _ink_offset(point, normal)))
+    return profile
+
+
+def _band_offset(
+    profile: Sequence[Tuple[float, Optional[float]]], low: float, high: float
+) -> Optional[float]:
+    """Median drawn-line offset over a stretch of the chord. A median, not a mean, because a
+    single sample that latched onto a crossing wall would drag a mean by a whole wall width."""
+    values = [offset for t, offset in profile if offset is not None and low <= t <= high]
+    return _median(values) if values else None
+
+
+def chord_sagitta(start: Point, end: Point) -> Optional[float]:
+    """
+    How far the drawn line bows away from this chord at mid-span, or None if the drawing has no
+    line to compare against. Positive and negative just mean which side.
+    """
+    profile = chord_ink_profile(start, end)
+    if not profile:
+        return None
+    head = _band_offset(profile, 0.0, 0.15)
+    tail = _band_offset(profile, 0.85, 1.0)
+    middle = _band_offset(profile, 0.40, 0.60)
+    if head is None or tail is None or middle is None:
+        return None
+    return middle - (head + tail) / 2.0
+
+
+def _joint_walls(point: Point, walls: Sequence[Wall]) -> List[int]:
+    """Every wall touching this point, whether at an end or across its body."""
+    return [
+        index
+        for index, wall in enumerate(walls)
+        if segment_point_distance(point, wall) <= ATTACHED_EPS_M
+    ]
+
+
+def arc_chains(walls: Sequence[Wall], pinned: int) -> List[List[int]]:
+    """
+    Maximal runs of walls joined tip to tip, head to tail, that could be one wall's arc: at each
+    joint exactly two walls meet and nothing else touches, and neither turns by more than
+    CURVE_JOINT_MAX_DEG. Runs are capped at CURVE_MAX_SEGMENTS, which is the longest polyline
+    step 10 ever emits.
+
+    An L corner turns too far to be chained and a T has a third wall at the joint, so real
+    architecture is never swallowed. This exists so a polyline step 10 wrote on an earlier run can
+    be recognised and put back as the single chord it was derived from.
+    """
+    indices = list(range(pinned, len(walls)))
+    successor: Dict[int, int] = {}
+    predecessor: Dict[int, int] = {}
+    for index in indices:
+        _a, b = wall_points(walls[index])
+        touching = [other for other in _joint_walls(b, walls) if other != index]
+        if len(touching) != 1:
+            continue
+        other = touching[0]
+        if other < pinned:
+            continue
+        other_a, other_b = wall_points(walls[other])
+        if math.hypot(other_a[0] - b[0], other_a[1] - b[1]) > ATTACHED_EPS_M:
+            continue  # must meet tip to tip, and head to tail, so the run has one direction
+        if _joint_walls(other_a, walls) != sorted([index, other]):
+            continue
+        if angle_diff_deg(wall_angle_deg(walls[index]), wall_angle_deg(walls[other])) > CURVE_JOINT_MAX_DEG:
+            continue
+        if other in predecessor or index in successor:
+            continue
+        successor[index] = other
+        predecessor[other] = index
+
+    chains: List[List[int]] = []
+    for index in indices:
+        if index in predecessor:
+            continue
+        chain = [index]
+        while chain[-1] in successor and len(chain) < CURVE_MAX_SEGMENTS:
+            chain.append(successor[chain[-1]])
+        chains.append(chain)
+    return chains
+
+
+def _polyline_pieces(
+    template: Wall, start: Point, end: Point, segments: int
+) -> Optional[List[Wall]]:
+    """
+    `segments` pieces from `start` to `end` whose interior vertices sit on the drawn line.
+
+    The two endpoints are kept exactly, so whatever was attached at either end stays attached;
+    only the interior vertices are new. Each vertex offset is measured against the straight
+    baseline between the ink at the two ENDS, so what the polyline reproduces is the drawing's
+    curvature and not the trace's own error at the tips (which would put a kink at each end).
+    """
+    length = math.hypot(end[0] - start[0], end[1] - start[1])
+    if length <= 0.0:
+        return None
+    ux, uz = (end[0] - start[0]) / length, (end[1] - start[1]) / length
+    normal = (-uz, ux)
+    profile = chord_ink_profile(start, end)
+    head = _band_offset(profile, 0.0, 0.15)
+    tail = _band_offset(profile, 0.85, 1.0)
+    if head is None or tail is None:
+        return None
+
+    vertices: List[Point] = [start]
+    half_window = 0.5 / segments
+    for step in range(1, segments):
+        t = step / segments
+        offset = _band_offset(profile, t - half_window, t + half_window)
+        if offset is None:
+            return None
+        bow = offset - ((1.0 - t) * head + t * tail)
+        point = (
+            start[0] + t * (end[0] - start[0]) + normal[0] * bow,
+            start[1] + t * (end[1] - start[1]) + normal[1] * bow,
+        )
+        vertices.append((round(point[0], COORD_DECIMALS), round(point[1], COORD_DECIMALS)))
+    vertices.append(end)
+
+    pieces: List[Wall] = []
+    for first, second in zip(vertices, vertices[1:]):
+        piece = dict(template)
+        piece["a"] = [first[0], first[1]]
+        piece["b"] = [second[0], second[1]]
+        piece = round_wall(piece)
+        if wall_length(piece) < CURVE_MIN_PIECE_M:
+            return None
+        pieces.append(piece)
+    return pieces
+
+
+def _same_run(pieces: Sequence[Wall], walls: Sequence[Wall], chain: Sequence[int]) -> bool:
+    """Do these pieces trace the same points as this run of walls? Geometry only: `glass`, `note`
+    and `height` are carried by other stages and say nothing about which polyline this is."""
+    if len(pieces) != len(chain):
+        return False
+    return all(
+        round_wall(piece)["a"] == round_wall(walls[index])["a"]
+        and round_wall(piece)["b"] == round_wall(walls[index])["b"]
+        for piece, index in zip(pieces, chain)
+    )
+
+
+def _emitted_arc_runs(walls: Sequence[Wall], pinned: int) -> List[List[int]]:
+    """
+    Runs of walls that are exactly the polyline step 10 writes for their own chord.
+
+    Sub-runs are tried longest first, so a 4-piece arc is recognised as one arc rather than as its
+    own first three pieces. The test is an exact reconstruction, not a resemblance: re-curve the
+    run's chord and every piece has to land on the same two points.
+    """
+    found: List[List[int]] = []
+    for chain in arc_chains(walls, pinned):
+        match: Optional[List[int]] = None
+        for size in range(min(len(chain), CURVE_MAX_SEGMENTS), CURVE_MIN_SEGMENTS - 1, -1):
+            for offset in range(0, len(chain) - size + 1):
+                run = list(chain[offset : offset + size])
+                start = wall_points(walls[run[0]])[0]
+                end = wall_points(walls[run[-1]])[1]
+                if math.hypot(end[0] - start[0], end[1] - start[1]) < CURVE_MIN_LENGTH_M:
+                    continue
+                sagitta = chord_sagitta(start, end)
+                if sagitta is None or abs(sagitta) < CURVE_MIN_SAGITTA_M:
+                    continue
+                pieces = _polyline_pieces(walls[run[0]], start, end, size)
+                if pieces is not None and _same_run(pieces, walls, run):
+                    match = run
+                    break
+            if match is not None:
+                break
+        if match is not None:
+            found.append(match)
+    return found
+
+
+def collapse_arc_chains(walls: Sequence[Wall], pinned: int = 0) -> List[Wall]:
+    """
+    Put every polyline step 10 wrote back the way the trace had it: one straight chord.
+
+    Runs FIRST, on the input file, and it is what makes an arc a DERIVED representation rather
+    than stored state. Without it the regularizer would take an arc apart on the next run
+    (merge_collinear_chains fuses two pieces that meet at under CHAIN_ANGLE_DEG and hug a common
+    line, which a gentle curve's joints do), weld and refit the remains, and each run would write
+    a different set of pieces than the run before it. Collapsing first means the pipeline only
+    ever sees the straight chord it was written for, and step 10 re-derives the curve at the end
+    of every run, from the same chord and the same raster, to the same pieces.
+
+    A run is only collapsed when it is EXACTLY what step 10 would have written for its own chord:
+    the chord is re-curved and the answer has to match the run piece for piece. That is a decision
+    with no tolerance in it, so an ordinary jogged front or a chain of real short walls can never
+    be swallowed, however gently it happens to bend. `glass` is sticky and notes are concatenated,
+    exactly as merge_walls() treats them.
+    """
+    result = [dict(w) for w in walls]
+    for _ in range(MAX_PASSES):
+        collapsed = False
+        for chain in _emitted_arc_runs(result, pinned):
+            start = wall_points(result[chain[0]])[0]
+            end = wall_points(result[chain[-1]])[1]
+            chord = dict(result[chain[0]])
+            chord["a"] = [start[0], start[1]]
+            chord["b"] = [end[0], end[1]]
+            chord["glass"] = any(bool(result[i].get("glass")) for i in chain)
+            chord["height"] = max(result[i]["height"] for i in chain)
+            notes: List[str] = []
+            for i in chain:
+                note = result[i].get("note")
+                if note and note not in notes:
+                    notes.append(note)
+            if notes:
+                chord["note"] = "\n\n".join(notes)
+            else:
+                chord.pop("note", None)
+            kept = [w for i, w in enumerate(result) if i not in chain]
+            insert_at = min(chain)
+            result = kept[:insert_at] + [round_wall(chord)] + kept[insert_at:]
+            collapsed = True
+            break
+        if not collapsed:
+            return round_walls(result)
+    raise RuntimeError("collapse_arc_chains did not converge; check the CURVE_* tolerances")
+
+
+def _pieces_cross_something_new(
+    pieces: Sequence[Wall], chord: Wall, others: Sequence[Wall]
+) -> bool:
+    """A curve may not push a wall through a neighbour the chord cleared."""
+    chord_a, chord_b = wall_points(chord)
+    for other in others:
+        p, q = wall_points(other)
+        if _segments_properly_cross(chord_a, chord_b, p, q):
+            continue  # the chord already crossed it; the curve is no worse
+        for piece in pieces:
+            piece_a, piece_b = wall_points(piece)
+            if _segments_properly_cross(piece_a, piece_b, p, q):
+                return True
+    return False
+
+
+def curve_chord_walls(walls: List[Wall], pinned: int = 0) -> Tuple[List[Wall], List[str]]:
+    """
+    Replace every straight chord across a drawn ARC with a short polyline that follows it.
+
+    Runs last, on the finished wall list, and only on the partitions past `pinned`: the envelope
+    and the core are one-per-edge of walkableOutline and of the hole polygons and have to keep
+    matching them, and nothing on this plan's outline is drawn as a curve anyway.
+
+    `glass` and any authored `note` ride onto every emitted piece, because each piece IS that
+    wall: the Kitchen's west wall is glazed along its whole curve, not along a third of it.
+
+    One wall in, one polyline out, never a merge of two walls. collapse_arc_chains() is the exact
+    inverse of that, so the two together are a round trip: the next run collapses these pieces
+    back into this same chord and reaches this same answer. Curving a RUN of walls instead would
+    break that, because the collapse would then hand the next run one wall where this run had two,
+    and every stage downstream would be judging a different wall list.
+    """
+    result = [dict(w) for w in walls]
+    actions: List[str] = []
+
+    for _ in range(MAX_PASSES):
+        changed = False
+        for index in range(pinned, len(result)):
+            start, end = wall_points(result[index])
+            if wall_length(result[index]) < CURVE_MIN_LENGTH_M:
+                continue
+            sagitta = chord_sagitta(start, end)
+            if sagitta is None or abs(sagitta) < CURVE_MIN_SAGITTA_M:
+                continue
+
+            template = dict(result[index])
+            others = [w for other, w in enumerate(result) if other != index]
+            chord = dict(result[index])
+            longest = int(wall_length(result[index]) / CURVE_MIN_PIECE_M)
+            chosen: Optional[List[Wall]] = None
+            for segments in range(CURVE_MIN_SEGMENTS, min(CURVE_MAX_SEGMENTS, longest) + 1):
+                pieces = _polyline_pieces(template, start, end, segments)
+                if pieces is None:
+                    continue
+                if _pieces_cross_something_new(pieces, chord, others):
+                    continue
+                chosen = pieces
+                break
+            if chosen is None:
+                continue
+
+            result = result[:index] + chosen + result[index + 1 :]
+            actions.append(
+                f"replaced the {wall_length(chord):.2f} m chord [{start[0]:.3f}, {start[1]:.3f}] "
+                f"-> [{end[0]:.3f}, {end[1]:.3f}] with a {len(chosen)}-segment polyline following "
+                f"the drawn arc it cuts across ({abs(sagitta):.3f} m inside the curve at mid-span"
+                + (", glass" if template.get("glass") else "")
+                + (", carrying a note" if template.get("note") else "")
+                + ")"
+            )
+            changed = True
+            break
+        if not changed:
+            return round_walls(result), actions
+
+    raise RuntimeError("curve_chord_walls did not converge; check the CURVE_* tolerances")
+
+
+# ---------------------------------------------------------------------------------------
 # Defect metrics (before / after)
 # ---------------------------------------------------------------------------------------
 
@@ -2083,7 +2879,11 @@ def print_metrics(before: Dict[str, Any], after: Dict[str, Any]) -> None:
 
 
 def rebuild(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    originals = [round_wall(w) for w in plan["walls"]]
+    # An arc in walls[] is a polyline this script derived from the raster (step 10), not surveyed
+    # input, so the first thing every run does is put it back the way the trace had it: one chord.
+    # Everything downstream then sees the same straight-chord world it was written for, and the
+    # arcs are re-derived at the end, from the same chords, to the same pieces.
+    originals = collapse_arc_chains([round_wall(w) for w in plan["walls"]])
 
     holes, repaired_names = repair_holes(plan["holes"])
     hole_polygons = [[_pt(p) for p in hole["polygon"]] for hole in holes]
@@ -2109,12 +2909,21 @@ def rebuild(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     # emitted runs are joined mid-span rather than at a tip.
     partitions = _geometry_fixpoint(partitions, fixed)
     partitions, _ = admit_partitions(partitions, fixed, outline, hole_polygons)
+    # Step 9. Everything above judges a wall's ENDS, so a wall that runs uniformly BESIDE the line
+    # it represents reads as perfectly healthy to all of it. This is the one stage that looks at a
+    # wall's whole body, and the regularizer runs again afterwards so its neighbours follow it.
+    partitions, refits = refit_walls_onto_ink(partitions, fixed, plan["rooms"])
+    partitions = _geometry_fixpoint(partitions, fixed)
+    partitions, _ = admit_partitions(partitions, fixed, outline, hole_polygons)
 
     walls = round_walls(fixed + partitions)
     walls, provenance = carry_provenance(walls, originals)
     # Runs AFTER provenance on purpose: a stub is only safe to delete once whatever it carries is
     # sitting on the wall it shadows, and that is only true after the flags have been placed.
     walls, absorbed = absorb_shadow_stubs(walls, pinned=len(fixed))
+    # Step 10. Last, so the pieces of an arc are never fed back through stages that would fuse
+    # them, and so `glass`/`note` are already in place to be carried onto every piece.
+    walls, curves = curve_chord_walls(walls, pinned=len(fixed))
     provenance["glass_final"] = sum(1 for w in walls if w.get("glass"))
     provenance["notes_final"] = sum(1 for w in walls if w.get("note"))
     partition_count = len(walls) - len(fixed)
@@ -2149,6 +2958,8 @@ def rebuild(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "repairs": repairs,
         "closures": closures,
         "drawn": drawn,
+        "refits": refits,
+        "curves": curves,
         "dangling_after": len(dangling_ends(walls, plan["rooms"])),
     }
     return result, info
@@ -2219,7 +3030,35 @@ def rebuild_sentence(
         f"spur poking past the junction. Its glass flag and its authored note move onto that "
         f"wall first, paragraph by paragraph, so the design decision survives at the same place "
         f"on the front; a short wall joining two others is never absorbed, since deleting one of "
-        f"those would strand its neighbour."
+        f"those would strand its neighbour. "
+        f"Two further passes then judge a wall's whole BODY against the drawing rather than its "
+        f"ends, which is what every pass above looks at. The first moves a partition that runs "
+        f"parallel BESIDE the line it represents onto that line: ON INK means drawn ink within "
+        f"{REFIT_ON_M:.2f} m of the wall's centreline, half its rendered thickness, and a wall "
+        f"covering less than {REFIT_MIN_COVERAGE:.2f} of its own length is refitted by a search "
+        f"over the perpendicular offset of each END (so a wall traced across its line, like "
+        f"Classroom 1417's north front at -0.33 m one end and +0.39 m the other, is straightened "
+        f"as well as shifted), capped at {REFIT_MAX_TURN_DEG:.0f} degrees of turn and only where "
+        f"the fit gains {REFIT_MIN_GAIN:.2f} of coverage and moves at least "
+        f"{REFIT_MIN_MOVE_M:.2f} m. A wall with a drawn line down BOTH sides of it for at least "
+        f"{REFIT_TWO_FACE_MIN:.2f} of its length is left exactly where it is: that is a wall the "
+        f"drawing renders as its two faces (the 0.72 m plumbing chase between the Male and Female "
+        f"washrooms scores 0.99 on both sides) and the centreline between them is already the "
+        f"right answer, the same answer the bundle fusion above reaches. Junctions the refit moved "
+        f"are re-formed at the centroid of their moved ends, and the regularizer runs again so "
+        f"neighbours follow. The second restores the ARCS the trace flattened into single straight "
+        f"chords (the Kitchen's west glass wall, 1430's south edge, 1408's front against Event "
+        f"Space). An arc is measured as a SAGITTA, how far the drawn line bows off the chord at "
+        f"mid-span against the straight line between the ink at its two ends; at or past "
+        f"{CURVE_MIN_SAGITTA_M:.2f} m, two thirds of the rendered wall thickness, the drawn line "
+        f"has left the wall that is supposed to be drawing it, and the chord is replaced by a "
+        f"{CURVE_MIN_SEGMENTS} to {CURVE_MAX_SEGMENTS} segment polyline whose interior vertices "
+        f"sit on the ink. Both endpoints are kept exactly, so whatever was attached at either end "
+        f"stays attached, and `glass` and any authored note ride onto every piece, because each "
+        f"piece IS that wall. An arc in walls[] is therefore DERIVED, not stored: every run starts "
+        f"by collapsing each polyline back into the one chord it was built from (recognised by "
+        f"re-curving that chord and matching the result piece for piece) and re-derives it at the "
+        f"end, so the file is a fixpoint rather than a curve that gets re-cut on every pass."
     )
 
 
@@ -2269,6 +3108,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"  - {line}")
     print(f"shadow stubs        : {len(info['absorbed'])} absorbed")
     for line in info["absorbed"]:
+        print(f"  - {line}")
+    print(f"walls beside a line : {len(info['refits'])} decision(s)")
+    for line in info["refits"]:
+        print(f"  - {line}")
+    print(f"flattened arcs      : {len(info['curves'])} restored as polylines")
+    for line in info["curves"]:
         print(f"  - {line}")
     prov = info["provenance"]
     print(
