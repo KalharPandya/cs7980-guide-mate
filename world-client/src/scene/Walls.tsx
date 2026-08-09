@@ -95,7 +95,13 @@ function Wall({ wall }: { wall: FloorPlanWall }) {
       position={position}
       rotation={[0, rotationY, 0]}
       material={wall.glass ? GLASS_MATERIAL : SOLID_MATERIAL}
-      castShadow
+      // three.js's shadow map is a depth-only pass: it has no idea GLASS_MATERIAL is transparent
+      // (transmission=1) and would otherwise cast the exact same full-opacity box shadow as a
+      // solid wall -- physically wrong for a pane of glass, and (found during the App.tsx
+      // background-color visual-QA fix, 2026-08-02) part of what read as a stray dark patch on
+      // the floor beyond the Kitchen/1407/1408 glass front. receiveShadow stays true either way:
+      // a glass wall standing in another wall's shadow should still visibly darken.
+      castShadow={!wall.glass}
       receiveShadow
     />
   )

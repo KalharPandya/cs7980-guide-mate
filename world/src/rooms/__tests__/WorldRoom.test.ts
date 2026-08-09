@@ -78,27 +78,6 @@ async function main(): Promise<void> {
   const moveOk = room.moveAgentTo(TEST_AGENT_ID, "Classroom 1425");
   assert.ok(moveOk, 'moveAgentTo("Classroom 1425") should succeed (it is reachable per Task 1.1)');
 
-  // --- Task 3.3: moveAgentTo should populate the synced `route` (flattened x,z pairs)
-  // with a real computePath polyline for the client's route-line renderer. ---
-  const routedAgent = state.agents.get(TEST_AGENT_ID)!;
-  assert.ok(
-    routedAgent.route.length >= 4 && routedAgent.route.length % 2 === 0,
-    `moveAgentTo should populate route with >=2 flattened (x,z) points (even length); ` +
-      `got length ${routedAgent.route.length}`,
-  );
-  const routeEndX = routedAgent.route[routedAgent.route.length - 2];
-  const routeEndZ = routedAgent.route[routedAgent.route.length - 1];
-  const routeEndDist = Math.hypot(routeEndX - doorX, routeEndZ - doorZ);
-  assert.ok(
-    routeEndDist <= DOOR_TOLERANCE_M,
-    `route's last point (${routeEndX.toFixed(2)}, ${routeEndZ.toFixed(2)}) should land near ` +
-      `Classroom 1425's door (${doorX}, ${doorZ}); distance was ${routeEndDist.toFixed(2)}m`,
-  );
-  console.log(
-    `PASS: moveAgentTo("Classroom 1425") populated route with ${routedAgent.route.length / 2} points, ` +
-      `ending ${routeEndDist.toFixed(2)}m from the door`,
-  );
-
   room.update(5000); // 5000ms -- if ms->seconds were skipped this would be read as 5000s
   const afterClampAgent = state.agents.get(TEST_AGENT_ID)!;
   const clampDist = Math.hypot(afterClampAgent.x - beforeClampX, afterClampAgent.z - beforeClampZ);
@@ -112,6 +91,39 @@ async function main(): Promise<void> {
   console.log(
     `PASS: update(5000ms) moved the agent only ${clampDist.toFixed(4)}m, proving both the ` +
       "ms->seconds conversion and the 0.1s clamp are applied",
+  );
+
+  // --- Task 3.3 (rework): the route line is now re-derived every tick from Detour's ACTUAL
+  // remaining corridor (WorldRoom.publishRobotRoute, via crowd.corners()) rather than a
+  // one-shot computePath snapshot taken at moveAgentTo time -- so it is populated by the
+  // first update() tick (above), NOT synchronously inside moveAgentTo. It must start at the
+  // robot's live position and end near the target door. ---
+  const routedAgent = state.agents.get(TEST_AGENT_ID)!;
+  assert.ok(
+    routedAgent.route.length >= 4 && routedAgent.route.length % 2 === 0,
+    `a moving robot's route should hold >=2 flattened (x,z) points (even length); ` +
+      `got length ${routedAgent.route.length}`,
+  );
+  const routeStartX = routedAgent.route[0];
+  const routeStartZ = routedAgent.route[1];
+  const routeStartDist = Math.hypot(routeStartX - routedAgent.x, routeStartZ - routedAgent.z);
+  assert.ok(
+    routeStartDist <= 0.4,
+    `route's first point (${routeStartX.toFixed(2)}, ${routeStartZ.toFixed(2)}) should start at ` +
+      `the robot's live position (${routedAgent.x.toFixed(2)}, ${routedAgent.z.toFixed(2)}); ` +
+      `distance was ${routeStartDist.toFixed(2)}m`,
+  );
+  const routeEndX = routedAgent.route[routedAgent.route.length - 2];
+  const routeEndZ = routedAgent.route[routedAgent.route.length - 1];
+  const routeEndDist = Math.hypot(routeEndX - doorX, routeEndZ - doorZ);
+  assert.ok(
+    routeEndDist <= DOOR_TOLERANCE_M,
+    `route's last point (${routeEndX.toFixed(2)}, ${routeEndZ.toFixed(2)}) should land near ` +
+      `Classroom 1425's door (${doorX}, ${doorZ}); distance was ${routeEndDist.toFixed(2)}m`,
+  );
+  console.log(
+    `PASS: the moving robot's route is re-derived from the live corridor -- ${routedAgent.route.length / 2} points, ` +
+      `starting ${routeStartDist.toFixed(2)}m from the robot and ending ${routeEndDist.toFixed(2)}m from the door`,
   );
 
   // --- convergence: repeated small ticks should walk the agent to the room's door ---

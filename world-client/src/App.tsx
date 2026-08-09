@@ -8,11 +8,12 @@ import type { MapControls as MapControlsImpl } from 'three-stdlib'
 import { useWorldRoom, type ConnectionStatus } from './net/useWorldRoom'
 import { useFloorPlan } from './net/useFloorPlan'
 import { AgentInstances } from './scene/AgentInstances'
+import { ChargingPads } from './scene/ChargingPads'
 import { RouteLines } from './scene/RouteLine'
 import { Floor } from './scene/Floor'
 import { Walls } from './scene/Walls'
 import { RoomLabels } from './scene/RoomLabels'
-import { computeOutlineBounds } from './scene/floorPlanUtils'
+import { computeOutlineBounds, fitCameraToOutline } from './scene/floorPlanUtils'
 import { useIsKiosk, useKioskFullscreen, useIdleAutoOrbit } from './KioskMode'
 
 // Task 0.2 scaffold, extended by Task 3.1 with the real floor/wall/label geometry (see
@@ -42,6 +43,27 @@ import { useIsKiosk, useKioskFullscreen, useIdleAutoOrbit } from './KioskMode'
  */
 const LIGHT_OFFSET: readonly [number, number, number] = [10, 20, 5]
 const LIGHT_OFFSET_DISTANCE = Math.hypot(...LIGHT_OFFSET)
+
+/** Vertical field of view, degrees -- passed to both the R3F <Canvas> camera prop and the
+ * camera-framing fit below (fitDistanceAlongDirection needs the same fov the real camera will
+ * render with, or the frame it computes won't match). */
+const CAMERA_FOV_DEG = 50
+
+/**
+ * Fraction of the frustum's half-height/half-width held back as blank space on every side when
+ * fitting the camera distance (see fitDistanceAlongDirection's doc comment in floorPlanUtils.ts).
+ * Visual QA (2026-08-02) found the old fixed-offset camera left ~15% blank above and ~10% below
+ * the building on a 1600x900 capture -- purely because that offset was never actually sized
+ * against the fov/aspect. 0.06 leaves a small, deliberate breathing margin (so a wall segment
+ * flush with the outline's bounding box doesn't render literally touching the viewport edge)
+ * without giving back the old screenshot's wasted space.
+ */
+const CAMERA_FRAME_MARGIN = 0.06
+
+/** Fallback aspect ratio (16:9) for the one render before the browser's real window size is
+ * known -- App() runs on the server-less Vite SPA's first client render, where `window` already
+ * exists, so this only matters as a defensive default (e.g. a future SSR/test harness). */
+const DEFAULT_ASPECT = 16 / 9
 
 /**
  * Extra room (in meters) added around the floor's own X/Z footprint when sizing the directional
@@ -133,7 +155,7 @@ function ConnectionBadge({ status, isKiosk }: { status: ConnectionStatus; isKios
 }
 
 function App() {
-  const { agentIds, agents, status } = useWorldRoom()
+  const { agentIds, agents, stations, status } = useWorldRoom()
   const { floorPlan, error } = useFloorPlan()
   // Stable target the directional light aims at (see the <primitive>/`target` prop below). A
   // THREE.DirectionalLight's `target` is itself an Object3D that three.js reads `matrixWorld`
@@ -178,10 +200,46 @@ function App() {
   const bounds = computeOutlineBounds(floorPlan.walkableOutline)
   const target: [number, number, number] = [bounds.centerX, 0, bounds.centerZ]
   const maxExtent = Math.max(bounds.sizeX, bounds.sizeZ)
+
+  // The VIEWING ANGLE (not the distance, and not the aim point) is still this same
+  // [0.45, 0.85, 0.7] ratio the original camera placement used -- it's what gives this scene its
+  // recognizable oblique, slightly-behind look, and visual QA confirmed that angle itself reads
+  // fine, so it's kept as-is. What changed is the DISTANCE along it and WHERE it's aimed:
+  // fitCameraToOutline (see its doc comment in floorPlanUtils.ts) found that aiming at the
+  // outline's raw bounding-box center -- `target` above, still used for the light -- and just
+  // solving for distance left the framing lopsided (verified against floor-14.json: the building
+  // sat within 0.1% of the frame's bottom edge while ~16% sat empty at the top, because the
+  // bounding-box center isn't the center of this non-convex "pinwheel" outline's own PROJECTED
+  // extent). fitCameraToOutline solves for both together. It gets its own `cameraTarget`,
+  // decoupled from the light/shadow-camera's `target` above: they're different concerns (where
+  // the scene is lit vs. where the user's view/orbit is centered) and reusing `target` here would
+  // have meant re-deriving and re-verifying the shadow-camera bounds math against a shifted aim
+  // point for no real benefit.
+  const cameraDirection = { x: bounds.sizeX * 0.45, y: maxExtent * 0.85, z: bounds.sizeZ * 0.7 }
+  const maxWallHeight = floorPlan.walls.reduce((max, wall) => Math.max(max, wall.height), 0)
+  const aspect =
+    typeof window !== 'undefined' && window.innerHeight > 0
+      ? window.innerWidth / window.innerHeight
+      : DEFAULT_ASPECT
+  const cameraFraming = fitCameraToOutline(
+    floorPlan.walkableOutline,
+    { x: bounds.centerX, z: bounds.centerZ },
+    0,
+    maxWallHeight,
+    cameraDirection,
+    CAMERA_FOV_DEG,
+    aspect,
+    CAMERA_FRAME_MARGIN,
+  )
+  const cameraTarget: [number, number, number] = [
+    cameraFraming.target.x,
+    cameraFraming.target.y,
+    cameraFraming.target.z,
+  ]
   const cameraPosition: [number, number, number] = [
-    bounds.centerX + bounds.sizeX * 0.45,
-    maxExtent * 0.85,
-    bounds.centerZ + bounds.sizeZ * 0.7,
+    cameraFraming.position.x,
+    cameraFraming.position.y,
+    cameraFraming.position.z,
   ]
 
   const lightPosition: [number, number, number] = [
@@ -210,9 +268,30 @@ function App() {
       <ConnectionBadge status={status} isKiosk={isKiosk} />
       <Canvas
         shadows
-        camera={{ position: cameraPosition, fov: 50 }}
+        camera={{ position: cameraPosition, fov: CAMERA_FOV_DEG }}
         style={{ width: '100vw', height: '100vh', display: 'block' }}
       >
+        {/* Without an explicit scene.background, three.js's renderTransmissionPass (triggered by
+            Walls.tsx's GLASS_MATERIAL, meshPhysicalMaterial with transmission=1) has nothing to
+            render behind a glass wall except the WebGLRenderer's default transparent/black clear
+            -- so every glass wall sampled black through itself, rendering as a near-opaque dark
+            panel. Most visible on the large diagonal Kitchen/1407/1408-vs-Event-Space glass front
+            (floor-14.json's biggest glass run): a dark blue-black wedge over that whole room
+            cluster in every screenshot taken during visual QA (2026-08-02), easy to mistake for a
+            shadow-camera bug since it also darkened the floor/wall behind it. A plain white
+            background (matching index.html's plain, unstyled <body> -- browsers default that to
+            white, which is also this page's own empty-margin color) fixes it -- verified by an
+            isolated before/after capture of just that glass front.
+            Tried drei's <Environment> next, reasoning scene.environment (not background) is the
+            "proper" PBR way to feed transmission/IBL: that was strictly worse. Its cubeCamera
+            capture stalled the WebGL context badly enough under this environment's SwiftShader
+            software rasterizer that the world-server websocket reconnected mid-capture, AND
+            scene.environment is global -- three.js applies it as implicit IBL lighting to every
+            PBR material in the scene, not just the transmissive ones, which visibly overexposed
+            every solid wall too. A plain <color> background has neither failure mode: it only
+            fills where nothing is drawn (unlike scene.environment, no implicit-IBL side effect on
+            solid walls) and costs one clear color, not a per-frame/per-mount cubemap render. */}
+        <color attach="background" args={['#ffffff']} />
         <ambientLight intensity={0.6} />
         <directionalLight
           position={lightPosition}
@@ -235,12 +314,16 @@ function App() {
         <Walls walls={floorPlan.walls} />
         <RoomLabels rooms={floorPlan.rooms} />
 
+        {/* Charging pads sit on the carpet under the robots that park on them -- rendered
+            before the agents so a parked robot draws on top of its own pad. */}
+        <ChargingPads stations={stations} />
+
         <AgentInstances agentIds={agentIds} agents={agents} />
         <RouteLines agentIds={agentIds} agents={agents} />
 
         <MapControls
           ref={mapControlsRef}
-          target={target}
+          target={cameraTarget}
           onStart={onInteractionStart}
           onEnd={onInteractionEnd}
         />

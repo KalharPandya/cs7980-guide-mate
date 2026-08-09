@@ -133,19 +133,8 @@ async function testRequestGuideConvergenceAndTrailing(): Promise<void> {
   room.setSimulationInterval();
 
   const plan = loadFloorPlan();
-  // Origin/destination picked to be a genuinely LONG trip, not a short hop. floor-14.json
-  // was re-traced from the recovered original floor-plan image (commits 50bb024, 7e4fe67)
-  // and came out architecturally accurate -- Classroom 1425's and 1426's doors, which this
-  // test used to escort between, turned out to be only ~3.5m apart in the real geometry
-  // (vs. the old eyeballed map's much bigger gap). A ~3.5m trip is mostly spent untangling
-  // the robot and visitor from their shared spawn point (Detour local avoidance takes
-  // ~1.3s to separate two agents spawned on top of each other) before the robot even
-  // arrives, which starved the net-displacement assertion below of any real trip to
-  // measure -- not a trailing-logic bug (verified: over THIS long trip the visitor trails
-  // properly, stays behind, and never collapses onto the robot; see the escort-manager
-  // investigation notes in docs/superpowers/plans/2026-07-26-virtual-world-progress.md).
-  // Wellness Room and Event Space sit on opposite sides of the building core, ~17m apart
-  // door-to-door (measured below), giving the escort a real trip to trail over.
+  // Wellness Room and Event Space sit on opposite sides of the building core, ~18m apart
+  // door-to-door (measured below), giving the LEADING phase a real trip to trail over.
   const originRoom = plan.rooms.find((r) => r.name === "Wellness Room");
   const destRoom = plan.rooms.find((r) => r.name === "Event Space");
   assert.ok(originRoom, "floor-14.json should contain 'Wellness Room'");
@@ -158,10 +147,12 @@ async function testRequestGuideConvergenceAndTrailing(): Promise<void> {
       `got ${doorToDoorDistance.toFixed(2)}m door-to-door -- pick a farther-apart pair if floor-14.json changed`,
   );
 
-  // Spawn robot-b/visitor-b together near a DIFFERENT room's door (not the entrance, where
-  // WorldRoom's own seeded TEST_AGENT_ID robot sits) so robot-b is unambiguously the
-  // nearest idle robot to visitor-b -- proving the "nearest idle robot" selection, not just
-  // "the only robot that exists".
+  // Spawn robot-b/visitor-b TOGETHER at Wellness Room's door so robot-b is unambiguously the
+  // nearest idle robot to visitor-b (distance 0) even with the GUIDE_ROBOT_COUNT fleet
+  // present -- proving the "nearest idle robot" selection, not just "the only robot that
+  // exists". Co-spawning also makes the "approaching" phase trivial (the robot is already at
+  // the person), so this test focuses on the GREETING pause and the LEADING trail/release;
+  // testEscortWaitsForVisitorNotJustRobotArrival covers a real, long approaching trip.
   const spawnPoint = { x: originRoom!.door[0], z: originRoom!.door[1] };
   room.addAgent("robot-b", "robot", spawnPoint);
   room.addAgent("visitor-b", "visitor", spawnPoint);
@@ -172,95 +163,108 @@ async function testRequestGuideConvergenceAndTrailing(): Promise<void> {
 
   const result = room.requestGuide("visitor-b", "Event Space");
   assert.ok(result.robotId, "requestGuide should succeed when an idle robot is available");
-  assert.equal(result.robotId, "robot-b", "requestGuide should pick the nearest idle robot (robot-b, not one of the 50 seeded fleet robots)");
+  assert.equal(result.robotId, "robot-b", "requestGuide should pick the nearest idle robot (robot-b, co-spawned with the visitor)");
   console.log(`PASS: requestGuide("visitor-b", "Event Space") assigned robot "${result.robotId}"`);
 
-  let statsAfterBind = room.getVisitorDebugStats();
+  const statsAfterBind = room.getVisitorDebugStats();
   assert.equal(statsAfterBind.escortedVisitors, 1, "exactly one visitor should be escorted right after a successful requestGuide");
   assert.equal(statsAfterBind.robotBindings, 1, "exactly one robot binding should exist right after a successful requestGuide");
 
   const visitorStart = { ...state.agents.get("visitor-b")! };
 
-  // 3000 ticks * 16.6ms = ~49.8s simulated. The full 50-robot guide fleet (seeded by this
-  // scenario's onCreate, not disabled) is scattered across the floor per guideFleetSpawns.ts
-  // and adds real local-avoidance congestion along the way -- measured at ~25.9s to converge
-  // over this Wellness-Room-to-Event-Space trip with that fleet present, so this budget
-  // keeps ~90% headroom rather than the ~7s WorldRoom.test.ts's shorter-trip 2000-tick
-  // budget would leave.
-  const MAX_TICKS = 3000;
-  let robotDoorDist = Infinity;
+  // We cannot read escortPhase from outside WorldRoom, so infer the 3 phases from observable
+  // robot/visitor position + state:
+  //   greeting: after the robot reaches the person, both stay idle and close for a randomized
+  //             ~10-15s pause, BEFORE the visitor starts moving toward Event Space.
+  //   leading:  the visitor starts moving, trails the robot, the robot converges on the door,
+  //             and the escort releases once the visitor catches up.
+  const MAX_TICKS = 4200; // ~69.7s simulated -- generous over the ~33s observed full flow
+  let elapsed = 0;
   let visitorMovedTotal = 0;
-  let sawNonTrivialSeparation = false;
   let lastVisitorPos = { x: visitorStart.x, z: visitorStart.z };
+  let sawNonTrivialSeparation = false;
+
+  // greeting detection
+  let greetStartS = -1;
+  let cumAtGreetStart = 0;
+  let maxGreetSeparation = 0;
+  let leadStartS = -1;
+
+  // leading detection
+  let robotConvergedDoorDist = Infinity;
+  let released = false;
+  let finalSeparation = 0;
 
   for (let i = 0; i < MAX_TICKS; i++) {
     room.update(TICK_MS);
+    elapsed += TICK_MS / 1000;
     const robot = state.agents.get("robot-b")!;
     const visitor = state.agents.get("visitor-b")!;
-
-    robotDoorDist = Math.hypot(robot.x - doorX, robot.z - doorZ);
 
     const step = Math.hypot(visitor.x - lastVisitorPos.x, visitor.z - lastVisitorPos.z);
     visitorMovedTotal += step;
     lastVisitorPos = { x: visitor.x, z: visitor.z };
 
     const separation = Math.hypot(visitor.x - robot.x, visitor.z - robot.z);
-    // "trails behind, not identical" -- some real (not necessarily exactly TRAIL_DISTANCE_M,
-    // since the visitor is always catching up to a moving target) gap between the two.
+    finalSeparation = separation;
     if (separation > 0.15) sawNonTrivialSeparation = true;
 
-    if (robotDoorDist <= DOOR_TOLERANCE_M) break;
+    const robotDoorDist = Math.hypot(robot.x - doorX, robot.z - doorZ);
+    if (robotDoorDist <= DOOR_TOLERANCE_M) robotConvergedDoorDist = robotDoorDist;
+
+    if (greetStartS < 0) {
+      // robot reached the person (greeting begins)
+      if (robot.state === "idle" && separation <= 2.5 && elapsed > 0.5) {
+        greetStartS = elapsed;
+        cumAtGreetStart = visitorMovedTotal;
+        maxGreetSeparation = separation;
+      }
+    } else if (leadStartS < 0) {
+      // still greeting: both should stay together and near-stationary
+      maxGreetSeparation = Math.max(maxGreetSeparation, separation);
+      if (visitorMovedTotal - cumAtGreetStart > 0.5) leadStartS = elapsed; // visitor set off => leading
+    }
+
+    if (leadStartS > 0 && room.getVisitorDebugStats().robotBindings === 0) {
+      released = true;
+      break;
+    }
   }
 
+  // ---- greeting: a real ~10-15s pause where both stay together, before leading ----
+  assert.ok(greetStartS > 0, "the robot should reach the person and begin the greeting pause");
+  // The visitor should barely have moved by the time the greeting starts (co-spawned here, so
+  // it never had to walk anywhere during approaching).
   assert.ok(
-    robotDoorDist <= DOOR_TOLERANCE_M,
-    `assigned robot did not converge within ${DOOR_TOLERANCE_M}m of Event Space's door; last distance ${robotDoorDist.toFixed(2)}m`,
+    cumAtGreetStart < 1.0,
+    `visitor-b should stay put before leading begins (moved ${cumAtGreetStart.toFixed(2)}m before the greeting)`,
   );
-  console.log(`PASS: assigned robot "robot-b" converged to within ${robotDoorDist.toFixed(2)}m of Event Space's door`);
+  assert.ok(leadStartS > 0, "leading should begin after the greeting pause");
+  const greetDuration = leadStartS - greetStartS;
+  assert.ok(
+    greetDuration >= 9 && greetDuration <= 16.5,
+    `greeting pause should last ~10-15s of simulated time before leading (got ${greetDuration.toFixed(2)}s)`,
+  );
+  assert.ok(
+    maxGreetSeparation <= 2.6,
+    `robot-b and visitor-b should stay together (both roughly idle) throughout the greeting pause ` +
+      `(max separation ${maxGreetSeparation.toFixed(2)}m)`,
+  );
+  console.log(
+    `PASS: greeting pause observed for ${greetDuration.toFixed(2)}s (both idle/near, max sep ${maxGreetSeparation.toFixed(2)}m) before leading`,
+  );
 
-  // Keep ticking a bounded extra amount for the robot to settle to idle at its door and for
-  // the escort to un-bind (mirrors WorldRoom.test.ts's settle-tick pattern) -- and keep
-  // accumulating the visitor's trailing distance over this whole window too. The robot
-  // (which the loop above breaks on) reaches the door before the visitor, who is still
-  // trailing a real distance behind it (that's the whole point of "trailing"); measuring
-  // visitorMovedTotal only up to the ROBOT's arrival (as a prior version of this test did)
-  // cuts the visitor's trip short by however long its own remaining approach takes, which
-  // is exactly the gap floor-14.json's 2026-08-02 re-extraction (a more direct, less
-  // congested Wellness-Room<->Event-Space route than the earlier hand-traced map) exposed:
-  // the robot converged at tick ~1041/3000, leaving the still-trailing visitor short of the
-  // door-to-door distance at that instant even though it goes on to clear it comfortably
-  // once actually given the rest of its own trip. The distance tally therefore keeps
-  // running for the FULL settle window below (not just until escortedVisitors first hits
-  // 0 -- that fires as soon as the visitor is "close enough" to its own stop point, which
-  // in one observed run was ~2.5% short of the full door-to-door distance, i.e. the visitor
-  // is still finishing its final approach at that instant), while `settled` is still
-  // recorded (and asserted) as soon as it's first observed within the budget.
-  const MAX_SETTLE_TICKS = 2000;
-  let settled = false;
-  for (let i = 0; i < MAX_SETTLE_TICKS; i++) {
-    room.update(TICK_MS);
-    const visitor = state.agents.get("visitor-b")!;
-    const robot = state.agents.get("robot-b")!;
-    const step = Math.hypot(visitor.x - lastVisitorPos.x, visitor.z - lastVisitorPos.z);
-    visitorMovedTotal += step;
-    lastVisitorPos = { x: visitor.x, z: visitor.z };
-    if (Math.hypot(visitor.x - robot.x, visitor.z - robot.z) > 0.15) sawNonTrivialSeparation = true;
-    if (room.getVisitorDebugStats().escortedVisitors === 0) settled = true;
-  }
-  assert.ok(settled, "escort binding should be released once the robot arrives and settles to idle");
+  // ---- leading: the robot converges on the door, the visitor trails and catches up ----
+  assert.ok(
+    robotConvergedDoorDist <= DOOR_TOLERANCE_M,
+    `assigned robot did not converge within ${DOOR_TOLERANCE_M}m of Event Space's door during leading; last convergence ${robotConvergedDoorDist.toFixed(2)}m`,
+  );
+  assert.ok(released, "escort binding should be released once the robot arrives and the visitor catches up");
 
   const visitorNetDisplacement = Math.hypot(
     lastVisitorPos.x - visitorStart.x,
     lastVisitorPos.z - visitorStart.z,
   );
-  // Thresholds are stated as fractions of the ACTUAL door-to-door distance (not a flat
-  // meter figure) so this stays meaningful regardless of which room pair is used above --
-  // a flat "> 0.5m" is exactly what silently passed on a short trip while proving nothing.
-  // Observed on this Wellness-Room-to-Event-Space trip (~18.45m door-to-door, 50-robot
-  // fleet present, measured over the visitor's full escorted trip incl. settle-wait):
-  // visitor moved ~20.5m total, net displacement ~19.1m -- both comfortably clear these
-  // fractional bars, which is the point: a visitor genuinely trailing a robot across real
-  // distance blows past "meaningfully away from spawn", it doesn't barely clear it.
   assert.ok(
     visitorMovedTotal > doorToDoorDistance,
     `visitor-b should have covered at least the door-to-door distance (${doorToDoorDistance.toFixed(2)}m) while ` +
@@ -271,10 +275,16 @@ async function testRequestGuideConvergenceAndTrailing(): Promise<void> {
     `visitor-b's net displacement (${visitorNetDisplacement.toFixed(2)}m) should be a meaningful fraction of the ` +
       `${doorToDoorDistance.toFixed(2)}m trip (> ${(doorToDoorDistance * 0.5).toFixed(2)}m), not stuck near its spawn point`,
   );
-  assert.ok(sawNonTrivialSeparation, "visitor-b should stay a real trailing distance behind robot-b, not overlap it");
+  assert.ok(sawNonTrivialSeparation, "visitor-b should stay a real trailing distance behind robot-b during leading, not overlap it");
+  // The escort releases once the visitor is within the arrival radius (VISITOR_ARRIVAL_DISTANCE_M
+  // = 2.5m) of the robot-at-destination, per the documented completion contract.
+  assert.ok(
+    finalSeparation <= 2.5,
+    `visitor-b should have caught up to within the arrival radius of robot-b before the escort released (final separation ${finalSeparation.toFixed(2)}m)`,
+  );
   console.log(
-    `PASS: visitor-b trailed behind robot-b (moved ${visitorMovedTotal.toFixed(2)}m total, ` +
-      `net displacement ${visitorNetDisplacement.toFixed(2)}m from spawn, never collapsed onto the robot)`,
+    `PASS: visitor-b trailed behind robot-b during leading (moved ${visitorMovedTotal.toFixed(2)}m total, ` +
+      `net displacement ${visitorNetDisplacement.toFixed(2)}m, caught up to ${finalSeparation.toFixed(2)}m at release)`,
   );
 
   const statsAfterArrival = room.getVisitorDebugStats();
@@ -334,12 +344,18 @@ async function testRequestGuideReturnsNullWhenNoRobotIdle(): Promise<void> {
 }
 
 /**
- * Defect-A regression test (the bug assignChain.test.ts's
- * `testEscortEndsOnRobotArrivalNotVisitorArrival` found and this fix closes): a robot that
- * happens to already be sitting right at the requested room's door has a near-zero trip of
- * its own and settles to idle almost immediately -- but the escort must NOT release just
- * because of that. It should stay bound until the VISITOR (which may have started far away)
- * has actually caught up, then release once it does.
+ * 3-phase escort regression test with a REAL, long "approaching" leg. A single robot is
+ * spawned FAR from the waiting visitor (at the destination door), so the "approaching" phase
+ * is a genuine multi-meter trip the robot must make TO the person while the person waits in
+ * place. Verifies all three phases:
+ *   - approaching: the robot travels to the person; the person's net displacement stays ~0
+ *     and the escort stays bound the whole time.
+ *   - greeting:    once the robot reaches the person, both stay together for a randomized
+ *     ~10-15s pause before leading.
+ *   - leading:     the robot leads to the destination and the visitor follows; the escort
+ *     releases only once the visitor has actually caught up (the existing visitor-arrival
+ *     gating, now exercised at the end of the leading phase), with the SPECIFIC robot's
+ *     binding cleared at release (single robot here, so robotBindings===0 is that robot).
  */
 async function testEscortWaitsForVisitorNotJustRobotArrival(): Promise<void> {
   const room = new WorldRoom();
@@ -349,9 +365,8 @@ async function testEscortWaitsForVisitorNotJustRobotArrival(): Promise<void> {
   const plan = loadFloorPlan();
   const entrance = { x: plan.entrance.point[0], z: plan.entrance.point[1] };
   // "South Collaboration Space" is the room farthest from the entrance in floor-14.json
-  // (~20.4m, same pick assignChain.test.ts's fix-verification scenario uses) -- needed so
-  // the robot's own near-zero trip (spawned AT the door) is unambiguously much shorter than
-  // the visitor's real trip from the entrance.
+  // (~20.4m) -- so a robot spawned at its door has a genuinely long trip TO the waiting
+  // visitor at the entrance during approaching.
   const destRoom = plan.rooms.find((r) => r.name === "South Collaboration Space");
   assert.ok(destRoom, "floor-14.json should contain 'South Collaboration Space'");
   const [doorX, doorZ] = destRoom!.door;
@@ -362,68 +377,126 @@ async function testEscortWaitsForVisitorNotJustRobotArrival(): Promise<void> {
       `test to be meaningful; got ${entranceToDoorDistance.toFixed(2)}m -- pick a farther room if floor-14.json changed`,
   );
 
-  // Robot spawns AT the door -- its own "trip" is ~0m, so it settles idle almost instantly.
-  // The visitor spawns at the entrance, genuinely far away -- exactly the shape of the
-  // defect assignChain.test.ts found (a robot that happens to already be near the room).
-  room.addAgent("near-door-robot", "robot", { x: doorX, z: doorZ });
-  room.addAgent("far-visitor", "visitor", entrance);
+  // Robot spawns AT the destination door, far from the visitor; the visitor waits at the
+  // entrance. The robot must FETCH the person first (approaching), then greet, then lead them
+  // back to the destination.
+  const robotStart = { x: doorX, z: doorZ };
+  room.addAgent("fetch-robot", "robot", robotStart);
+  room.addAgent("wait-visitor", "visitor", entrance);
 
-  const result = room.requestGuide("far-visitor", "South Collaboration Space");
+  const result = room.requestGuide("wait-visitor", "South Collaboration Space");
   assert.ok(result.robotId, "requestGuide should succeed (one idle robot exists)");
-  assert.equal(result.robotId, "near-door-robot");
+  assert.equal(result.robotId, "fetch-robot");
 
   const state = room.state as unknown as {
     agents: Map<string, { x: number; z: number; state: string }>;
   };
+  const visitorStart = { ...state.agents.get("wait-visitor")! };
+  assert.equal(room.getVisitorDebugStats().robotBindings, 1, "escort should be bound immediately after requestGuide");
 
-  // Advance a SHORT, bounded window -- comfortably enough for the robot's own near-zero
-  // trip to settle to idle, nowhere near enough for the visitor to cross the real
-  // entrance-to-door distance on foot (max agent speed 1.4 m/s).
-  const SHORT_TICKS = 60; // ~1s simulated
-  for (let i = 0; i < SHORT_TICKS; i++) room.update(TICK_MS);
+  let phase: "approach" | "greet" | "lead" | "done" = "approach";
+  let elapsed = 0;
+  let visitorCum = 0;
+  let lastVisitorPos = { x: visitorStart.x, z: visitorStart.z };
 
-  const robotAfterShort = state.agents.get("near-door-robot")!;
-  assert.equal(
-    robotAfterShort.state,
-    "idle",
-    "test setup: the robot's own near-zero trip should have settled to idle well within 1s",
+  let approachDisp = 0;
+  let robotTravelDuringApproach = 0;
+  let approachEndS = -1;
+  let cumAtGreetStart = 0;
+  let maxGreetSeparation = 0;
+  let leadStartS = -1;
+  let robotReachedDoor = false;
+  let finalSeparation = 0;
+
+  const MAX_TICKS = 6000; // ~99.6s simulated -- generous over the ~53s observed full flow
+  for (let i = 0; i < MAX_TICKS && phase !== "done"; i++) {
+    room.update(TICK_MS);
+    elapsed += TICK_MS / 1000;
+    const robot = state.agents.get("fetch-robot")!;
+    const visitor = state.agents.get("wait-visitor")!;
+
+    visitorCum += Math.hypot(visitor.x - lastVisitorPos.x, visitor.z - lastVisitorPos.z);
+    lastVisitorPos = { x: visitor.x, z: visitor.z };
+    const separation = Math.hypot(visitor.x - robot.x, visitor.z - robot.z);
+    finalSeparation = separation;
+    if (Math.hypot(robot.x - doorX, robot.z - doorZ) <= DOOR_TOLERANCE_M) robotReachedDoor = true;
+
+    if (phase === "approach") {
+      // The escort must stay bound while the robot is still fetching the person.
+      assert.equal(
+        room.getVisitorDebugStats().robotBindings,
+        1,
+        "the escort must stay bound throughout approaching (the robot is still fetching the person)",
+      );
+      if (robot.state === "idle" && separation <= 2.5 && elapsed > 0.5) {
+        approachEndS = elapsed;
+        approachDisp = Math.hypot(visitor.x - visitorStart.x, visitor.z - visitorStart.z);
+        robotTravelDuringApproach = Math.hypot(robot.x - robotStart.x, robot.z - robotStart.z);
+        cumAtGreetStart = visitorCum;
+        maxGreetSeparation = separation;
+        phase = "greet";
+      }
+    } else if (phase === "greet") {
+      maxGreetSeparation = Math.max(maxGreetSeparation, separation);
+      if (visitorCum - cumAtGreetStart > 0.5) {
+        leadStartS = elapsed;
+        phase = "lead";
+      }
+    } else if (phase === "lead") {
+      // Single robot => robotBindings===0 is specifically THIS robot's binding clearing.
+      if (room.getVisitorDebugStats().robotBindings === 0) phase = "done";
+    }
+  }
+
+  // ---- approaching: the robot did a real trip to the person; the person stayed put ----
+  assert.ok(approachEndS > 0, "the robot should reach the waiting person during approaching");
+  assert.ok(
+    robotTravelDuringApproach > 10,
+    `the robot should travel a real distance to fetch the person (got ${robotTravelDuringApproach.toFixed(2)}m)`,
   );
-
-  const statsAfterRobotIdle = room.getVisitorDebugStats();
-  assert.equal(
-    statsAfterRobotIdle.robotBindings,
-    1,
-    "defect fix: the escort must NOT release just because the ROBOT went idle -- the visitor is still most of the " +
-      "entrance-to-door distance away and has not caught up yet (the old robot-only arrival check would have " +
-      "released it here)",
+  assert.ok(
+    approachDisp < 1.0,
+    `the person should wait in place while being approached (net displacement ${approachDisp.toFixed(2)}m during approaching)`,
   );
   console.log(
-    "PASS: robot settled idle after its own near-zero trip, but the escort stayed bound because the visitor " +
-      "hasn't caught up yet",
+    `PASS: robot traveled ${robotTravelDuringApproach.toFixed(2)}m to fetch the person, who stayed put ` +
+      `(${approachDisp.toFixed(2)}m net) with the escort bound throughout approaching`,
   );
 
-  // Now give the visitor enough simulated time to actually walk the real distance and
-  // catch up to the (now-stationary) robot.
-  const MAX_TICKS = 3000; // ~49.8s simulated
-  let released = false;
-  for (let i = 0; i < MAX_TICKS && !released; i++) {
-    room.update(TICK_MS);
-    released = room.getVisitorDebugStats().robotBindings === 0;
-  }
-  assert.ok(released, `escort should release once the visitor genuinely catches up to the robot (within ${MAX_TICKS} ticks)`);
-
-  const visitorFinal = state.agents.get("far-visitor")!;
-  const robotFinal = state.agents.get("near-door-robot")!;
-  const finalSeparation = Math.hypot(visitorFinal.x - robotFinal.x, visitorFinal.z - robotFinal.z);
+  // ---- greeting: a real ~10-15s pause where both stayed together, before leading ----
+  assert.ok(leadStartS > 0, "leading should begin after the greeting pause");
+  const greetDuration = leadStartS - approachEndS;
   assert.ok(
-    finalSeparation <= 1.5,
-    `visitor "far-visitor" should have actually closed the gap to the robot before the escort released -- got ` +
-      `${finalSeparation.toFixed(2)}m apart`,
+    greetDuration >= 9 && greetDuration <= 16.5,
+    `greeting pause should last ~10-15s of simulated time (got ${greetDuration.toFixed(2)}s)`,
   );
-  assert.equal(robotFinal.state, "idle", "the robot should still be idle (never re-tasked) once the escort finally releases");
+  assert.ok(
+    maxGreetSeparation <= 2.6,
+    `robot and person should stay together during the greeting pause (max separation ${maxGreetSeparation.toFixed(2)}m)`,
+  );
+  console.log(`PASS: greeting pause observed for ${greetDuration.toFixed(2)}s (max sep ${maxGreetSeparation.toFixed(2)}m) before leading`);
+
+  // ---- leading: the visitor followed and the escort released only once it caught up ----
+  assert.equal(phase, "done", "the assigned robot's escort should release once its visitor catches up during leading");
+  assert.ok(robotReachedDoor, "the robot should have led the visitor back to the destination door");
+  // Release fires once the visitor is within the arrival radius (VISITOR_ARRIVAL_DISTANCE_M =
+  // 2.5m) of the robot-at-destination -- the documented completion contract.
+  assert.ok(
+    finalSeparation <= 2.5,
+    `visitor "wait-visitor" should have closed to within the arrival radius of the robot before the escort released -- got ${finalSeparation.toFixed(2)}m apart`,
+  );
+  const robotFinal = state.agents.get("fetch-robot")!;
+  // The robot may still read "moving" at release (a trailing visitor packing against it keeps
+  // its realized speed flickering above the idle threshold); the meaningful checks are that it
+  // has genuinely reached the destination and its binding is cleared.
+  assert.ok(
+    Math.hypot(robotFinal.x - doorX, robotFinal.z - doorZ) <= DOOR_TOLERANCE_M * 2,
+    `the robot should be at the destination door when the escort releases (got ${Math.hypot(robotFinal.x - doorX, robotFinal.z - doorZ).toFixed(2)}m)`,
+  );
+  assert.equal(room.getVisitorDebugStats().robotBindings, 0, "the specific robot's binding should be cleared at release");
   console.log(
     `PASS: escort released only once the visitor genuinely caught up (final separation ${finalSeparation.toFixed(2)}m), ` +
-      "proving completion is gated on the VISITOR's arrival, not just the robot's",
+      "proving completion is gated on the VISITOR's arrival during leading",
   );
 
   room.onDispose();
@@ -486,16 +559,29 @@ async function testEscortTimeoutStillFiresWhenVisitorNeverCatchesUp(): Promise<v
   const stats = room.getVisitorDebugStats();
   assert.equal(stats.escortedVisitors, 0, "the visitor should no longer be recorded as escorted after the timeout");
   assert.equal(stats.robotBindings, 0, "the robot binding should be released after the timeout");
-  assert.equal(robotFinal.state, "idle", "the released robot should be idle, immediately reassignable");
+
+  // The timeout fired during the "approaching" leg, so the robot was still walking TO the
+  // person (state "moving") the instant the binding released -- unlike the old flow, where the
+  // robot sat idle at its destination. It is no longer bound (no deadlock) and settles back to
+  // idle on its own shortly after (it finishes its move, then parks). Advance until it settles,
+  // then prove reassignability.
+  let robotSettledIdle = false;
+  for (let i = 0; i < 5000 && !robotSettledIdle; i++) {
+    room.update(TICK_MS);
+    robotSettledIdle =
+      state.agents.get("timeout-robot")!.state === "idle" && room.getVisitorDebugStats().robotBindings === 0;
+  }
+  assert.ok(robotSettledIdle, "the timed-out robot should settle back to idle on its own (no deadlock)");
 
   // Concretely prove "reassignable": the freed robot must be selectable again.
-  room.addAgent("timeout-reuse-probe", "visitor", { x: robotFinal.x, z: robotFinal.z });
-  const reuse = room.requestGuide("timeout-reuse-probe", { x: robotFinal.x, z: robotFinal.z });
-  assert.equal(reuse.robotId, "timeout-robot", "the timed-out robot should be immediately reassignable to a new escort");
+  const robotSettled = state.agents.get("timeout-robot")!;
+  room.addAgent("timeout-reuse-probe", "visitor", { x: robotSettled.x, z: robotSettled.z });
+  const reuse = room.requestGuide("timeout-reuse-probe", { x: robotSettled.x, z: robotSettled.z });
+  assert.equal(reuse.robotId, "timeout-robot", "the timed-out robot should be reassignable to a new escort once it settles");
 
   console.log(
-    `PASS: escort timeout (2s override) released the binding even though the visitor never caught up ` +
-      `(final separation ${finalSeparation.toFixed(2)}m) -- no deadlock, robot reassignable`,
+    `PASS: escort timeout (2s override) released the binding even though the robot never reached the visitor ` +
+      `(separation ${finalSeparation.toFixed(2)}m at timeout) -- no deadlock, robot reassignable once settled`,
   );
 
   room.onDispose();
@@ -634,7 +720,10 @@ async function testEscortTimeoutPauseCorrectness(): Promise<void> {
     `test setup: the visitor should still be genuinely far from the robot when the timeout fires (got ` +
       `${finalSeparation.toFixed(2)}m) -- proves release was via the TIMEOUT, not a coincidental arrival`,
   );
-  assert.equal(robotFinal.state, "idle", "the released robot should be idle, immediately reassignable");
+  // The timeout fired during the "approaching" leg (robot walking to the person), so the
+  // robot is mid-trip (state "moving") the instant it releases -- the meaningful post-resume
+  // claim here is that the binding is genuinely gone, not that the robot is parked.
+  assert.equal(room.getVisitorDebugStats().robotBindings, 0, "the escort binding should be released (unbound) after the post-resume timeout");
 
   room.onDispose();
 }

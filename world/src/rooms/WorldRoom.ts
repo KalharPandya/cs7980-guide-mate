@@ -1,7 +1,7 @@
 import { Room } from "colyseus";
 import type { Client } from "colyseus";
 
-import { Agent, WorldState } from "./schema/WorldState.js";
+import { Agent, Station, WorldState } from "./schema/WorldState.js";
 import { buildNavMesh } from "../nav/buildNavMesh.js";
 import type { BuiltNavMesh, RoomTarget } from "../nav/buildNavMesh.js";
 import { loadFloorPlan } from "../nav/loadFloorPlan.js";
@@ -33,7 +33,19 @@ const MAX_AGENT_RADIUS_M = 0.5;
 /** Guide-robot / visitor-avatar movement tuning. `radius`/`height` come from
  * `../nav/agentProfile.js`, the same footprint buildNavMesh.ts erodes the walkable area
  * by -- importing the shared constants (instead of re-declaring the literals here) is
- * what keeps the crowd and the navmesh from disagreeing about what fits through a gap. */
+ * what keeps the crowd and the navmesh from disagreeing about what fits through a gap.
+ *
+ * Collision/conflict tuning (restored to the tested baseline where escorts settle to
+ * idle and complete):
+ * - `collisionQueryRange: 2.5` (baseline). The tighter 1.0 m tuning packed a robot and
+ *   its trailing visitor tight at the destination door and made them jitter forever, so
+ *   neither reached idle and escorts never completed via genuine arrival
+ *   (test:visitors + test:assign-chain failed). 2.5 m is the value escorts were tested
+ *   under and settle cleanly with.
+ * - `pathOptimizationRange: 0` (baseline). Same reason; 0 is the tested value.
+ * - The count reduction (GUIDE_ROBOT_COUNT down to 5, so a 5+5 scene), not this tuning,
+ *   is what removed the crowd gridlock, so the tighter values are no longer needed.
+ * - `separationWeight`/`maxSpeed`/`maxAcceleration` unchanged. */
 const DEFAULT_AGENT_PARAMS: AgentParams = {
   radius: AGENT_RADIUS_M,
   height: AGENT_HEIGHT_M,
@@ -59,12 +71,12 @@ const DEFAULT_AGENT_PARAMS: AgentParams = {
  * 2.2's IAM policy scopes device access to the `guidemate/virtual/*` topic root. A robot
  * spawned here must already carry the id Moses/the IoT bridge will address it by.
  *
- * 50 robots + `SIMULATED_VISITOR_TARGET` (45, simulatedVisitorSpawner.ts) = 95 agents,
- * matching Task 1.3's load-tested design point (`scripts/loadtest.ts`) -- validated at
- * 0/7500 ticks over the 16.6ms frame budget at that scale -- leaving 33 agents of headroom
- * under `MAX_AGENTS` (128) for real (non-simulated) visitors the IoT bridge spawns on top.
+ * 5 robots + `SIMULATED_VISITOR_TARGET` (5, simulatedVisitorSpawner.ts) = 10 agents:
+ * a deliberately small, legible scene (the earlier ~95-agent design point gridlocked the
+ * floor). Well under `MAX_AGENTS` (128), leaving ample headroom for real (non-simulated)
+ * visitors the IoT bridge spawns on top.
  */
-export const GUIDE_ROBOT_COUNT = 50;
+export const GUIDE_ROBOT_COUNT = 5;
 
 function guideRobotId(oneBasedIndex: number): string {
   return `virtual/${oneBasedIndex}`;
@@ -83,6 +95,16 @@ const MAX_TICK_SECONDS = 0.1;
  * (and do) differ. */
 const IDLE_SPEED_THRESHOLD_MPS = 0.05;
 
+/**
+ * How close (meters) a robot must be to its home charging station to count as "parked".
+ * update()'s return-home block only issues a fresh move-home when a robot is idle, not
+ * escorting, AND farther than this from home -- so once it settles within tolerance it stops
+ * being re-targeted every tick and simply rests on its pad. 0.4m is comfortably above the
+ * ~0.2m AGENT_RADIUS_M footprint (a robot resting dead-centre on its pad reads as parked) yet
+ * small enough that the pad, drawn at ~0.35m radius client-side, still visually contains it.
+ */
+const PARK_TOLERANCE_M = 0.4;
+
 export class WorldRoom extends Room<{ state: WorldState }> {
   private nav!: BuiltNavMesh;
   private plan!: FloorPlan;
@@ -99,6 +121,29 @@ export class WorldRoom extends Room<{ state: WorldState }> {
    * `MAX_AGENTS`), and `addAgent` always drains it before ever calling `new Agent()` again.
    */
   private readonly agentPool: Agent[] = [];
+
+  /**
+   * Each guide robot's home charging station (its deterministic spawn point, see onCreate's
+   * fleet-seeding loop). update() steers an idle, not-escorting robot back to its home so it
+   * parks on its pad instead of drifting where an escort happened to end -- see the
+   * return-home block at the end of update(). Keyed by robot agent id; the same points are
+   * also mirrored into `this.state.stations` for the client to draw the visible pads.
+   */
+  private readonly robotHomes = new Map<string, { x: number; z: number }>();
+
+  /**
+   * Task 3.3 (rework): each robot's CURRENT move goal (nav-space `{x, z}`), set by
+   * `moveAgentTo` and read every tick by `update()`'s route-line publishing. Two jobs:
+   *   1. It marks "this robot has an active goal", so a robot moving for some OTHER reason
+   *      (e.g. shoved by a passing visitor before it has ever been dispatched) draws no line.
+   *   2. It is the fallback endpoint when Detour's `corners()` is momentarily empty (see
+   *      update()), so a line still shows on the tick a target is first set.
+   * Only robots are ever tracked here -- visitors never draw a route line. Entries are
+   * overwritten on each new `moveAgentTo` and dropped in `removeAgent`; a stale entry left
+   * behind after a robot parks is harmless because the idle branch clears the visual line
+   * regardless (it is only ever read while the robot is actually moving).
+   */
+  private readonly robotTargets = new Map<string, { x: number; z: number }>();
 
   /** Task 5.2: fleet-wide kill switch state -- see pause()/resume() below. */
   private paused = false;
@@ -184,12 +229,23 @@ export class WorldRoom extends Room<{ state: WorldState }> {
 
     if (!options?.disableGuideRobots) {
       // See guideFleetSpawns.ts's doc comment: deterministic navmesh-snapped positions
-      // spread across the whole floor, NOT all 50 stacked on the entrance point (that
+      // spread across the whole floor, NOT all stacked on the entrance point (that
       // would interpenetrate at t=0 and make Detour's local avoidance spend its first
       // several ticks shoving them apart into a scrum).
       const spawns = computeGuideFleetSpawns(this.plan, this.nav, GUIDE_ROBOT_COUNT);
       for (let i = 0; i < GUIDE_ROBOT_COUNT; i++) {
-        this.addAgent(guideRobotId(i + 1), "robot", spawns[i]);
+        const id = guideRobotId(i + 1);
+        const spawn = spawns[i];
+        this.addAgent(id, "robot", spawn);
+        // Each robot's spawn point is its home charging station: remember it so update() can
+        // send the robot back to park there when idle (fixing idle-drift), and publish a
+        // matching Station into synced state so the client draws a visible pad at that spot.
+        this.robotHomes.set(id, { x: spawn.x, z: spawn.z });
+        const station = new Station();
+        station.id = id;
+        station.x = spawn.x;
+        station.z = spawn.z;
+        this.state.stations.set(id, station);
       }
     }
 
@@ -302,6 +358,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
    */
   removeAgent(id: string): void {
     this.crowd.removeAgent(id);
+    this.robotTargets.delete(id);
     const agent = this.state.agents.get(id);
     this.state.agents.delete(id);
     if (agent) this.agentPool.push(agent);
@@ -432,49 +489,88 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       return requested;
     }
 
-    this.updateAgentRoute(agentId, target);
+    // Task 3.3 (rework): remember this robot's goal so update() can publish the DISPLAY
+    // route line every tick from Detour's ACTUAL remaining corridor (see
+    // publishRobotRoute). Only robots draw a line, so only robots are tracked. This
+    // replaces the old one-shot `navMeshQuery.computePath` snapshot taken here -- that
+    // snapshot diverged from where the crowd's corridor + local avoidance actually walked
+    // the agent, so the client's reconstruction of it cut across walls. There is now a
+    // single source of truth: the per-tick corners.
+    const agent = this.state.agents.get(agentId);
+    if (agent?.kind === "robot") {
+      this.robotTargets.set(agentId, { x: target.x, z: target.z });
+    }
     return requested;
   }
 
   /**
-   * Task 3.3: computes the DISPLAY polyline for the client's glowing route-line renderer
-   * and stores it (flattened x,z pairs) on the agent's synced `route`. This is a one-shot
-   * snapshot taken here, at the moment the move is requested -- NOT re-derived from
-   * Detour's internal corridor every tick (see nav/crowd.ts's module doc comment: the
-   * Crowd already owns per-frame steering/avoidance; asking it to also expose its live
-   * corridor every tick would mean re-walking/re-encoding a schema array 20x/second per
-   * agent for a line that's only cosmetic). `navMeshQuery.computePath` gives the same
-   * "as the crow flies across the navmesh" polyline Task 1.1's `findRoomTarget` already
-   * relies on `findClosestPoint` for, so no new nav primitive is introduced.
+   * Task 3.3 (rework): publishes one robot's DISPLAY route line onto its synced `route`
+   * (flattened x,z pairs) from Detour's ACTUAL remaining corridor, called once per tick
+   * from update() after the crowd step + schema sync. This is the single source of truth
+   * for the route line, replacing the old one-shot `navMeshQuery.computePath` snapshot.
    *
-   * Uses the agent's last-synced (x, z) as the path start -- this fires in the same
-   * synchronous call as `requestMoveTarget`, before `update()` has moved the agent again,
-   * so it's the agent's real current position, not stale.
+   * The old snapshot was taken once at `moveAgentTo` time and never re-derived, so it
+   * diverged from where the crowd's corridor + local avoidance actually walked the agent;
+   * the client then reconstructed a "remaining path" off that stale polyline and drew a
+   * straight connector from the robot to it that cut across walls. Re-deriving from the
+   * live corridor every tick fixes that: the line always matches the movement and always
+   * stays inside the navmesh. At the current small fleet (GUIDE_ROBOT_COUNT robots)
+   * re-encoding a handful of points per tick is cheap, so correctness wins over the
+   * cost-saving argument the one-shot approach was originally justified on.
    *
-   * Failure (no path found) clears the route rather than leaving a stale one and returns
-   * without throwing: the crowd steering request above already succeeded independently of
-   * this, so a missing DISPLAY path shouldn't be treated as `moveAgentTo` failing overall.
+   * The line is the robot's current (x, z) PREPENDED to `crowd.corners(id)` (the
+   * string-pulled remaining waypoints). Prepending the live position makes the line start
+   * exactly at the robot -- and since the robot is on its own corridor, that first segment
+   * stays walkable. `corners()` is inherently the remaining path, so the line shrinks as
+   * the robot advances (corners get consumed).
+   *
+   * A line is only drawn for a robot that is actively MOVING toward a goal:
+   *   - idle (arrived, greeting, parked): clear the visual route.
+   *   - moving but no goal recorded (e.g. shoved before ever dispatched): clear it too.
+   *   - moving with a goal but `corners()` momentarily empty: fall back to a straight
+   *     current->target segment so a line still shows.
    */
-  private updateAgentRoute(agentId: string, target: RoomTarget): void {
-    const agent = this.state.agents.get(agentId);
-    if (!agent) return;
-
-    agent.route.clear();
-
-    const { success, path } = this.nav.navMeshQuery.computePath(
-      { x: agent.x, y: 0, z: agent.z },
-      { x: target.x, y: 0, z: target.z },
-    );
-    if (!success) {
-      console.warn(
-        `WorldRoom.moveAgentTo: computePath failed for agent "${agentId}"; route line will be empty`,
-      );
+  private publishRobotRoute(agent: Agent, isMoving: boolean): void {
+    if (!isMoving || !this.robotTargets.has(agent.id)) {
+      if (agent.route.length > 0) agent.route.clear();
       return;
     }
 
-    for (const point of path) {
-      agent.route.push(point.x, point.z);
+    const points: number[] = [agent.x, agent.z];
+    const corners = this.crowd.corners(agent.id);
+    if (corners.length > 0) {
+      for (const c of corners) points.push(c.x, c.z);
+    } else {
+      const target = this.robotTargets.get(agent.id)!;
+      points.push(target.x, target.z);
     }
+
+    this.syncRouteArray(agent, points);
+  }
+
+  /**
+   * Writes `points` (flattened x,z pairs) into `agent.route` only if they differ from
+   * what is already there -- a light "re-encode only when the corner list actually
+   * changed" guard so a robot whose corridor is unchanged this tick doesn't churn the
+   * Colyseus change tree. During active movement the leading (x, z) shifts every tick so
+   * this usually does rewrite, which is fine at this fleet size; the guard mainly spares
+   * the redundant clear+push in the (common at the destination) case where the array is
+   * already exactly equal.
+   */
+  private syncRouteArray(agent: Agent, points: number[]): void {
+    const route = agent.route;
+    if (route.length === points.length) {
+      let same = true;
+      for (let i = 0; i < points.length; i++) {
+        if (route[i] !== points[i]) {
+          same = false;
+          break;
+        }
+      }
+      if (same) return;
+    }
+    route.clear();
+    for (const value of points) route.push(value);
   }
 
   /**
@@ -509,15 +605,16 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       agent.z = snap.z;
       agent.heading = snap.heading;
 
-      const nextState = snap.speed >= IDLE_SPEED_THRESHOLD_MPS ? "moving" : "idle";
-      // Task 3.3: the route line is only meaningful while the agent is actually en route --
-      // clear it the moment the schema settles to "idle" (arrival, or any other reason the
-      // crowd agent stops) so the client never keeps drawing a route to a destination the
-      // agent already reached.
-      if (nextState === "idle" && agent.route.length > 0) {
-        agent.route.clear();
+      const isMoving = snap.speed >= IDLE_SPEED_THRESHOLD_MPS;
+      agent.state = isMoving ? "moving" : "idle";
+
+      // Task 3.3 (rework): re-derive the DISPLAY route line from Detour's ACTUAL remaining
+      // corridor every tick (robots only) -- so the line always matches where the robot is
+      // really walking and never crosses a wall. Idle/parked/greeting robots and visitors
+      // draw nothing. See publishRobotRoute for the full rationale.
+      if (agent.kind === "robot") {
+        this.publishRobotRoute(agent, isMoving);
       }
-      agent.state = nextState;
     }
     if (timingHook) timingHook("schemaSync", Number(process.hrtime.bigint() - syncStartNs) / 1e6);
 
@@ -527,6 +624,37 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     const visitorsStartNs = timingHook ? process.hrtime.bigint() : 0n;
     this.visitors.tick(dtSeconds);
     if (timingHook) timingHook("visitorsTick", Number(process.hrtime.bigint() - visitorsStartNs) / 1e6);
+
+    this.returnIdleRobotsHome();
+  }
+
+  /**
+   * Sends any guide robot that is idle, not currently escorting, and off its home charging
+   * station back to park on that station. Runs AFTER the escort/visitor tick above so it sees
+   * this frame's final escort bindings (a robot whose escort just ended this tick is now
+   * un-bound and eligible to head home) and the freshly-synced schema state/position.
+   *
+   * This is what fixes idle-drift: after an escort ends a robot used to get no new target, so
+   * it sat wherever it stopped and the separation force from a nearby visitor slowly shoved it
+   * around. Now an idle robot always has a target (its pad) until it is parked.
+   *
+   * The `> PARK_TOLERANCE_M` guard is load-bearing: it only issues a move-home when the robot
+   * is actually away from its pad, so once parked it is NOT re-targeted every tick (which would
+   * fight Detour's settle and re-arm the route line forever). A robot resting within tolerance
+   * is left completely alone.
+   */
+  private returnIdleRobotsHome(): void {
+    for (const [id, home] of this.robotHomes) {
+      const agent = this.state.agents.get(id);
+      if (!agent) continue;
+      if (agent.state !== "idle") continue;
+      if (this.visitors.isRobotEscorting(id)) continue;
+
+      const distFromHome = Math.hypot(agent.x - home.x, agent.z - home.z);
+      if (distFromHome <= PARK_TOLERANCE_M) continue;
+
+      this.moveAgentTo(id, { x: home.x, z: home.z });
+    }
   }
 
   onJoin(client: Client): void {

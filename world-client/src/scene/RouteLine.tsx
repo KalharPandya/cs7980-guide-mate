@@ -22,57 +22,68 @@ declare module '@react-three/fiber' {
 }
 
 /**
- * Task 3.3: the signature "glowing route line" -- a meshline ribbon following the polyline
- * WorldRoom.moveAgentTo() computed (world/src/rooms/WorldRoom.ts's `updateAgentRoute`, via
- * `navMeshQuery.computePath`) and synced onto `Agent.route` (flattened x,z pairs). One
- * <RouteLineInstance> per agent, same as Robot.tsx/Visitor.tsx -- rendered unconditionally
- * (not conditionally mounted on "has a route") because `route` is mutated in place on a ref,
- * not React state (see useWorldRoom.ts), so there is no render to hook a mount/unmount off
- * of; instead each instance polls its own snapshot.route every frame in useFrame and toggles
- * its own mesh visibility, exactly like Visitor.tsx polls `snapshot.state` for its walk/idle
- * clip switch.
+ * Per-robot route line: a plain, matte red line drawn flat on the carpet showing the robot's
+ * REMAINING path to its goal. The server now publishes exactly that: `Agent.route` is
+ * re-derived every tick from Detour's ACTUAL remaining corridor
+ * (world/src/rooms/WorldRoom.ts's `publishRobotRoute`, via `crowd.corners()`), already
+ * starting at the robot's live position, as flattened x,z pairs. So this component just
+ * renders `route` directly -- no client-side reconstruction. (It used to project the robot
+ * onto a stale one-shot polyline and draw a straight connector from the robot to it; that
+ * connector cut across walls whenever the crowd's real corridor diverged from the snapshot.
+ * The corners-based server route removed the need for any of that.)
+ *
+ * One <RouteLineInstance> per robot, rendered unconditionally (not conditionally mounted on
+ * "has a route") because `route` is mutated in place on a ref, not React state (see
+ * useWorldRoom.ts), so there is no render to hook a mount/unmount off of; instead each
+ * instance polls its own snapshot every frame in useFrame and rebuilds its line points,
+ * exactly like Visitor.tsx polls `snapshot.state` for its walk/idle clip switch.
  *
  * Height above the floor: Floor.tsx's carpet sits at y=-0.005, agents render with their feet
- * at y=0 (Robot.tsx/Visitor.tsx) -- ROUTE_LINE_Y lifts the ribbon just clear of the carpet
+ * at y=0 (Robot.tsx/Visitor.tsx) -- ROUTE_LINE_Y lifts the line just clear of the carpet
  * without floating up into the agent models.
  */
 const ROUTE_LINE_Y = 0.02
 
-/** Ribbon width in world meters (sizeAttenuation=1 below makes lineWidth a world-space size,
- * not a screen-pixel size -- see MeshLineMaterial's `sizeAttenuation` param). */
-const ROUTE_LINE_WIDTH_M = 0.3
+/** Line width in world meters (sizeAttenuation=1 below makes lineWidth a world-space size,
+ * not a screen-pixel size -- see MeshLineMaterial's `sizeAttenuation` param). Thin, matte
+ * marker on the floor. */
+const ROUTE_LINE_WIDTH_M = 0.06
 
-/** Saturated, overdriven-toward-white color (components intentionally > 1): MeshLineMaterial
- * is an unlit THREE.ShaderMaterial (not a physical material lit by the scene), so its output
- * color IS its rendered color -- pushing it past 1.0 is what gives <Bloom>'s luminance
- * threshold (see App.tsx) something to actually bloom, rather than just a flat bright cyan
- * that reads as merely "colored" instead of "glowing". */
-const ROUTE_LINE_COLOR = new THREE.Color(0.6, 2.4, 3.2)
+/** Plain solid red, DELIBERATELY dim enough NOT to bloom. App.tsx runs a scene-wide <Bloom>
+ * with luminanceThreshold=0.3; its luminance is the standard dot(color, [0.2125,0.7154,0.0721]),
+ * which for this red is ~0.20 -- below 0.3 -- so the line stays matte and does NOT glow. Kept
+ * <= 1.0 on every channel (and toneMapping left ON, i.e. no `toneMapped={false}`) so it can
+ * never be pushed into bloom range the way the old overdriven cyan was. */
+const ROUTE_LINE_COLOR = new THREE.Color(0.75, 0.05, 0.05)
 
-/** One dash+gap cycle spans this fraction of the route's total length (MeshLine's `counters`
- * attribute runs 0 at the route start to 1 at the destination, and `dashArray` divides that
- * 0..1 span). Small enough to read as a flowing series of dashes rather than one giant blink. */
-const DASH_ARRAY = 0.08
-/** Fraction of each dash+gap cycle that is lit (vs. gap). */
-const DASH_RATIO = 0.55
-/** dashOffset change per second. MeshLineMaterial's shader computes
- * `mod(vCounters + dashOffset, dashArray)`, so DEcreasing dashOffset over time slides the lit
- * segments toward increasing vCounters -- i.e. toward the destination end of the route, which
- * is the "flow toward destination" effect this is going for. */
-const FLOW_SPEED = 0.6
-
-/** Below 2 points there's no line to draw (a single point degenerates to nothing). */
+/** Below 2 points there's no line to draw (a single point degenerates to nothing). A parked/
+ * idle robot has an empty route (see WorldRoom.ts's arrival clear), so this also keeps an idle
+ * robot from showing any line. */
 const MIN_ROUTE_POINTS = 2
+
+/**
+ * Expands the server's flattened (x0, z0, x1, z1, ...) route into the flat
+ * [x0, y, z0, x1, y, z1, ...] triples MeshLineGeometry.setPoints accepts (lifting every
+ * vertex to ROUTE_LINE_Y), or null when there is nothing drawable (fewer than 2 points).
+ *
+ * No reconstruction: the server already publishes the robot's remaining corridor starting
+ * at the robot's live position (WorldRoom.publishRobotRoute), so the polyline is drawn
+ * exactly as received.
+ */
+function buildRoutePoints(route: ArrayLike<number>): number[] | null {
+  const pointCount = Math.floor(route.length / 2)
+  if (pointCount < MIN_ROUTE_POINTS) return null
+
+  const points: number[] = []
+  for (let i = 0; i < pointCount; i++) {
+    points.push(route[i * 2], ROUTE_LINE_Y, route[i * 2 + 1])
+  }
+  return points
+}
 
 function RouteLineInstance({ snapshot }: { snapshot: AgentSnapshot }) {
   const meshRef = useRef<THREE.Mesh>(null)
   const geometryRef = useRef<MeshLineGeometry>(null)
-  const materialRef = useRef<MeshLineMaterial>(null)
-  // Cached point-pair count from the last time the ribbon geometry was rebuilt -- route only
-  // actually changes on a new moveAgentTo() call or on arrival-clear (see WorldRoom.ts), both
-  // rare compared to 60fps, so this skips rebuilding the MeshLineGeometry's attributes on
-  // every frame the route is simply sitting there unchanged.
-  const lastPointCountRef = useRef(-1)
   const size = useThree((state) => state.size)
   // MeshLineMaterialParameters.resolution is a required constructor argument (unlike every
   // other prop here, which is fine as a plain reactive JSX prop) -- but this must be computed
@@ -85,26 +96,17 @@ function RouteLineInstance({ snapshot }: { snapshot: AgentSnapshot }) {
     [],
   )
 
-  useFrame((_state, delta) => {
-    const route = snapshot.route
-    const pointCount = Math.floor(route.length / 2)
-
-    if (pointCount !== lastPointCountRef.current) {
-      lastPointCountRef.current = pointCount
-      if (pointCount >= MIN_ROUTE_POINTS && geometryRef.current) {
-        const points: THREE.Vector3[] = new Array(pointCount)
-        for (let i = 0; i < pointCount; i++) {
-          points[i] = new THREE.Vector3(route[i * 2], ROUTE_LINE_Y, route[i * 2 + 1])
-        }
-        geometryRef.current.setPoints(points)
-      }
+  useFrame(() => {
+    // Rebuild the line from the server's route every frame (cheap for a handful of robots).
+    // The server re-derives `route` from Detour's live corridor each tick, so it already
+    // starts at the robot and shrinks as the robot advances -- just render it.
+    const points = buildRoutePoints(snapshot.route)
+    const visible = points !== null
+    if (points && geometryRef.current) {
+      geometryRef.current.setPoints(points)
     }
-
     if (meshRef.current) {
-      meshRef.current.visible = pointCount >= MIN_ROUTE_POINTS
-    }
-    if (materialRef.current) {
-      materialRef.current.dashOffset -= delta * FLOW_SPEED
+      meshRef.current.visible = visible
     }
   })
 
@@ -112,7 +114,6 @@ function RouteLineInstance({ snapshot }: { snapshot: AgentSnapshot }) {
     <mesh ref={meshRef} visible={false}>
       <meshLineGeometry ref={geometryRef} />
       <meshLineMaterial
-        ref={materialRef}
         args={materialArgs}
         color={ROUTE_LINE_COLOR}
         lineWidth={ROUTE_LINE_WIDTH_M}
@@ -120,19 +121,14 @@ function RouteLineInstance({ snapshot }: { snapshot: AgentSnapshot }) {
         resolution={[size.width, size.height]}
         transparent
         depthWrite={false}
-        toneMapped={false}
-        useDash={1}
-        dashArray={DASH_ARRAY}
-        dashRatio={DASH_RATIO}
       />
     </mesh>
   )
 }
 
 /**
- * Renders every agent's route ribbon. Not filtered by `kind` -- `moveAgentTo` (and thus
- * `route`) isn't kind-restricted server-side, so this covers robots today and stays correct
- * if visitors are ever dispatched the same way.
+ * Renders every ROBOT's remaining-route line. Visitors are explicitly skipped -- only robots
+ * are dispatched a route to show, and a visitor must never draw a line.
  */
 export function RouteLines({ agentIds, agents }: { agentIds: string[]; agents: Map<string, AgentSnapshot> }) {
   return (
@@ -140,6 +136,7 @@ export function RouteLines({ agentIds, agents }: { agentIds: string[]; agents: M
       {agentIds.map((id) => {
         const snapshot = agents.get(id)
         if (!snapshot) return null
+        if (snapshot.kind !== 'robot') return null
         return <RouteLineInstance key={id} snapshot={snapshot} />
       })}
     </>
