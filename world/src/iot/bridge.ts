@@ -117,8 +117,20 @@ export interface WorldRoomLike {
    * proceeding to `requestGuide` for a visitor that was never actually added. */
   addAgent(id: string, kind: "robot" | "visitor", spawn: { x: number; z: number }): boolean;
   /** Nav-space entrance point to spawn a fresh real visitor at -- see
-   * `WorldRoom.getEntrancePoint`. */
+   * `WorldRoom.getEntrancePoint`. Used only when an `assign` carries no `from_room`. */
   getEntrancePoint(): { x: number; z: number };
+  /**
+   * Resolves a room name/alias to the same nav-space point `moveAgentTo(id, roomName)`
+   * would drive an agent to (`WorldRoom.resolveRoomPoint` -> `nav.findRoomTarget`), or
+   * `null` if the name matches no room / doesn't snap onto the navmesh.
+   *
+   * Exists for the `assign` command's optional `from_room` param: "the person is in the
+   * Kitchen" has to become an actual spawn point BEFORE `addAgent` runs, and this bridge
+   * has no other way to learn what a room name resolves to (it deliberately does not
+   * import WorldRoom's `nav` -- see this interface's doc comment on staying structural).
+   * Kept separate from `moveAgentTo` because a spawn is not a move: there is no agent yet.
+   */
+  resolveRoomPoint(roomName: string): { x: number; z: number } | null;
   /**
    * Task 5.2: freezes/un-freezes the whole simulated world (the Crowd tick AND the
    * simulated-visitor spawner/lifecycle -- see `WorldRoom.pause`'s doc comment for why
@@ -377,17 +389,46 @@ export class IotBridge {
       return;
     }
 
-    // parseCommand already guarantees these are strings for a valid "assign" command.
+    // parseCommand already guarantees `visitor_id`/`room` are strings, and that
+    // `from_room` is either absent/null or a string, for a valid "assign" command.
     const visitorId = cmd.params.visitor_id as string;
     const roomName = cmd.params.room as string;
+    const fromRoom = typeof cmd.params.from_room === "string" ? cmd.params.from_room : null;
 
     // requestGuide requires visitorId to already be a tracked agent (it only lazily
     // creates its own bookkeeping record, not the Crowd/schema agent -- see
-    // VisitorManager.requestGuide's doc comment) -- spawn a brand-new real visitor at
-    // the entrance the first time this bridge sees this visitor_id. A visitor that
-    // already exists (e.g. a retried/second assign for the same session) is left as-is.
+    // VisitorManager.requestGuide's doc comment) -- spawn a brand-new real visitor the
+    // first time this bridge sees this visitor_id. A visitor that already exists (e.g. a
+    // retried/second assign for the same session) is left exactly where it is: it's a
+    // person already standing somewhere in the world, so a later `from_room` must never
+    // teleport it.
     if (!room.state.agents.get(visitorId)) {
-      const added = room.addAgent(visitorId, "visitor", room.getEntrancePoint());
+      // WHERE the person is: `from_room` (what the user answered when Moses asked "where
+      // are you?") if given, else the building entrance exactly as before this param
+      // existed. An unresolvable `from_room` FAILS the assign -- deliberately NOT falling
+      // back to the entrance, which would silently put the person somewhere they are not
+      // and send a robot to fetch thin air. Distinct reason from the destination's
+      // "target_unresolved" so a caller can tell which of the two room names was bad.
+      let spawn: { x: number; z: number };
+      if (fromRoom !== null) {
+        const resolved = room.resolveRoomPoint(fromRoom);
+        if (!resolved) {
+          this.publishFleetAck(
+            makeAck({
+              cmd_id: cmd.cmd_id,
+              state: "failed",
+              reason: "from_room_unresolved",
+              simulated: true,
+            }),
+          );
+          return;
+        }
+        spawn = resolved;
+      } else {
+        spawn = room.getEntrancePoint();
+      }
+
+      const added = room.addAgent(visitorId, "visitor", spawn);
       if (!added) {
         this.publishFleetAck(
           makeAck({ cmd_id: cmd.cmd_id, state: "failed", reason: "world_at_capacity", simulated: true }),

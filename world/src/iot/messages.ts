@@ -137,6 +137,20 @@ export function parseCommand(raw: unknown): Command | null {
       // to guide them (room). `name` is a stable constant, exactly like `stop`.
       if (obj.name !== ASSIGN_NAME) return null;
       if (typeof params.visitor_id !== "string" || typeof params.room !== "string") return null;
+      // OPTIONAL `from_room`: where the visitor currently IS (so the world spawns the
+      // person where the user says they are, instead of always at the entrance).
+      // `undefined` (key absent) and `null` are BOTH "not provided" -- absent must behave
+      // exactly as before this field existed. Any other non-string is a schema violation,
+      // validated the same way `room` is. Mirrors messages.py's assign branch, which
+      // likewise treats `None` as absent so a Python caller serializing an unset optional
+      // as JSON null agrees with this parser byte-for-byte.
+      if (
+        params.from_room !== undefined &&
+        params.from_room !== null &&
+        typeof params.from_room !== "string"
+      ) {
+        return null;
+      }
       break;
     }
     default:

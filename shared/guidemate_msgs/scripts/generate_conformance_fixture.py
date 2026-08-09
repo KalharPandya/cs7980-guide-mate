@@ -160,6 +160,42 @@ def generate_command_cases() -> list[dict]:
             params={"visitor_id": "visitor-1", "room": 1425},
         )
     )
+    # optional `from_room` (where the visitor currently is): absent and null are both
+    # "not provided"; a string is accepted; anything else is a schema violation. The
+    # null case is the one most likely to drift between the two languages (Python's
+    # None vs. TypeScript's undefined), so it is a fixture case, not just a unit test.
+    cases.append(
+        _try_command(
+            "assign_valid_with_from_room",
+            type="assign",
+            name="assign",
+            params={"visitor_id": "visitor-1", "room": "Classroom 1425", "from_room": "Kitchen"},
+        )
+    )
+    cases.append(
+        _try_command(
+            "assign_valid_null_from_room",
+            type="assign",
+            name="assign",
+            params={"visitor_id": "visitor-1", "room": "Classroom 1425", "from_room": None},
+        )
+    )
+    cases.append(
+        _try_command(
+            "assign_invalid_non_string_from_room",
+            type="assign",
+            name="assign",
+            params={"visitor_id": "visitor-1", "room": "Classroom 1425", "from_room": 1425},
+        )
+    )
+    cases.append(
+        _try_command(
+            "assign_invalid_object_from_room",
+            type="assign",
+            name="assign",
+            params={"visitor_id": "visitor-1", "room": "Classroom 1425", "from_room": {"name": "Kitchen"}},
+        )
+    )
     cases.append(
         _try_command(
             "assign_invalid_bad_name",

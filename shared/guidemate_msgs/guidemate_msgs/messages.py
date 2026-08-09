@@ -85,6 +85,22 @@ class Command(BaseModel):
                 raise ValueError(
                     f"assign params must contain a 'room' string key, got {self.params!r}"
                 )
+            # OPTIONAL: where the visitor currently IS, so the world spawns the person at
+            # the spot the user picked ("I'm in the Kitchen") instead of always at the
+            # building entrance. Absent (or explicitly null) means "not provided" and the
+            # world keeps its existing entrance-spawn behaviour, so every pre-existing
+            # caller and ack round-trip is unchanged. Validated exactly like `room` when it
+            # IS present: a non-string is a schema violation, not a silently-ignored key.
+            # `None` is deliberately treated as absent rather than rejected, so a caller
+            # that serializes an unset optional as JSON null agrees byte-for-byte with the
+            # TypeScript mirror (world/src/iot/messages.ts), where `undefined` and `null`
+            # are likewise both "not provided".
+            from_room = self.params.get("from_room")
+            if from_room is not None and not _is_string(from_room):
+                raise ValueError(
+                    "assign params 'from_room' must be a string when present, got "
+                    f"{self.params!r}"
+                )
         return self
 
 

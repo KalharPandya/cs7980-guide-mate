@@ -203,6 +203,24 @@ const TRAIL_DISTANCE_M = 1.0;
 const VISITOR_ARRIVAL_DISTANCE_M = 2.5;
 
 /**
+ * Pickup radius: how close (meters) the FETCHING robot must get to the waiting person
+ * before the escort hands over from "approaching" to "greeting" (and then "leading").
+ * Named separately from VISITOR_ARRIVAL_DISTANCE_M because the two answer different
+ * questions -- "has the guide reached the person yet" vs. "has the person caught up at the
+ * destination" -- even though they are deliberately the SAME number today, for a measured
+ * reason rather than a coincidence: both are a robot-to-visitor gap between exactly the
+ * same two Detour agents with exactly the same `separationWeight`/`collisionQueryRange`
+ * personal-space repulsion, so the tightest gap physically reachable in either direction is
+ * the same ~1.4-1.65m settled distance (see VISITOR_ARRIVAL_DISTANCE_M's doc comment for
+ * the measurement). Picking a tighter pickup radius (e.g. 2.0m) buys nothing visually at
+ * demo camera distance and moves the transition closer to that measured floor, i.e. toward
+ * the same "condition is never satisfied, every escort runs out the clock" failure that
+ * comment records for the 1.2m attempt. Change one and re-measure before changing the
+ * other; they are not required to stay equal.
+ */
+const PICKUP_RADIUS_M = 2.5;
+
+/**
  * How long (simulated seconds) the arrival condition (robot idle at destination + visitor
  * within VISITOR_ARRIVAL_DISTANCE_M) must hold CONTINUOUSLY before an escort is declared
  * "arrived". This is the distance-domain replacement for the removed `visitorAgent.state ===
@@ -301,6 +319,16 @@ export interface EscortOutcome {
   readonly visitorId: string;
   readonly robotId: string;
   readonly outcome: "completed" | "timed_out";
+  /** Which phase the escort was IN when it ended -- the distinct reason that tells
+   * "the robot could never reach the person" (`"approaching"`, i.e. the fetch leg failed:
+   * an unreachable spot, a wedged route, a person standing somewhere the crowd can't get
+   * to) apart from "the robot fetched them fine but the trip to the destination didn't
+   * finish" (`"leading"`). Without this, both fetch and guide failures collapse into one
+   * undifferentiated `"timed_out"` and the two need completely different diagnoses.
+   * Always `"leading"` for a completed escort (completion is only ever reached from the
+   * leading phase); either phase for a timeout. Never `"greeting"` -- that phase is
+   * deliberately untimed and has no ending path of its own. */
+  readonly phase: "approaching" | "leading";
   /** `visitor.escortElapsedSeconds` at the moment the binding ended -- simulated time, so
    * this is correct-by-construction across a pause (see `tick()`'s doc comment). */
   readonly durationSeconds: number;
@@ -629,15 +657,15 @@ export class EscortManager {
       visitor.escortElapsedSeconds += dtSeconds;
 
       if (visitor.escortPhase === "approaching") {
-        // The robot has reached the person once it has settled to idle within the arrival
-        // radius of the person (same distance/idle signal "leading" uses for the
+        // The robot has reached the person once it has settled to idle within
+        // PICKUP_RADIUS_M of the person (same distance/idle signal "leading" uses for the
         // destination, applied here to the person). The person is NOT moved during this
         // phase, so this is purely "robot arrived at the waiting person".
         const robotReachedPerson =
           visitor.escortElapsedSeconds >= ARRIVAL_GRACE_PERIOD_S &&
           robotAgent.state === "idle" &&
           Math.hypot(robotAgent.x - visitorAgent.x, robotAgent.z - visitorAgent.z) <=
-            VISITOR_ARRIVAL_DISTANCE_M;
+            PICKUP_RADIUS_M;
         if (robotReachedPerson) {
           visitor.escortPhase = "greeting";
           visitor.greetSecondsRemaining = randomBetween(GREET_MIN_S, GREET_MAX_S);
@@ -749,6 +777,11 @@ export class EscortManager {
       visitorId: visitor.id,
       robotId: visitor.robotId!,
       outcome,
+      // Captured BEFORE endEscort() nulls the record's phase out. "greeting" is not a
+      // reachable ending phase (that leg is untimed and has no release path), so the
+      // fallback below is unreachable in practice; it exists so this stays a total
+      // function if a future phase gains an ending path without updating this call site.
+      phase: visitor.escortPhase === "approaching" ? "approaching" : "leading",
       durationSeconds: visitor.escortElapsedSeconds,
       separationM: Math.hypot(visitorAgent.x - robotAgent.x, visitorAgent.z - robotAgent.z),
       robotIdleAtDestination,

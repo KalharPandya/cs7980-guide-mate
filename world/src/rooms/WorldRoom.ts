@@ -395,6 +395,23 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     return { x: this.plan.entrance.point[0], z: this.plan.entrance.point[1] };
   }
 
+  /**
+   * Resolves a room name/alias to the SAME nav-space point `moveAgentTo(id, roomName)`
+   * would drive an agent to (both go through Task 1.1's `nav.findRoomTarget`, so a spawn
+   * point and a navigation target for the same room name can never disagree). Returns
+   * `null` if the name matches no room, or if the room's door point doesn't snap onto the
+   * navmesh -- see `findRoomTarget`'s doc comment in buildNavMesh.ts.
+   *
+   * Added for the fleet `assign` command's optional `from_room` param (the answer to
+   * Moses's "where are you in the building?"): the IoT bridge has to turn that room name
+   * into a spawn point BEFORE calling `addAgent`, and there is no agent to `moveAgentTo`
+   * yet at that moment. Deliberately a read-only resolver, not a second spawn helper --
+   * the caller decides what to do with the point (or with `null`).
+   */
+  resolveRoomPoint(roomName: string): RoomTarget | null {
+    return this.nav.findRoomTarget(roomName);
+  }
+
   /** Read-only escort/spawner counters for tests and ops visibility -- see
    * `VisitorDebugStats`'s doc comments for what each field means and the invariants it's
    * meant to let a caller check (e.g. `escortedVisitors === robotBindings`). */

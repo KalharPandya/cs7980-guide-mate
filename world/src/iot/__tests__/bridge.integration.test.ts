@@ -84,6 +84,13 @@ class FakeWorldRoom implements WorldRoomLike {
     return { x: 0, z: 0 };
   }
 
+  /** Same stand-in rationale as `requestGuide`/`addAgent` above: the assign command's
+   * optional `from_room` resolution is covered by bridge.test.ts's in-process fakes and
+   * assignChain.test.ts's real WorldRoom; this round trip only drives `navigate`. */
+  resolveRoomPoint(): { x: number; z: number } | null {
+    return null;
+  }
+
   // Task 5.2's fleet-stop path is exercised by bridge.test.ts's in-process fakes; this
   // real-broker round trip only needs `navigate`, so these are minimal stand-ins to
   // satisfy WorldRoomLike.

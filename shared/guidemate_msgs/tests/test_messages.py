@@ -178,6 +178,50 @@ def test_command_assign_rejects_empty_params():
         Command(type="assign", name="assign", params={})
 
 
+# ---- optional `from_room`: where the visitor currently IS ----
+# Moses asks the user where they are in the building; the answer rides here so the world
+# spawns the person at that spot instead of always at the entrance. Absent must behave
+# exactly as it did before the field existed (every pre-existing caller keeps working).
+
+
+def test_command_assign_accepts_from_room():
+    cmd = Command(
+        type="assign",
+        name="assign",
+        params={"visitor_id": "visitor-1", "room": "Classroom 1425", "from_room": "Kitchen"},
+    )
+    assert cmd.params["from_room"] == "Kitchen"
+    restored = Command.model_validate_json(cmd.model_dump_json())
+    assert restored == cmd
+    assert restored.params["from_room"] == "Kitchen"
+
+
+def test_command_assign_from_room_is_optional():
+    cmd = Command(type="assign", name="assign", params={"visitor_id": "visitor-1", "room": "Kitchen"})
+    assert "from_room" not in cmd.params
+
+
+def test_command_assign_accepts_explicit_null_from_room():
+    """An explicitly-null from_room means 'not provided', matching the TypeScript mirror
+    (world/src/iot/messages.ts), where `undefined` and `null` are likewise both absent --
+    so a caller serializing an unset optional as JSON null is not a schema violation."""
+    cmd = Command(
+        type="assign",
+        name="assign",
+        params={"visitor_id": "visitor-1", "room": "Kitchen", "from_room": None},
+    )
+    assert cmd.params["from_room"] is None
+
+
+def test_command_assign_rejects_non_string_from_room():
+    with pytest.raises(ValidationError):
+        Command(
+            type="assign",
+            name="assign",
+            params={"visitor_id": "visitor-1", "room": "Kitchen", "from_room": 1425},
+        )
+
+
 def test_fleet_topic_helpers():
     assert fleet_cmd_topic() == "guidemate/virtual/fleet/cmd"
     assert fleet_status_topic() == "guidemate/virtual/fleet/status"

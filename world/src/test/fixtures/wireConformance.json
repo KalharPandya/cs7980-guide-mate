@@ -333,6 +333,68 @@
       "pythonAccepted": false
     },
     {
+      "name": "assign_valid_with_from_room",
+      "payload": {
+        "cmd_id": "fixture-assign_valid_with_from_room",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "assign",
+        "name": "assign",
+        "params": {
+          "visitor_id": "visitor-1",
+          "room": "Classroom 1425",
+          "from_room": "Kitchen"
+        }
+      },
+      "pythonAccepted": true
+    },
+    {
+      "name": "assign_valid_null_from_room",
+      "payload": {
+        "cmd_id": "fixture-assign_valid_null_from_room",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "assign",
+        "name": "assign",
+        "params": {
+          "visitor_id": "visitor-1",
+          "room": "Classroom 1425",
+          "from_room": null
+        }
+      },
+      "pythonAccepted": true
+    },
+    {
+      "name": "assign_invalid_non_string_from_room",
+      "payload": {
+        "cmd_id": "fixture-assign_invalid_non_string_from_room",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "assign",
+        "name": "assign",
+        "params": {
+          "visitor_id": "visitor-1",
+          "room": "Classroom 1425",
+          "from_room": 1425
+        }
+      },
+      "pythonAccepted": false
+    },
+    {
+      "name": "assign_invalid_object_from_room",
+      "payload": {
+        "cmd_id": "fixture-assign_invalid_object_from_room",
+        "ts": "2026-08-03T00:00:00+00:00",
+        "type": "assign",
+        "name": "assign",
+        "params": {
+          "visitor_id": "visitor-1",
+          "room": "Classroom 1425",
+          "from_room": {
+            "name": "Kitchen"
+          }
+        }
+      },
+      "pythonAccepted": false
+    },
+    {
       "name": "assign_invalid_bad_name",
       "payload": {
         "cmd_id": "fixture-assign_invalid_bad_name",

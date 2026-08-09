@@ -665,6 +665,207 @@ async function testEscortEndsOnVisitorArrivalNotJustRobot(): Promise<void> {
 }
 
 // ============================================================================================
+// Scenario 1c: `from_room` end to end -- "the person is where the user said they are, and
+// the robot goes THERE first". Through the real bridge and a real WorldRoom:
+//   - an assign carrying `from_room` spawns the visitor at THAT room's nav point, not at
+//     the entrance (proved against the real, measurably-distant entrance point);
+//   - the assigned robot then navigates to the PERSON before it ever heads for the
+//     destination -- the fetch-then-guide phase ordering, asserted from live positions
+//     (robot-to-person distance collapses while person-to-destination distance does not);
+//   - and an unresolvable `from_room` fails cleanly without spawning anyone or consuming a
+//     robot.
+// ============================================================================================
+async function testAssignWithFromRoomSpawnsThereAndRobotFetchesFirst(): Promise<void> {
+  const { room, shutdown } = await bootRealRoom({ disableSimulatedVisitors: true });
+  try {
+    const plan = loadFloorPlan();
+    const entrance = room.getEntrancePoint();
+
+    // Where the user says they ARE, and where they want to GO. This exact pair is picked
+    // from the real floor plan, not at random -- measured against floor-14.json and the
+    // deterministic 50-robot fleet spawn grid (guideFleetSpawns.ts), all three distances
+    // this scenario leans on are maximized at once by "1408" -> "South Collaboration
+    // Space":
+    //   - from_room is 8.80m from the ENTRANCE, so "spawned where the user said, not at
+    //     the entrance" is unmistakable;
+    //   - the two rooms' nav points are 27.72m apart (the farthest such pair with a usable
+    //     from_room), so "the robot reached the PERSON while still nowhere near the
+    //     DESTINATION" is a real ordering proof and not something two adjacent rooms would
+    //     satisfy anyway;
+    //   - the nearest fleet robot spawns 23.27m from from_room, so the fetch leg is a
+    //     genuine cross-the-floor trip. That last one is the constraint that rules out the
+    //     otherwise-attractive far corners: the fleet grid clusters on the west/south side,
+    //     so a robot sits 1.05m from "South Collaboration Space" and 0.64m from "Classroom
+    //     1425" -- fetching a person standing THERE would already be done at t=0 and would
+    //     prove nothing about ordering.
+    const fromRoomName = "1408";
+    const destRoomName = "South Collaboration Space";
+    const fromRoomPoint = room.resolveRoomPoint(fromRoomName);
+    assert.ok(fromRoomPoint, `test setup: floor-14.json must contain "${fromRoomName}"`);
+    const destRoom = plan.rooms.find((r) => r.name === destRoomName);
+    assert.ok(destRoom, `test setup: floor-14.json must contain "${destRoomName}"`);
+    const [destDoorX, destDoorZ] = destRoom!.door;
+
+    const fromRoomToEntrance = Math.hypot(fromRoomPoint!.x - entrance.x, fromRoomPoint!.z - entrance.z);
+    assert.ok(
+      fromRoomToEntrance > 5,
+      `test setup: "${fromRoomName}" must be well away from the entrance (${fromRoomToEntrance.toFixed(2)}m) or ` +
+        "'spawned at from_room, not the entrance' proves nothing",
+    );
+
+    const client = new FakeMqttClient();
+    const bridge = new IotBridge({ getRoom: () => room as unknown as WorldRoomLike, client, log: QUIET_LOG });
+
+    // ---- unresolvable from_room: fail cleanly, spawn nobody, consume no robot ----
+    const badCmdId = newCmdId();
+    bridge.handleMessage(
+      fleetCmdTopic(),
+      JSON.stringify({
+        cmd_id: badCmdId,
+        type: "assign",
+        name: "assign",
+        params: {
+          visitor_id: "chain-visitor-bad-from-room",
+          room: destRoomName,
+          from_room: "Room That Does Not Exist 9999",
+        },
+        ts: new Date().toISOString(),
+      } satisfies Command),
+    );
+    const badAcks = client.acksFor(badCmdId);
+    assert.deepEqual(badAcks.map((a) => a.payload.state), ["received", "failed"]);
+    const badFailed = badAcks.find((a) => a.payload.state === "failed")!.payload;
+    assert.equal(
+      badFailed.reason,
+      "from_room_unresolved",
+      "an unresolvable from_room must fail with its own reason, not be silently swapped for the entrance",
+    );
+    assert.equal(
+      room.state.agents.get("chain-visitor-bad-from-room"),
+      undefined,
+      "no visitor should be spawned when we do not know where the person actually is",
+    );
+    assert.equal(room.getVisitorDebugStats().robotBindings, 0, "no robot should be consumed by a failed from_room assign");
+    console.log(`PASS: assign with an unresolvable from_room acked failed/${badFailed.reason} and spawned nobody`);
+
+    // ---- resolvable from_room: the person appears THERE ----
+    const visitorId = "chain-visitor-from-room";
+    const cmdId = newCmdId();
+    bridge.handleMessage(
+      fleetCmdTopic(),
+      JSON.stringify({
+        cmd_id: cmdId,
+        type: "assign",
+        name: "assign",
+        params: { visitor_id: visitorId, room: destRoomName, from_room: fromRoomName },
+        ts: new Date().toISOString(),
+      } satisfies Command),
+    );
+    const doneAck = client.acksFor(cmdId).find((a) => a.payload.state === "done");
+    assert.ok(doneAck, "a resolvable from_room assign should ack done");
+    const assignedRobotId = doneAck!.payload.assigned_robot_id!;
+
+    const visitorAgent = room.state.agents.get(visitorId);
+    assert.ok(visitorAgent, "the visitor should have been spawned into the world");
+    const spawnToFromRoom = Math.hypot(visitorAgent!.x - fromRoomPoint!.x, visitorAgent!.z - fromRoomPoint!.z);
+    const spawnToEntrance = Math.hypot(visitorAgent!.x - entrance.x, visitorAgent!.z - entrance.z);
+    assert.ok(
+      spawnToFromRoom < 0.001,
+      `the visitor must spawn at "${fromRoomName}"'s resolved nav point (off by ${spawnToFromRoom.toFixed(3)}m)`,
+    );
+    assert.ok(
+      spawnToEntrance > 5,
+      `the visitor must NOT spawn at the entrance (it is ${spawnToEntrance.toFixed(2)}m away, as it should be)`,
+    );
+    console.log(
+      `PASS: assign with from_room="${fromRoomName}" spawned the visitor at (${visitorAgent!.x.toFixed(2)}, ` +
+        `${visitorAgent!.z.toFixed(2)}), ${spawnToEntrance.toFixed(2)}m from the entrance it would have used before`,
+    );
+
+    // ---- phase ordering: the robot reaches the PERSON before heading to the DESTINATION ----
+    const robotAtAssign = room.state.agents.get(assignedRobotId)!;
+    const robotStartToPerson = Math.hypot(robotAtAssign.x - visitorAgent!.x, robotAtAssign.z - visitorAgent!.z);
+    assert.ok(
+      robotStartToPerson > 2.5,
+      `test setup: the assigned robot must start a real distance from the person (${robotStartToPerson.toFixed(2)}m) ` +
+        "so 'it went to fetch them' is an observable event, not already true at t=0",
+    );
+
+    let reachedPersonTick = -1;
+    let personDestDistAtPickup = Infinity;
+    let robotDestDistAtPickup = Infinity;
+    const personAtSpawn = { x: visitorAgent!.x, z: visitorAgent!.z };
+    let personDriftAtPickup = Infinity;
+    for (let i = 0; i < 8000 && reachedPersonTick < 0; i++) {
+      room.update(TICK_MS);
+      const robot = room.state.agents.get(assignedRobotId)!;
+      const person = room.state.agents.get(visitorId)!;
+      const robotToPerson = Math.hypot(robot.x - person.x, robot.z - person.z);
+      if (robotToPerson <= 2.5 && i > 30) {
+        reachedPersonTick = i;
+        personDestDistAtPickup = Math.hypot(person.x - destDoorX, person.z - destDoorZ);
+        robotDestDistAtPickup = Math.hypot(robot.x - destDoorX, robot.z - destDoorZ);
+        personDriftAtPickup = Math.hypot(person.x - personAtSpawn.x, person.z - personAtSpawn.z);
+      }
+    }
+    assert.ok(reachedPersonTick > 0, "the assigned robot should reach the person it was sent to fetch");
+    const personDestDistAtSpawn = Math.hypot(personAtSpawn.x - destDoorX, personAtSpawn.z - destDoorZ);
+    // The load-bearing ordering claim: at the moment the robot reaches the person, NEITHER
+    // of them has meaningfully closed on the destination yet -- the robot's first leg was
+    // spent travelling to the PERSON, not to the destination.
+    assert.ok(
+      personDriftAtPickup < 1.5,
+      `the person should still be waiting where they said they were when the robot arrives ` +
+        `(drifted ${personDriftAtPickup.toFixed(2)}m)`,
+    );
+    // Bound: the two rooms' doors are ~27.7m apart (the farthest pair on the floor, see the
+    // room-choice comment above), and at pickup the robot is standing next to the person at
+    // the from_room end -- so it is necessarily ~25m+ from the destination. 10m is a loose
+    // floor well clear of that, while still being far more than the DOOR_TOLERANCE_M-scale
+    // distance that "the robot had already reached the destination first" would produce.
+    assert.ok(
+      robotDestDistAtPickup > 10,
+      `when the robot reaches the person it must still be far from the DESTINATION ` +
+        `(${robotDestDistAtPickup.toFixed(2)}m) -- proving the fetch leg came first, not a detour on the way`,
+    );
+    console.log(
+      `[evidence] robot "${assignedRobotId}" travelled ${robotStartToPerson.toFixed(2)}m to reach the waiting person in ` +
+        `${((reachedPersonTick * TICK_MS) / 1000).toFixed(1)}s simulated; at pickup the person was still ` +
+        `${personDestDistAtPickup.toFixed(2)}m from the destination door (was ${personDestDistAtSpawn.toFixed(2)}m at spawn) ` +
+        `and the robot ${robotDestDistAtPickup.toFixed(2)}m from it`,
+    );
+
+    // ---- and the guide leg then actually delivers them ----
+    const escorting = (robotId: string): boolean =>
+      (room as unknown as { visitors: { isRobotEscorting(id: string): boolean } }).visitors.isRobotEscorting(robotId);
+    let released = false;
+    for (let i = 0; i < 12000 && !released; i++) {
+      room.update(TICK_MS);
+      released = !escorting(assignedRobotId);
+    }
+    assert.ok(released, "the escort should end (not hang) after the fetch and guide legs");
+    const personAtEnd = room.state.agents.get(visitorId)!;
+    const personDestDistAtEnd = Math.hypot(personAtEnd.x - destDoorX, personAtEnd.z - destDoorZ);
+    assert.ok(
+      personDestDistAtEnd < personDestDistAtPickup,
+      `the person should be closer to "${destRoomName}" at the end (${personDestDistAtEnd.toFixed(2)}m) than they were ` +
+        `at pickup (${personDestDistAtPickup.toFixed(2)}m)`,
+    );
+    assert.ok(
+      personDestDistAtEnd <= DOOR_TOLERANCE_M + 2.5,
+      `the person should end up at "${destRoomName}"'s door (within ${(DOOR_TOLERANCE_M + 2.5).toFixed(1)}m, the ` +
+        `robot-at-door + visitor-arrival-radius contract) -- got ${personDestDistAtEnd.toFixed(2)}m`,
+    );
+    console.log(
+      `PASS: fetch-then-guide from a user-selected location -- spawned at "${fromRoomName}", fetched in place, ` +
+        `delivered to within ${personDestDistAtEnd.toFixed(2)}m of "${destRoomName}"'s door`,
+    );
+  } finally {
+    await shutdown();
+  }
+}
+
+// ============================================================================================
 // Scenario 2: no_idle_robot, against a REAL room, through the REAL bridge -- every robot
 // already escorting when a second assign for a different visitor arrives.
 // ============================================================================================
@@ -811,6 +1012,7 @@ async function testAssignToNonexistentRoom(): Promise<void> {
 async function main(): Promise<void> {
   await testAssignChainEndToEnd();
   await testEscortEndsOnVisitorArrivalNotJustRobot();
+  await testAssignWithFromRoomSpawnsThereAndRobotFetchesFirst();
   await testNoIdleRobotThroughRealChain();
   await testAssignToNonexistentRoom();
 

@@ -169,8 +169,38 @@ async function main(): Promise<void> {
     `${completedOverThreshold.length} "completed" escort(s) had separationM > 2.5 -- VISITOR_ARRIVAL_DISTANCE_M ` +
       "gate is not actually being enforced",
   );
+  // Phase-ordering invariant: an escort can only COMPLETE from the leading leg, i.e. the
+  // robot fetched the person first and only then walked them to the destination. A
+  // completed escort recorded as still "approaching" would mean the fetch-then-guide
+  // ordering had collapsed.
+  const completedNotLeading = completed.filter((o) => o.phase !== "leading");
+  assert.equal(
+    completedNotLeading.length,
+    0,
+    `${completedNotLeading.length} "completed" escort(s) ended outside the leading phase -- an escort must ` +
+      "fetch the person first and can only complete while leading them to the destination",
+  );
 
   if (timedOut.length > 0) {
+    // Which LEG failed. The escort is two navigations back to back -- "approaching" (the
+    // robot goes to fetch the person, who waits in place) then "leading" (the robot walks
+    // them to the destination, trailing behind) -- and the ESCORT_TIMEOUT_S safety valve
+    // bounds each independently. A fetch-leg timeout means the robot could never reach the
+    // PERSON (unreachable spot / wedged route); a lead-leg timeout means the pickup worked
+    // and the trip to the destination is what didn't finish. They need different diagnoses,
+    // so they are never reported as one undifferentiated timeout count.
+    const timedOutFetching = timedOut.filter((o) => o.phase === "approaching");
+    const timedOutLeading = timedOut.filter((o) => o.phase === "leading");
+    console.log("\n=== TIMEOUT BY PHASE (which leg of the escort failed) ===");
+    console.log(
+      `  approaching (robot never reached the PERSON): ${timedOutFetching.length}` +
+        ` (${((timedOutFetching.length / total) * 100).toFixed(1)}% of all escorts)`,
+    );
+    console.log(
+      `  leading (person picked up, trip to the DESTINATION never finished): ${timedOutLeading.length}` +
+        ` (${((timedOutLeading.length / total) * 100).toFixed(1)}% of all escorts)`,
+    );
+
     console.log("\n=== FINAL SEPARATION AT TIMEOUT (m) -- root-cause signal ===");
     console.log(
       "  If this clusters just above 2.5m, the ARRIVAL threshold is too tight. If it's tens of\n" +

@@ -92,6 +92,14 @@ class FakeWorldRoom implements WorldRoomLike {
    * already at capacity, without needing to actually spawn 128 agents in this fake. */
   addAgentResult = true;
   entrancePoint = { x: 0, z: 0 };
+  /** Test hook for the `assign` command's optional `from_room` param: room name -> the
+   * nav-space point the real `WorldRoom.resolveRoomPoint` (nav.findRoomTarget) would
+   * return. Any name NOT in this map resolves to `null`, i.e. an unresolvable room. */
+  roomPoints = new Map<string, { x: number; z: number }>([
+    ["Kitchen", { x: 11.5, z: 4.25 }],
+    ["Classroom 1425", { x: -3.5, z: 8.75 }],
+  ]);
+  resolveRoomPointCalls: string[] = [];
 
   // ---- Task 5.2 test hooks: fleet-wide pause/resume ----
   pauseCalls = 0;
@@ -129,6 +137,11 @@ class FakeWorldRoom implements WorldRoomLike {
     return this.entrancePoint;
   }
 
+  resolveRoomPoint(roomName: string): { x: number; z: number } | null {
+    this.resolveRoomPointCalls.push(roomName);
+    return this.roomPoints.get(roomName) ?? null;
+  }
+
   pause(): void {
     this.pauseCalls++;
     this.paused = true;
@@ -156,12 +169,15 @@ function navigateCmd(cmdId: string, room = "Classroom 1425"): Command {
   };
 }
 
-function assignCmd(cmdId: string, visitorId: string, room = "Classroom 1425"): Command {
+/** `fromRoom` (the optional `from_room` param -- where the user says they currently are)
+ * is omitted from `params` entirely when not passed, so the default-arg case produces the
+ * exact pre-`from_room` payload shape. */
+function assignCmd(cmdId: string, visitorId: string, room = "Classroom 1425", fromRoom?: string): Command {
   return {
     cmd_id: cmdId,
     type: "assign",
     name: "assign",
-    params: { visitor_id: visitorId, room },
+    params: { visitor_id: visitorId, room, ...(fromRoom === undefined ? {} : { from_room: fromRoom }) },
     ts: new Date().toISOString(),
   };
 }
@@ -207,7 +223,24 @@ async function main(): Promise<void> {
     assert.equal(parseCommand({ cmd_id: "a", type: "emote", name: "not-a-real-emote", params: {} }), null);
     assert.equal(parseCommand("not an object"), null);
     assert.equal(parseCommand({ type: "emote", name: "happy" }), null, "missing cmd_id must be rejected");
-    console.log("PASS: parseCommand schema validation");
+
+    // assign.params.from_room is OPTIONAL: absent and null are both "not provided"
+    // (unchanged entrance-spawn behaviour); a string is accepted and preserved; any other
+    // type is a schema violation. Mirrors messages.py's assign branch exactly.
+    const assignParams = (extra: Record<string, unknown>) => ({
+      cmd_id: "a",
+      type: "assign",
+      name: "assign",
+      params: { visitor_id: "v", room: "Kitchen", ...extra },
+    });
+    assert.ok(parseCommand(assignParams({})), "assign with no from_room must stay valid");
+    assert.ok(parseCommand(assignParams({ from_room: null })), "an explicit null from_room means 'not provided'");
+    const withFromRoom = parseCommand(assignParams({ from_room: "Wellness Room" }));
+    assert.ok(withFromRoom, "assign with a string from_room must be accepted");
+    assert.equal(withFromRoom!.params.from_room, "Wellness Room", "from_room must survive parsing unchanged");
+    assert.equal(parseCommand(assignParams({ from_room: 1425 })), null, "a numeric from_room must be rejected");
+    assert.equal(parseCommand(assignParams({ from_room: { name: "Kitchen" } })), null, "an object from_room must be rejected");
+    console.log("PASS: parseCommand schema validation (including optional assign.from_room)");
   }
 
   // ---- invalid payloads: dropped silently, no ack published ----
@@ -557,6 +590,124 @@ async function main(): Promise<void> {
     assert.deepEqual(room.requestGuideCalls, [{ visitorId: "visitor-2", target: "Classroom 1425" }]);
     assert.deepEqual(client.acksFor("cmd-a2"), ["received", "done"]);
     console.log("PASS: assign for an already-tracked visitor does not re-spawn it");
+  }
+
+  // ==================================================================================
+  // `assign` params.from_room: spawn the person WHERE THE USER SAYS THEY ARE
+  //
+  // Moses asks "where are you in the building?"; the user's answer rides on the assign
+  // command as the optional `from_room` param. The three cases below are the whole
+  // contract: present-and-resolvable spawns there, present-but-unresolvable FAILS (never
+  // silently falls back to the entrance -- that would put the person somewhere they are
+  // not and send a robot to fetch thin air), and absent keeps the pre-existing
+  // entrance-spawn behaviour byte for byte.
+  // ==================================================================================
+
+  // ---- (a) from_room present and resolvable: the visitor spawns AT THAT ROOM's point,
+  // not at the entrance; the DESTINATION passed to requestGuide is still `room` ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    room.entrancePoint = { x: 24.821, z: 13.99 }; // a real-ish entrance, clearly != the Kitchen point
+    room.requestGuideResult = { robotId: "virtual/9" };
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(
+      fleetCmdTopic(),
+      JSON.stringify(assignCmd("cmd-from-1", "visitor-from-1", "Classroom 1425", "Kitchen")),
+    );
+
+    const kitchenPoint = room.roomPoints.get("Kitchen")!;
+    assert.deepEqual(room.resolveRoomPointCalls, ["Kitchen"], "from_room must be resolved via resolveRoomPoint");
+    assert.deepEqual(
+      room.addAgentCalls,
+      [{ id: "visitor-from-1", kind: "visitor", spawn: kitchenPoint }],
+      "the visitor must be spawned at the from_room point the user selected, NOT at the entrance",
+    );
+    assert.notDeepEqual(
+      room.addAgentCalls[0].spawn,
+      room.entrancePoint,
+      "sanity: the from_room spawn point must actually differ from the entrance, or this test proves nothing",
+    );
+    assert.deepEqual(
+      room.requestGuideCalls,
+      [{ visitorId: "visitor-from-1", target: "Classroom 1425" }],
+      "from_room must not change the DESTINATION handed to requestGuide -- that is still `room`",
+    );
+    assert.deepEqual(client.acksFor("cmd-from-1"), ["received", "done"]);
+    console.log(
+      `PASS: assign with from_room="Kitchen" spawns the visitor at (${kitchenPoint.x}, ${kitchenPoint.z}), not the entrance`,
+    );
+  }
+
+  // ---- (b) from_room present but unresolvable: fail with a DISTINCT reason, spawn
+  // nothing, and never reach requestGuide ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(
+      fleetCmdTopic(),
+      JSON.stringify(assignCmd("cmd-from-2", "visitor-from-2", "Kitchen", "Room That Does Not Exist 9999")),
+    );
+
+    assert.deepEqual(client.acksFor("cmd-from-2"), ["received", "failed"]);
+    const failedAck = client.published.find(
+      (p) => p.payload.cmd_id === "cmd-from-2" && p.payload.state === "failed",
+    )!.payload;
+    assert.equal(
+      failedAck.reason,
+      "from_room_unresolved",
+      "an unresolvable from_room must get its own reason, distinct from the destination's target_unresolved",
+    );
+    assert.equal(failedAck.assigned_robot_id, null);
+    assert.equal(
+      room.addAgentCalls.length,
+      0,
+      "an unresolvable from_room must NOT silently fall back to spawning the person at the entrance",
+    );
+    assert.equal(room.requestGuideCalls.length, 0, "no robot should be dispatched for a person whose location is unknown");
+    console.log("PASS: assign with an unresolvable from_room acks failed/from_room_unresolved, spawns nothing, dispatches nobody");
+  }
+
+  // ---- (c) from_room absent: unchanged entrance-spawn behaviour, and resolveRoomPoint
+  // is never consulted at all ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    room.entrancePoint = { x: 24.821, z: 13.99 };
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(assignCmd("cmd-from-3", "visitor-from-3", "Kitchen")));
+
+    assert.deepEqual(
+      room.addAgentCalls,
+      [{ id: "visitor-from-3", kind: "visitor", spawn: room.entrancePoint }],
+      "with no from_room the visitor must still spawn at the entrance, exactly as before the param existed",
+    );
+    assert.deepEqual(room.resolveRoomPointCalls, [], "no from_room means no room-point resolution at all");
+    assert.deepEqual(client.acksFor("cmd-from-3"), ["received", "done"]);
+    console.log("PASS: assign without from_room still spawns the visitor at the entrance (unchanged behaviour)");
+  }
+
+  // ---- from_room on a visitor that ALREADY exists must not teleport them: they are a
+  // person already standing somewhere in the world ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    room.state.agents.set("visitor-from-4", { state: "idle", x: 1, z: 2 });
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(
+      fleetCmdTopic(),
+      JSON.stringify(assignCmd("cmd-from-4", "visitor-from-4", "Classroom 1425", "Kitchen")),
+    );
+
+    assert.equal(room.addAgentCalls.length, 0, "an already-tracked visitor must not be re-spawned by from_room");
+    assert.deepEqual(room.state.agents.get("visitor-from-4"), { state: "idle", x: 1, z: 2 }, "and must not be moved");
+    assert.deepEqual(client.acksFor("cmd-from-4"), ["received", "done"]);
+    console.log("PASS: from_room does not teleport a visitor that already exists in the world");
   }
 
   // ---- requestGuide returns robotId: null / reason: no_idle_robot -> failed/no_idle_robot ----
