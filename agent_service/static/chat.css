@@ -51,6 +51,19 @@ body {
   overflow-x: hidden;
 }
 body:has(#chat:not([hidden])) { background: var(--bg); }
+/* Mobile white-space fix: in chat mode the shell is a fixed-height app whose
+   #messages scrolls internally, so the PAGE must never scroll. Without this,
+   html/body resolve to the LARGE layout viewport while .app is 100dvh (the
+   smaller dynamic viewport), leaving a band of blank body below the app that a
+   phone's address-bar/overscroll states expose as scrollable white space. Pin
+   html+body to the same dynamic viewport, forbid page scroll, and kill overscroll
+   rubber-banding. Scoped to chat mode so the landing/intake can still scroll. */
+html:has(#chat:not([hidden])),
+body:has(#chat:not([hidden])) {
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
 
 .app {
   max-width: 620px;
