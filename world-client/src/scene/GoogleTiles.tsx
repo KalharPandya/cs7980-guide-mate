@@ -44,12 +44,14 @@ export const SITE_LAT = 49.280513
 export const SITE_LON = -123.115893
 /**
  * Height (metres above the WGS84 ellipsoid surface) that maps to the scene origin y=0 -- i.e. the
- * 14th-floor slab. ReorientationPlugin puts the point (SITE_LAT, SITE_LON, SITE_HEIGHT_M) at the
+ * floor slab. ReorientationPlugin puts the point (SITE_LAT, SITE_LON, SITE_HEIGHT_M) at the
  * tileset's local origin, so the real ground (ellipsoid height ~0) lands ~SITE_HEIGHT_M BELOW the
- * floor plane, exactly matching Skyline.tsx's FLOOR_ELEVATION_M. ~45 m == roughly 13 storeys at
- * ~3.5 m. Tune after a visual pass so the street sits believably below the floor.
+ * floor plane. Deloitte Summit's roof is ~92 m: at the literal 14th-floor height (~45 m) the floor
+ * plan renders INSIDE the real tower's tile mesh and is occluded, so we lift it ABOVE the roofline
+ * (~105 m) so the floor sits visibly ON TOP of the tower instead of hidden inside it. Raise for
+ * more clearance above the roof, lower to sink it back toward the building.
  */
-export const SITE_HEIGHT_M = 45
+export const SITE_HEIGHT_M = 105
 /**
  * Rotation (degrees, about +Y) applied to the whole real-world city to line its north up with the
  * floor plan's rendered orientation. ReorientationPlugin lands real north at tileset-local +Z, but
