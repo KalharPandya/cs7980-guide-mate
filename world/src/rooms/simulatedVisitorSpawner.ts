@@ -4,8 +4,10 @@ import type { VisitorRecord } from "./escortManager.js";
 
 /**
  * Deferred cleanup of Task 4.1's visitors.ts (flagged by that task's reviewer): this file
- * holds the simulated-visitor spawner + its lifecycle (spawn at the entrance, wait for a
- * robot, walk to its assigned room, dwell, walk back, despawn). It only touches
+ * holds the simulated-visitor spawner + its ROAMING lifecycle (spawn at the entrance, wait
+ * for a robot, get escorted to a random room, dwell there, then head to ANOTHER random room
+ * and repeat forever -- never returning to the entrance, never despawning during normal
+ * roaming; despawn happens only via `setEnabled(false)` or the capacity backstop). It only touches
  * `EscortManager` (escortManager.ts) through that module's public surface --
  * `requestGuide` to start an escort, and `registerVisitor`/`allVisitors`/`removeVisitor`
  * to keep this spawner's own simulated records living in EscortManager's single shared
@@ -31,13 +33,17 @@ const SPAWN_STAGGER_INTERVAL_S = 0.5;
  * long enough not to spam requestGuide's O(robots) scan every tick for every waiting visitor. */
 const ROBOT_RETRY_INTERVAL_S = 1.0;
 
-/** Randomized "look around the room" dwell time before a simulated visitor heads back to
- * the entrance. Short, per the task spec -- this is a demo, not a real dwell simulation.
- * NOTE: the dwell countdown is SEEDED by `EscortManager.endEscort` (escortManager.ts), the
- * instant an escort ends -- see that method's doc comment for why. This module only ticks
- * the countdown down on every subsequent frame and reacts once it expires. */
-const DWELL_MIN_S = 3;
-const DWELL_MAX_S = 8;
+/** How long a roaming simulated visitor lingers at a room before heading to the next one.
+ * A roaming visitor is escorted to a room, dwells here for a randomized span in this range,
+ * then heads off to ANOTHER random room -- it never returns to the entrance and never
+ * despawns during normal roaming. Long enough that the visitor visibly STAYS put before
+ * moving on. NOTE: the dwell countdown is SEEDED by `EscortManager.endEscort`
+ * (escortManager.ts), the instant an escort ends -- see that method's doc comment for why.
+ * This module only ticks the countdown down on every subsequent frame and, once it expires,
+ * picks the next room. Kept in sync with escortManager.ts's copy of the same constants (the
+ * authoritative runtime value is the EscortManager's, since it seeds the countdown). */
+const DWELL_MIN_S = 8;
+const DWELL_MAX_S = 20;
 
 export interface SimulatedVisitorSpawnerOptions {
   /** Target concurrent simulated-visitor count. 0 disables the spawner entirely (useful
@@ -290,12 +296,10 @@ export class SimulatedVisitorSpawner {
     }
   }
 
-  /** Advances the non-escort parts of each simulated visitor's lifecycle:
-   * "waiting_for_robot" retries requestGuide on cooldown; "dwelling" counts down then
-   * sends the visitor walking back to the entrance (solo -- no robot needed to leave);
-   * "walking_to_entrance" despawns once the visitor's own schema state settles back to
-   * "idle" (the same settled-idle signal `EscortManager.tick()` uses for robot arrival,
-   * applied here to the visitor's own agent instead of an escorting robot's).
+  /** Advances the non-escort parts of each simulated visitor's ROAMING lifecycle:
+   * "waiting_for_robot" retries requestGuide on cooldown; "dwelling" counts down then picks
+   * the NEXT random room and re-enters "waiting_for_robot" so the visitor is escorted onward
+   * (it roams room to room forever, never returning to the entrance and never despawning).
    * "walking_to_room" is intentionally not handled here -- that whole span (the escort's
    * approaching -> greeting -> leading phases in EscortManager) is entirely driven by
    * `EscortManager.tick()`, which transitions this to "dwelling" on arrival/timeout. The
@@ -317,27 +321,16 @@ export class SimulatedVisitorSpawner {
         case "dwelling": {
           visitor.simulatedCooldownSeconds -= dtSeconds;
           if (visitor.simulatedCooldownSeconds <= 0) {
-            visitor.simulatedPhase = "walking_to_entrance";
-            const entrance = {
-              x: this.host.plan.entrance.point[0],
-              z: this.host.plan.entrance.point[1],
-            };
-            const ok = this.host.moveAgentTo(visitor.id, entrance);
-            if (!ok) {
-              // The entrance should always be reachable; don't strand the visitor forever
-              // if it somehow isn't.
-              console.warn(
-                `SimulatedVisitorSpawner: could not route simulated visitor "${visitor.id}" back to the entrance; despawning`,
-              );
-              this.despawn(visitor.id);
-            }
+            // ROAM onward: instead of walking back to the entrance and despawning, the
+            // visitor picks a NEW random room and re-enters "waiting_for_robot" so the next
+            // tick's waiting_for_robot branch calls tryStartEscort for the next leg. Setting
+            // the cooldown to 0 makes that happen on the very next tick. The visitor thus
+            // wanders room to room forever, escorted each leg and dwelling at each, never
+            // returning to the entrance and never despawning.
+            visitor.simulatedTargetRoom = this.pickRandomRoom();
+            visitor.simulatedPhase = "waiting_for_robot";
+            visitor.simulatedCooldownSeconds = 0;
           }
-          break;
-        }
-
-        case "walking_to_entrance": {
-          const agent = this.host.agents.get(visitor.id);
-          if (agent && agent.state === "idle") this.despawn(visitor.id);
           break;
         }
 

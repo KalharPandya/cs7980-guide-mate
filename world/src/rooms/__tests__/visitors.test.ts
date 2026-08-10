@@ -731,9 +731,10 @@ async function testEscortTimeoutPauseCorrectness(): Promise<void> {
 }
 
 /**
- * Pause-correctness regression test for the simulated-visitor lifecycle as a whole (spawn
- * stagger, the "waiting_for_robot" retry cooldown, the dwell countdown, and the
- * despawn-on-idle check for "walking_to_entrance") -- not just the escort timeout above.
+ * Pause-correctness regression test for the simulated-visitor ROAMING lifecycle as a whole
+ * (spawn stagger, the "waiting_for_robot" retry cooldown, the dwell countdown, and the
+ * roam-to-next-room transition that re-enters "waiting_for_robot") -- not just the escort
+ * timeout above.
  * Every one of these is a `-= dtSeconds`-style accumulator inside
  * `SimulatedVisitorSpawner.tick()`/`tickLifecycle()` (simulatedVisitorSpawner.ts), driven
  * only from `VisitorManager.tick()` (visitors.ts), itself only ever reached from
@@ -748,7 +749,7 @@ async function testEscortTimeoutPauseCorrectness(): Promise<void> {
 async function testSimulatedSpawnerPauseFreezesLifecycle(): Promise<void> {
   const room = new WorldRoom();
   // Small target + tight timings so this test stays fast while still exercising every
-  // simulated-visitor phase (spawn stagger, wait-for-robot retry, dwell, walk-to-entrance)
+  // simulated-visitor phase (spawn stagger, wait-for-robot retry, dwell, roam-to-next-room)
   // within a bounded tick budget.
   const SIM_TARGET = 8;
   await room.onCreate({
@@ -770,9 +771,9 @@ async function testSimulatedSpawnerPauseFreezesLifecycle(): Promise<void> {
   }
 
   // Warm up to a steady state where visitors are actively cycling through every phase
-  // (spawn -> waiting_for_robot -> walking_to_room -> dwelling -> walking_to_entrance ->
-  // despawn) -- 30s simulated is many multiples of the ~0.5-1s dwell + short trips at this
-  // scale.
+  // (spawn -> waiting_for_robot -> walking_to_room -> dwelling -> waiting_for_robot -> ...,
+  // roaming room to room forever) -- 30s simulated is many multiples of the ~0.5-1s dwell +
+  // short trips at this scale.
   for (let i = 0; i < 1800; i++) room.update(TICK_MS);
 
   const beforePause = room.getVisitorDebugStats();
@@ -782,7 +783,7 @@ async function testSimulatedSpawnerPauseFreezesLifecycle(): Promise<void> {
   assert.equal(room.isPaused, true);
 
   // Tick for a duration that, if unpaused, would comfortably cycle every visitor through
-  // several full spawn/dwell/despawn loops (dwell alone is 0.5-1s; this is 20s).
+  // several full dwell/roam-to-next-room loops (dwell alone is 0.5-1s; this is 20s).
   const PAUSE_TICKS = 1200;
   for (let i = 0; i < PAUSE_TICKS; i++) {
     room.update(TICK_MS);
@@ -1498,6 +1499,96 @@ async function testClearRealVisitorsRemovesAllAndFreesRobots(): Promise<void> {
   room.onDispose();
 }
 
+/**
+ * ROAM lifecycle (the behavior change the roaming rework introduced): when a simulated
+ * visitor's post-escort dwell expires, it must head to ANOTHER random room rather than
+ * walking back to the entrance and despawning. Concretely: it re-enters "waiting_for_robot"
+ * with a freshly-picked simulatedTargetRoom, is NOT despawned, and is NOT routed back to the
+ * entrance. This pins that exact transition deterministically, without driving a full escort.
+ */
+async function testSimulatedVisitorRoamsToNextRoomAfterDwell(): Promise<void> {
+  const room = new WorldRoom();
+  // disableSimulatedVisitors: no background spawner minting/moving other visitors -- this test
+  // drives one hand-registered visitor's dwell -> roam transition itself. disableGuideRobots +
+  // adding NO robots: tryStartEscort on the following tick finds no idle robot, so the visitor
+  // simply stays "waiting_for_robot" (never advancing to walking_to_room), which is exactly the
+  // settled post-dwell state this test asserts.
+  await room.onCreate({ disableSimulatedVisitors: true, disableGuideRobots: true });
+  room.setSimulationInterval();
+
+  const plan = loadFloorPlan();
+  const entrance = { x: plan.entrance.point[0], z: plan.entrance.point[1] };
+  const roomNames = new Set(plan.rooms.map((r) => r.name));
+  const escorts = (room as unknown as { visitors: { escorts: EscortManager } }).visitors.escorts;
+  const agents = agentsMap(room);
+
+  // Register a simulated visitor already in the post-escort "dwelling" phase, parked at a room's
+  // door (NOT the entrance), with a tiny dwell cooldown about to expire on the next tick.
+  const startRoom = plan.rooms.find((r) => r.name === "Kitchen") ?? plan.rooms[0];
+  const startPos = { x: startRoom.door[0], z: startRoom.door[1] };
+  const id = "roam-sim";
+  room.addAgent(id, "visitor", startPos);
+  const record: VisitorRecord = {
+    id,
+    kind: "simulated",
+    robotId: null,
+    escortPhase: null,
+    greetSecondsRemaining: 0,
+    escortDestination: null,
+    escortLeadTarget: null,
+    escortElapsedSeconds: 0,
+    escortSinceLastTrailUpdateSeconds: 0,
+    robotPositionHistory: [],
+    simulatedPhase: "dwelling",
+    simulatedTargetRoom: startRoom.name,
+    simulatedCooldownSeconds: 0.01, // about to expire on the very next tick
+    realDespawnSeconds: null,
+  };
+  escorts.registerVisitor(record);
+
+  const posBefore = { x: agents.get(id)!.x, z: agents.get(id)!.z };
+
+  // One tick: the 0.01s dwell cooldown expires under the ~0.0166s step, so tickLifecycle's
+  // "dwelling" branch fires the roam transition this frame.
+  room.update(TICK_MS);
+
+  const after = [...escorts.allVisitors()].find((v) => v.id === id);
+  assert.ok(
+    after,
+    "the roaming visitor must NOT be despawned when its dwell expires -- it roams on, it does not leave",
+  );
+  assert.equal(
+    after!.simulatedPhase,
+    "waiting_for_robot",
+    'after the dwell expires the visitor must re-enter "waiting_for_robot" for the next escort leg, NOT walk to the entrance/despawn',
+  );
+  assert.ok(
+    roomNames.has(after!.simulatedTargetRoom!),
+    `the visitor must have picked a real next room to roam to; got "${after!.simulatedTargetRoom}"`,
+  );
+
+  // It must NOT have been routed toward the entrance: the roam path issues no moveAgentTo, so the
+  // agent is still parked where it dwelled (and nowhere near the entrance).
+  const agentAfter = agents.get(id);
+  assert.ok(agentAfter, "the roaming visitor's agent must still exist after the roam transition");
+  const distMoved = Math.hypot(agentAfter!.x - posBefore.x, agentAfter!.z - posBefore.z);
+  assert.ok(
+    distMoved < 0.5,
+    `the roaming visitor must not be moved on the roam transition (no entrance routing); it shifted ${distMoved.toFixed(3)}m`,
+  );
+  const distToEntrance = Math.hypot(agentAfter!.x - entrance.x, agentAfter!.z - entrance.z);
+  assert.ok(
+    distToEntrance > 1,
+    `the roaming visitor must not have been routed back to the entrance; it is ${distToEntrance.toFixed(2)}m away, still at its dwell spot`,
+  );
+
+  console.log(
+    `PASS: on dwell expiry a simulated visitor roams onward -- re-entered "waiting_for_robot" targeting ` +
+      `"${after!.simulatedTargetRoom}", not despawned, not sent to the entrance`,
+  );
+  room.onDispose();
+}
+
 async function main(): Promise<void> {
   // Both tick rates, for the reason in this scenario's header: a previous attempt at the
   // doorway deadlock passed at 100ms and still deadlocked at the production 16.6ms interval.
@@ -1509,6 +1600,7 @@ async function main(): Promise<void> {
   await testEscortTimeoutStillFiresWhenVisitorNeverCatchesUp();
   await testEscortTimeoutPauseCorrectness();
   await testSimulatedSpawnerPauseFreezesLifecycle();
+  await testSimulatedVisitorRoamsToNextRoomAfterDwell();
   await testSetSimulatedEnabledStopsAndResumesAmbientTraffic();
   await testDeliveredRealVisitorAutoDespawns();
   await testClearRealVisitorsRemovesAllAndFreesRobots();

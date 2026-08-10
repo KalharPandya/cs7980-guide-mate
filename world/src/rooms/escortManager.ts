@@ -17,7 +17,7 @@ import { AGENT_RADIUS_M } from "../nav/agentProfile.js";
  */
 
 type VisitorKind = "simulated" | "real";
-type SimulatedPhase = "waiting_for_robot" | "walking_to_room" | "dwelling" | "walking_to_entrance";
+type SimulatedPhase = "waiting_for_robot" | "walking_to_room" | "dwelling";
 
 /**
  * The three phases of a single escort, driven by `EscortManager.tick()`:
@@ -425,12 +425,16 @@ const TRAIL_HISTORY_SAMPLES = Math.max(
   Math.round(TRAIL_DISTANCE_M / ASSUMED_ROBOT_SPEED_MPS / TRAIL_UPDATE_INTERVAL_S),
 );
 
-/** Randomized "look around the room" dwell time before a simulated visitor heads back to
- * the entrance. Short, per the task spec -- this is a demo, not a real dwell simulation.
- * Read only by `endEscort` below (to seed the dwell countdown the instant an escort ends);
- * simulatedVisitorSpawner.ts owns ticking that countdown down on every subsequent call. */
-const DWELL_MIN_S = 3;
-const DWELL_MAX_S = 8;
+/** How long a roaming simulated visitor lingers at a room before heading to the next one.
+ * A roaming visitor is escorted to a room, dwells here for a randomized span in this range,
+ * then heads off to ANOTHER random room -- it never returns to the entrance and never
+ * despawns during normal roaming. Long enough that the visitor visibly STAYS put before
+ * moving on. This is the AUTHORITATIVE runtime dwell range: `endEscort` below reads it to
+ * seed the dwell countdown the instant an escort ends, and simulatedVisitorSpawner.ts owns
+ * ticking that countdown down on every subsequent call (then picking the next room). Kept in
+ * sync with simulatedVisitorSpawner.ts's copy of the same constants. */
+const DWELL_MIN_S = 8;
+const DWELL_MAX_S = 20;
 
 /**
  * How long (simulated seconds) a delivered REAL (Moses/operator-dispatched) visitor lingers
@@ -441,8 +445,8 @@ const DWELL_MAX_S = 8;
  * The instant its escort ends (delivered or timed out), `endEscort` schedules this countdown;
  * `tickRealDespawns` counts it down and removes the visitor when it reaches zero. 20s leaves
  * the arrival visible on the big screen for a beat before the person leaves. This is distinct
- * from the simulated visitor's DWELL_MIN_S..DWELL_MAX_S "look around the room then walk back"
- * dwell: a real visitor does not walk anywhere afterward, it is simply removed.
+ * from the simulated visitor's DWELL_MIN_S..DWELL_MAX_S "linger at a room then roam to the
+ * next one" dwell: a real visitor does not roam anywhere afterward, it is simply removed.
  * Exported so tests can assert against the same number instead of a duplicated magic
  * constant (mirrors `RESERVED_ROBOTS_FOR_REAL_USERS` / `SIMULATED_VISITOR_TARGET`).
  */
