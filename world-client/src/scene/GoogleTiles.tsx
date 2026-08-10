@@ -39,9 +39,9 @@ const KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string
 /* --------------------------------------------------------------------------------------------- */
 
 /** Building latitude (400/410 West Georgia St, Vancouver). Degrees. */
-export const SITE_LAT = 49.2799
+export const SITE_LAT = 49.280513
 /** Building longitude. Degrees. */
-export const SITE_LON = -123.1146
+export const SITE_LON = -123.115893
 /**
  * Height (metres above the WGS84 ellipsoid surface) that maps to the scene origin y=0 -- i.e. the
  * 14th-floor slab. ReorientationPlugin puts the point (SITE_LAT, SITE_LON, SITE_HEIGHT_M) at the
