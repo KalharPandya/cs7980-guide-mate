@@ -26,5 +26,13 @@
 	handle_path /world/* {
 		reverse_proxy world-server:2567
 	}
+	# The chat shell assets are versionless (index at /, plus /chat.css and /chat.js), and
+	# FastAPI serves them with an ETag but no Cache-Control, so a browser can hold a stale copy
+	# heuristically and miss a deploy (this is exactly how a mobile CSS fix failed to reach a
+	# phone). Force revalidation on just these paths: no-cache means the browser must check with
+	# the server before reuse, and the ETag makes that a cheap 304 when nothing changed. Scoped
+	# to these exact paths so the hash-versioned /viz/* bundle assets stay long-cached.
+	@chat_shell path / /index.html /chat.css /chat.js
+	header @chat_shell Cache-Control "no-cache"
 	reverse_proxy app:8000
 }
