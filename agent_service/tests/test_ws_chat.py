@@ -297,8 +297,9 @@ def _fake_client(monkeypatch):
 
 def test_ws_virtual_turn_is_session_aware_and_single_persist(monkeypatch, ddb):
     """Virtual (no-robot) WS turn: memory-capable session path + virtual framing,
-    NO MQTT publish, no robot named (get_status withheld), and EXACTLY one user +
-    one dog message persisted (single owner = DogAgent, no double-persist)."""
+    does NOT emote (emotes are physical-only, so send_emote is withheld and emote
+    is None), NO MQTT publish, no robot named (get_status withheld), and EXACTLY
+    one user + one dog message persisted (single owner = DogAgent, no double-persist)."""
     _fake_bedrock(monkeypatch)
     with _fake_client(monkeypatch) as client:
         sid = client.post(
@@ -309,7 +310,8 @@ def test_ws_virtual_turn_is_session_aware_and_single_persist(monkeypatch, ddb):
             reply = ws.receive_json()
             ws.receive_json()  # audio
         assert reply["type"] == "reply"
-        assert reply["emote"] == "happy"
+        assert reply["emote"] is None
+        assert "send_emote" not in _FakeStrands.last.tool_names
         assert reply["gate_released"] is True
         # single persistence: exactly one user + one dog row, in order
         msgs = sessions.get_messages(sid)
@@ -391,8 +393,8 @@ def test_ws_kb_grounded_reply_frame_includes_sources(monkeypatch, ddb):
             ws.receive_json()  # audio
     assert reply["type"] == "reply"
     assert reply["sources"] == [{"title": "moses-facts.md", "url": None}]
-    # existing reply-frame fields + emote-sync are untouched
-    assert reply["emote"] == "happy"
+    # virtual turn: emotes are physical-only, so no emote on this reply frame
+    assert reply["emote"] is None
     assert reply["gate_released"] is True
     assert reply["turn_id"]
 
@@ -479,4 +481,4 @@ def test_ws_non_kb_reply_frame_has_no_sources(monkeypatch, ddb):
             ws.receive_json()  # audio
     assert reply["type"] == "reply"
     assert reply["sources"] == []
-    assert reply["emote"] == "happy"
+    assert reply["emote"] is None

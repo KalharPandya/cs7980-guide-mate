@@ -3,7 +3,7 @@
 from guidemate_msgs.messages import Ack
 
 from guidemate_agent import dog_agent, sessions
-from guidemate_agent.dog_agent import DogAgent, PERSONA
+from guidemate_agent.dog_agent import DogAgent, EMOTE_INSTRUCTION, PERSONA
 from guidemate_agent.store import DEFAULT_FLAGS
 
 
@@ -280,114 +280,6 @@ def test_physical_emote_publishes():
     assert "simulated" in out.lower() or "delivered" in out.lower()
 
 
-# --- Task 5.3: GUIDEMATE_EMOTE_MIRROR_ROBOT_ID mirrors virtual emotes onto a
-# physical robot, best-effort. Unset = feature off (regression guard); set =
-# also publish; a registry exception on the mirror publish is swallowed.
-def test_virtual_emote_mirror_unset_no_registry_call(monkeypatch):
-    monkeypatch.delenv("GUIDEMATE_EMOTE_MIRROR_ROBOT_ID", raising=False)
-    reg = RecordingRegistry()
-    agent = _agent(reg)
-    captured = {"emote": None, "acks": []}
-    out = agent._emote_impl("happy", target="turtlebot468", captured=captured,
-                            physical=False)
-    assert reg.sent == []                       # unchanged: nothing published
-    assert captured["emote"] == "happy"
-    assert captured["acks"] == []
-    assert "virtual" in out.lower()
-
-
-def test_virtual_emote_mirror_set_also_publishes_to_mirror_robot(monkeypatch):
-    monkeypatch.setenv("GUIDEMATE_EMOTE_MIRROR_ROBOT_ID", "turtlebot468")
-    reg = RecordingRegistry()
-    agent = _agent(reg)
-    captured = {"emote": None, "acks": []}
-    out = agent._emote_impl("happy", target="turtlebot468", captured=captured,
-                            physical=False)
-    assert reg.sent == [("turtlebot468", "emote", "happy")]
-    assert captured["emote"] == "happy"
-    # mirror acks are not folded into this (virtual) turn's UI state
-    assert captured["acks"] == []
-    assert "virtual" in out.lower()
-
-
-def test_virtual_emote_mirror_publish_failure_is_swallowed(monkeypatch):
-    monkeypatch.setenv("GUIDEMATE_EMOTE_MIRROR_ROBOT_ID", "turtlebot468")
-
-    class ExplodingRegistry:
-        def send_command(self, robot_id, cmd, timeout_s=5.0):
-            raise RuntimeError("mqtt broker unreachable")
-
-    agent = _agent(ExplodingRegistry())
-    captured = {"emote": None, "acks": []}
-    out = agent._emote_impl("no", target="turtlebot468", captured=captured,
-                            physical=False)
-    assert captured["emote"] == "no"
-    assert captured["acks"] == []
-    assert out == "virtual emote played (avatar only — not connected to a robot)"
-
-
-def test_physical_emote_unaffected_by_mirror_var(monkeypatch):
-    """Regression guard: the mirror var must not alter the physical=True branch."""
-    monkeypatch.setenv("GUIDEMATE_EMOTE_MIRROR_ROBOT_ID", "some-other-robot")
-    reg = RecordingRegistry()
-    agent = _agent(reg)
-    captured = {"emote": None, "acks": []}
-    out = agent._emote_impl("yes", target="turtlebot468", captured=captured,
-                            physical=True)
-    # only the real target is published to -- no mirror call added
-    assert reg.sent == [("turtlebot468", "emote", "yes")]
-    assert captured["acks"] and captured["acks"][-1]["state"] == "done"
-    assert "simulated" in out.lower() or "delivered" in out.lower()
-
-
-# --- adversarial-review fix: mirror publishes are rate-limited per robot id so
-# a burst of emotes from multiple concurrent virtual sessions can't spam the
-# one physical mirror robot faster than _EMOTE_MIRROR_MIN_INTERVAL_S. The
-# virtual session's own reply must always succeed regardless of throttling.
-def test_virtual_emote_mirror_rate_limit_skips_second_publish_in_window(monkeypatch):
-    monkeypatch.setenv("GUIDEMATE_EMOTE_MIRROR_ROBOT_ID", "turtlebot468")
-    reg = RecordingRegistry()
-    agent = _agent(reg)
-    fake_now = [100.0]
-    monkeypatch.setattr(dog_agent.time, "monotonic", lambda: fake_now[0])
-
-    out1 = agent._emote_impl("happy", target="turtlebot468",
-                             captured={"emote": None, "acks": []}, physical=False)
-    assert reg.sent == [("turtlebot468", "emote", "happy")]
-    assert "virtual" in out1.lower()
-
-    # 1s later -- still inside the 2.0s window, so the mirror must be skipped,
-    # but the virtual session's own reply must be unaffected.
-    fake_now[0] += 1.0
-    captured2 = {"emote": None, "acks": []}
-    out2 = agent._emote_impl("yes", target="turtlebot468", captured=captured2,
-                             physical=False)
-    assert reg.sent == [("turtlebot468", "emote", "happy")]  # registry not called again
-    assert captured2["emote"] == "yes"
-    assert captured2["acks"] == []
-    assert "virtual" in out2.lower()
-
-
-def test_virtual_emote_mirror_publishes_again_after_window_elapses(monkeypatch):
-    monkeypatch.setenv("GUIDEMATE_EMOTE_MIRROR_ROBOT_ID", "turtlebot468")
-    reg = RecordingRegistry()
-    agent = _agent(reg)
-    fake_now = [200.0]
-    monkeypatch.setattr(dog_agent.time, "monotonic", lambda: fake_now[0])
-
-    agent._emote_impl("happy", target="turtlebot468",
-                      captured={"emote": None, "acks": []}, physical=False)
-    assert reg.sent == [("turtlebot468", "emote", "happy")]
-
-    fake_now[0] += 2.1  # past _EMOTE_MIRROR_MIN_INTERVAL_S
-    agent._emote_impl("no", target="turtlebot468",
-                      captured={"emote": None, "acks": []}, physical=False)
-    assert reg.sent == [
-        ("turtlebot468", "emote", "happy"),
-        ("turtlebot468", "emote", "no"),
-    ]
-
-
 # --- system prompt: user name + last-10-message recap ---
 def test_system_prompt_includes_name_and_history():
     agent = _agent(RecordingRegistry())
@@ -408,17 +300,24 @@ def test_system_prompt_truncates_history_to_last_10():
 
 
 # --- tool gating by physical/virtual mode ---
-def test_enabled_tool_names_virtual_drops_motion_keeps_emote():
+# Emotes are PHYSICAL-only now: the physical TurtleBot is the emote/trick fleet,
+# the virtual fleet is navigation-only. A virtual session gets guide_to_room and
+# no send_emote/run_motion/stop; a physical session gets send_emote/run_motion/
+# stop and no guide_to_room.
+def test_enabled_tool_names_virtual_drops_emote_and_motion_offers_guide():
     names = _agent(RecordingRegistry())._enabled_tool_names(
         dict(DEFAULT_FLAGS), physical=False)
-    assert "send_emote" in names
+    assert "send_emote" not in names
     assert "run_motion" not in names and "stop" not in names
+    assert "guide_to_room" in names
 
 
-def test_enabled_tool_names_physical_offers_motion():
+def test_enabled_tool_names_physical_offers_emote_and_motion_no_guide():
     names = _agent(RecordingRegistry())._enabled_tool_names(
         dict(DEFAULT_FLAGS), physical=True)
+    assert "send_emote" in names
     assert "run_motion" in names and "stop" in names
+    assert "guide_to_room" not in names
 
 
 # --- get_status is a physical-only truth tool (Task-4 review follow-up) ---
@@ -490,8 +389,11 @@ def test_chat_virtual_session_injects_history_persists_no_publish(ddb, monkeypat
     # user name + prior history injected into the system prompt
     assert "Ada" in _FakeAgent.last.system_prompt
     assert "hello there" in _FakeAgent.last.system_prompt
-    # no robot bound -> virtual: emote captured, nothing published, motion absent
-    assert out["emote"] == "happy"
+    # no robot bound -> virtual: emotes are physical-only now, so send_emote is
+    # not even offered (the fake agent never calls it), nothing is published, and
+    # the physical motion tools are absent too.
+    assert out["emote"] is None
+    assert "send_emote" not in _FakeAgent.last.tool_names
     assert reg.sent == []
     assert "run_motion" not in _FakeAgent.last.tool_names
     # session echoed + this turn persisted (user then assistant)
@@ -793,6 +695,20 @@ def test_virtual_prompt_states_it_can_navigate_to_rooms():
     lowered = prompt.lower()
     assert "can navigate to any room" in lowered
     assert "escort" in lowered
+
+
+def test_emote_instruction_is_physical_only_in_the_prompt():
+    """Emotes are physical-only: the physical prompt carries EMOTE_INSTRUCTION,
+    the virtual (navigation) prompt must not -- a virtual session is never told
+    it can emote. The virtual prompt still states its navigation capability."""
+    agent = _agent(RecordingRegistry())
+    physical_prompt = agent._system_prompt(dict(DEFAULT_FLAGS), physical=True)
+    virtual_prompt = agent._system_prompt(dict(DEFAULT_FLAGS), physical=False)
+    assert EMOTE_INSTRUCTION in physical_prompt
+    assert EMOTE_INSTRUCTION not in virtual_prompt
+    assert "send_emote" not in virtual_prompt
+    # the virtual session is still told what it CAN do (navigation/escort)
+    assert "can navigate to any room" in virtual_prompt.lower()
 
 
 def test_virtual_prompt_calls_emote_an_avatar_expression():

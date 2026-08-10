@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import threading
 import time
 import uuid
 from functools import lru_cache
@@ -247,32 +246,6 @@ _TARGET_UNRESOLVED = (
 _ALLOWED_TRICKS = ("circle", "spin")
 
 
-def _emote_mirror_robot_id() -> Optional[str]:
-    """Physical robot id to mirror virtual emotes onto, or None (feature off).
-
-    Unset by default -- follows the same ad-hoc single-var env convention as
-    GUIDEMATE_ADMIN_PASSWORD (admin.py): read directly at the point of use
-    rather than threaded through Config, since it's a single optional string
-    with no other config surface needing it.
-    """
-    return os.environ.get("GUIDEMATE_EMOTE_MIRROR_ROBOT_ID") or None
-
-
-# Minimum seconds between mirror publishes to the same physical robot id
-# (adversarial-review finding, closed 2026-07-31: nothing stopped multiple
-# concurrent virtual sessions from all mirroring onto the one physical robot at
-# once -- unlike physical sessions, which are lock-gated one-per-robot).
-#
-# Emote mirroring is opt-in (env var unset by default), motion-free, and for a
-# single session already naturally throttled by per-turn LLM latency (seconds
-# per reply). 2.0s keeps that same "one demo robot getting at most a couple
-# emotes a second" cadence even when several virtual sessions target it at
-# once, without making the mirror feel laggy for the small class-demo
-# audience it's built for. Not meant to be a general-purpose rate limiter --
-# just cheap insurance against a burst.
-_EMOTE_MIRROR_MIN_INTERVAL_S = 2.0
-
-
 def _usage_from_result(result) -> Optional[tuple[int, int]]:
     """Pull (input_tokens, output_tokens) out of a Strands AgentResult, or None.
 
@@ -304,15 +277,6 @@ class DogAgent:
         self._robot_ids = robot_ids
         self._region = region
         self._store = store
-        # Per-robot-id "last mirrored at" clock for the emote-mirror rate limit
-        # (see _EMOTE_MIRROR_MIN_INTERVAL_S / _mirror_rate_limit_ok below).
-        # Process-local and keyed per robot id, not global, so a future
-        # multi-target mirror setup wouldn't throttle distinct robots against
-        # each other. Guarded by a lock because sync FastAPI routes and
-        # ws_chat's run_in_executor calls can invoke chat() from different
-        # worker threads concurrently.
-        self._emote_mirror_last_sent: dict[str, float] = {}
-        self._emote_mirror_lock = threading.Lock()
 
     # --- flag / prompt helpers -------------------------------------------
     def _flags(self) -> dict:
@@ -321,14 +285,16 @@ class DogAgent:
     def _enabled_tool_names(self, flags: dict, physical: bool = True) -> list:
         """Ordered names of the tools offered to the model this turn.
 
-        The motion tools (run_motion/stop) are lock-gated: they are only offered
-        when the session PHYSICALLY holds the robot (physical=True). A virtual
-        session (no lock) never sees them, so the model cannot even attempt to
-        drive a robot it isn't bound to. Default physical=True preserves the
-        legacy (no-session) behaviour.
+        send_emote, run_motion/stop, and get_status are ALL physical-only: the
+        physical TurtleBot is the emote/trick fleet, and the virtual fleet is
+        navigation-only. They are only offered when the session PHYSICALLY holds
+        the robot (physical=True). A virtual session (no lock) never sees them,
+        so the model cannot even attempt to emote or drive a robot it isn't bound
+        to. guide_to_room is the inverse: virtual-only. Default physical=True
+        preserves the legacy (no-session) behaviour.
         """
         names: list = []
-        if flags.get("emotes_enabled", True):
+        if physical and flags.get("emotes_enabled", True):
             names.append("send_emote")
         if physical and flags.get("motion_tools_enabled", True):
             names.extend(["run_motion", "stop"])
@@ -371,7 +337,9 @@ class DogAgent:
             PHYSICAL_CAPABILITY_INSTRUCTION if physical
             else VIRTUAL_CAPABILITY_INSTRUCTION
         )
-        if flags.get("emotes_enabled", True):
+        # EMOTE_INSTRUCTION follows the same physical gate as the send_emote tool,
+        # so a virtual (navigation) session is never told it can emote.
+        if physical and flags.get("emotes_enabled", True):
             parts.append(EMOTE_INSTRUCTION)
         # MOTION_INSTRUCTION names run_motion/stop/get_status, and _enabled_tool_names
         # offers all three ONLY when physical is True. Gating this on the flag alone
@@ -452,70 +420,19 @@ class DogAgent:
             return "delivered (simulated — dry-run, the robot stayed still)"
         return "delivered"
 
-    def _mirror_rate_limit_ok(self, robot_id: str) -> bool:
-        """True (and reserves this instant) if enough time has passed since the
-        last mirror publish to robot_id; False if a mirror publish to that same
-        robot id is still within _EMOTE_MIRROR_MIN_INTERVAL_S.
-
-        The check-and-reserve happens under a lock so two concurrent virtual
-        sessions racing to mirror onto the same robot id can't both slip
-        through (see the lock/dict comment in __init__). The reservation is
-        made whether or not the caller's subsequent publish actually succeeds
-        -- a failed publish still counts against the window, so a struggling
-        mirror robot doesn't get hammered by retries either.
-        """
-        now = time.monotonic()
-        with self._emote_mirror_lock:
-            last = self._emote_mirror_last_sent.get(robot_id, 0.0)
-            if now - last < _EMOTE_MIRROR_MIN_INTERVAL_S:
-                return False
-            self._emote_mirror_last_sent[robot_id] = now
-            return True
-
     def _emote_impl(self, name: str, target: Optional[str], captured: dict,
                     physical: bool = True) -> str:
         """Body of the send_emote tool, factored out so it's testable without Strands.
 
-        physical=False is the VIRTUAL path (session holds no robot lock): the
-        emote name is captured for avatar animation but nothing is published to
-        MQTT. physical=True (the default, and the legacy no-session behaviour)
-        publishes to the target robot. This is the lock gate — a virtual session
-        can wag the avatar but can never move a physical dog.
-
-        Virtual sessions additionally mirror the emote onto one physical robot
-        when GUIDEMATE_EMOTE_MIRROR_ROBOT_ID is set (Task 5.3) -- best-effort
-        and non-blocking: a publish failure here is logged and swallowed, never
-        raised and never allowed to change the returned reply string, so the
-        virtual visitor's own turn never degrades because a mirror robot is
-        offline.
-
-        The mirror publish is also rate-limited per robot id
-        (_mirror_rate_limit_ok / _EMOTE_MIRROR_MIN_INTERVAL_S): unlike physical
-        sessions, which are lock-gated one-per-robot, any number of virtual
-        sessions can target the same mirror robot id concurrently, so without
-        this the mirror robot could be spammed far faster than a human-paced
-        conversation would ever drive it. A rate-limited attempt is silently
-        skipped (logged at debug, not warn -- it isn't an error) and, exactly
-        like a swallowed publish exception, never changes this virtual
-        session's own reply text or behaviour.
+        Emotes are physical-only: the send_emote tool is now only offered to a
+        physical session (see _enabled_tool_names), so physical=True is the
+        expected path here and publishes the emote to the target robot.
+        physical=False keeps a one-line defensive fallback for the (no longer
+        reachable through tool offering) virtual path: it captures the emote name
+        for avatar animation and publishes nothing.
         """
         captured["emote"] = name
         if not physical:
-            mirror_id = _emote_mirror_robot_id()
-            if mirror_id:
-                if self._mirror_rate_limit_ok(mirror_id):
-                    try:
-                        self._registry.send_command(mirror_id, Command(type="emote", name=name))
-                    except Exception:
-                        log.warning(
-                            "emote mirror publish to %s failed", mirror_id, exc_info=True
-                        )
-                else:
-                    log.debug(
-                        "emote mirror publish to %s skipped -- rate-limited "
-                        "(min %.1fs between mirrors)",
-                        mirror_id, _EMOTE_MIRROR_MIN_INTERVAL_S,
-                    )
             return "virtual emote played (avatar only — not connected to a robot)"
         if target is None:
             return _OFFLINE
