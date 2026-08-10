@@ -205,6 +205,36 @@ def kill_switch(body: KillBody, request: Request, _: bool = Depends(admin_requir
     return {"ok": True, "thing": thing, "desired": desired}
 
 
+# --- revive (one-way-to-enable) -----------------------------------------
+class ReviveBody(BaseModel):
+    robot_id: str
+
+
+@router.post("/revive")
+def revive(body: ReviveBody, request: Request, _: bool = Depends(admin_required)) -> dict:
+    """Revive re-enables physical motion on a robot: it is the intentional inverse
+    of the one-way-to-safe kill switch above.
+
+    HARD INVARIANT: the desired dict is hardcoded (never taken from the body).
+    max_speed stays at the project's safe 0.15 m/s cap. Because this re-enables
+    real motion it must only be used with a human observer present (project
+    safety policy: an unobserved robot = no motion)."""
+    cfg = request.app.state.config
+    thing = cfg.thing_names.get(body.robot_id)
+    if not thing:
+        raise HTTPException(status_code=400, detail=f"unknown robot {body.robot_id!r}")
+    desired = {"dry_run": False, "motion_enabled": True, "max_speed": 0.15}
+    payload = json.dumps({"state": {"desired": desired}}).encode("utf-8")
+    client = boto3.client(
+        "iot-data",
+        region_name=cfg.region,
+        endpoint_url=f"https://{cfg.iot_endpoint}",
+    )
+    client.update_thing_shadow(thingName=thing, payload=payload)
+    log.warning("motion revived", extra={"robot_id": body.robot_id, "thing": thing})
+    return {"ok": True, "thing": thing, "desired": desired}
+
+
 # --- virtual-world fleet-wide kill switch (Task 5.2) ----------------------
 # Distinct from the per-robot kill switch above (a PHYSICAL robot's IoT device
 # shadow desired-state) and from /robot/{robot_id}/command's per-robot `stop`

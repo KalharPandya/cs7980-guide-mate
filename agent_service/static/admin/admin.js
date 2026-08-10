@@ -184,9 +184,27 @@ async function loadRobots() {
       alert(resp.ok ? "Kill switch sent." : "Kill switch failed.");
     });
 
+    // Revive is the symmetric inverse of the kill switch: it re-enables physical
+    // motion (dry_run off, motion on, safe 0.15 m/s cap). Styled as a positive
+    // action, not red. Requires a human observer present with the robot.
+    const revive = document.createElement("button");
+    revive.textContent = "REVIVE";
+    revive.className = "success";
+    revive.addEventListener("click", async () => {
+      if (!confirm(`Re-enable physical motion for ${r.robot_id}? Make sure a human is present with the robot.`)) return;
+      const resp = await api("/revive", {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({ robot_id: r.robot_id }),
+      });
+      alert(resp.ok ? "Motion revived." : "Revive failed.");
+      if (resp.ok) loadRobots();
+    });
+
     card.appendChild(title);
     card.appendChild(meta);
     card.appendChild(kill);
+    card.appendChild(revive);
     list.appendChild(card);
   });
   if (!(data.robots || []).length) list.textContent = "No robots configured.";

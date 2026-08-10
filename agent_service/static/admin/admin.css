@@ -280,6 +280,23 @@ button[type="submit"]:hover,
 }
 .robot .danger:hover { filter: brightness(1.08); }
 
+/* Positive / enable controls (revive): green, the inverse of the kill switch */
+.btn-success, .success {
+  min-height: 44px;
+  background: color-mix(in srgb, var(--gm-success) 12%, var(--gm-surface));
+  border: 1px solid var(--gm-success);
+  color: var(--gm-success);
+}
+.btn-success:hover, .success:hover { background: var(--gm-success); color: #fff; }
+
+/* Revive gets full weight next to the kill switch, it re-enables motion */
+.robot .success {
+  background: var(--gm-success);
+  color: #fff;
+  letter-spacing: 0.04em;
+}
+.robot .success:hover { filter: brightness(1.08); }
+
 /* Dark-mode kill switch: the hero `--gm-danger` (#ff6b6b) is a pale coral —
    white text on it is only ~2:1 (WCAG fail). The kill switch must stay the
    highest-contrast, most-urgent control, so fill it with the deep Northeastern

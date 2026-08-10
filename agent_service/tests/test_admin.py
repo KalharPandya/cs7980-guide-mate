@@ -256,6 +256,33 @@ def test_kill_switch_refuses_to_enable_motion_even_when_authed(monkeypatch):
         assert FakeIotData.last_payload is None
 
 
+def test_revive_writes_motion_enabled_shadow(monkeypatch):
+    app = _make_app(monkeypatch)
+    monkeypatch.setattr(admin.boto3, "client", lambda *a, **k: FakeIotData())
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/admin/revive", json={"robot_id": "turtlebot468"}, headers=_auth_header()
+        )
+        assert resp.status_code == 200
+        desired = FakeIotData.last_payload["state"]["desired"]
+        # Revive is the inverse of the kill switch: motion on, dry_run off.
+        assert desired["motion_enabled"] is True
+        assert desired["dry_run"] is False
+        # Speed stays at the project's safe 0.15 m/s cap.
+        assert desired["max_speed"] == 0.15
+        assert FakeIotData.last_thing == "Turtlebot-468"
+
+
+def test_revive_unknown_robot_400(monkeypatch):
+    app = _make_app(monkeypatch)
+    monkeypatch.setattr(admin.boto3, "client", lambda *a, **k: FakeIotData())
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/admin/revive", json={"robot_id": "ghost"}, headers=_auth_header()
+        )
+        assert resp.status_code == 400
+
+
 def test_world_stop_publishes_fleet_stop_with_no_params(monkeypatch):
     app = _make_app(monkeypatch)
     with TestClient(app) as client:
