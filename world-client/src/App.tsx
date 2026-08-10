@@ -15,6 +15,7 @@ import { ChargingPads } from './scene/ChargingPads'
 import { RouteLines } from './scene/RouteLine'
 import { Floor } from './scene/Floor'
 import { Skyline } from './scene/Skyline'
+import { GoogleTiles } from './scene/GoogleTiles'
 import { Cores } from './scene/Cores'
 import { Walls } from './scene/Walls'
 import { RoomLabels } from './scene/RoomLabels'
@@ -48,6 +49,25 @@ import { useIsKiosk, useKioskFullscreen, useIdleAutoOrbit } from './KioskMode'
  */
 const LIGHT_OFFSET: readonly [number, number, number] = [10, 20, 5]
 const LIGHT_OFFSET_DISTANCE = Math.hypot(...LIGHT_OFFSET)
+
+/**
+ * When VITE_GOOGLE_MAPS_API_KEY is a non-empty string (baked in at build time), the scene renders
+ * the REAL downtown Vancouver via Google Photorealistic 3D Tiles (scene/GoogleTiles.tsx) instead
+ * of the procedural Skyline backdrop (scene/Skyline.tsx). No key (local/no-key runs) -> Skyline,
+ * so the app always renders something. Read once at module scope; Vite inlines it.
+ */
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string
+const USE_GOOGLE_TILES = typeof GOOGLE_MAPS_API_KEY === 'string' && GOOGLE_MAPS_API_KEY.length > 0
+
+/**
+ * Camera far plane. The default 1000 clips the real city: Google tiles stream the whole downtown
+ * core plus the North Shore mountains ~10-15 km out, which at this scene's 1 unit == 1 metre scale
+ * sit thousands of units away. Pushed out so the far city/ridges are not culled. Paired with the
+ * Canvas `logarithmicDepthBuffer` below so the huge near(floor)-to-far(mountains) depth range does
+ * not z-fight the 36 m floor. TUNING: if distant buildings still clip, raise this; if near geometry
+ * z-fights, that is the depth-range tradeoff to revisit. Only matters on the Google-tiles path.
+ */
+const CAMERA_FAR = USE_GOOGLE_TILES ? 60000 : 1000
 
 /**
  * Extra room (in meters) added around the floor's own X/Z footprint when sizing the directional
@@ -236,7 +256,14 @@ function App() {
       <ConnectionBadge status={status} isKiosk={isKiosk} />
       <Canvas
         shadows
-        camera={{ position: cameraPosition, fov: 50 }}
+        camera={{ position: cameraPosition, fov: 50, far: CAMERA_FAR }}
+        // logarithmicDepthBuffer keeps the 36 m floor crisp while the Google-tiles city stretches
+        // to the CAMERA_FAR horizon: a linear depth buffer over that near-to-far range would z-fight
+        // the floor badly. Enabled only on the Google-tiles path (it is unnecessary for the small
+        // procedural Skyline). Bloom below is luminance-based and does not sample depth, so it is
+        // unaffected. TUNING: if the postprocessing pass ever looks wrong under log depth, this is
+        // the first thing to revisit.
+        gl={{ logarithmicDepthBuffer: USE_GOOGLE_TILES }}
         style={{ width: '100vw', height: '100vh', display: 'block' }}
       >
         {/* Plain white background so the glass walls' transmission pass has something to sample
@@ -269,13 +296,13 @@ function App() {
             normals, culling, and shadows for the floor and walls stay correct. The camera, lights,
             and MapControls target sit OUTSIDE this group and have their z negated (see above). */}
         <group scale={[1, 1, -1]}>
-          {/* Suggested downtown-Vancouver backdrop (sky dome, fog, encircling glass towers, a
-              North-Shore ridge, a muted ground/water hint) sized to the floor's own bounds and
-              rendered FIRST so it sits behind the floor plan. Deliberately dim + fogged so the
-              floor, walls, labels and agents stay the readable focus. Inside this reflection group
-              like the rest of the floor-plan content, so it stays centered on the same building
-              and mirrors north-up with it. See scene/Skyline.tsx. */}
-          <Skyline floorPlan={floorPlan} />
+          {/* Downtown-Vancouver backdrop. On the NO-KEY path this is the procedural Skyline (sky
+              dome, fog, encircling glass towers, a North-Shore ridge, a muted ground hint) sized to
+              the floor's own bounds and rendered FIRST so it sits behind the floor plan. It lives
+              INSIDE this reflection group so it mirrors north-up with the floor. The real-city
+              Google-tiles backdrop instead mounts OUTSIDE this group (see <GoogleTiles/> below) --
+              real geography must NOT be z-mirrored -- so the two are mutually exclusive. */}
+          {!USE_GOOGLE_TILES && <Skyline floorPlan={floorPlan} />}
           <Floor floorPlan={floorPlan} />
           {/* The elevator/stair shafts, as solid mass standing in the openings Floor.tsx cuts out
               of the slab. MUST be inside this reflection group with the floor, or the blocks would
@@ -308,6 +335,15 @@ function App() {
           <AgentLabels agentIds={agentIds} agents={agents} />
           <RouteLines agentIds={agentIds} agents={agents} />
         </group>
+
+        {/* REAL downtown Vancouver via Google Photorealistic 3D Tiles, mounted OUTSIDE the north-up
+            reflection group above -- real geography must never be z-mirrored, so it lives in a
+            normal (unmirrored) world frame and is instead spun to line up with the floor via
+            SITE_HEADING_DEG (see scene/GoogleTiles.tsx). `center` is the floor's raw (x, z) meters;
+            GoogleTiles negates z internally to match this mirror so the city sits on the floor's
+            world position. Only mounted when a build-time API key is present; otherwise the mirrored
+            <Skyline/> above renders instead. */}
+        {USE_GOOGLE_TILES && <GoogleTiles center={[bounds.centerX, bounds.centerZ]} />}
 
         <MapControls
           ref={mapControlsRef}

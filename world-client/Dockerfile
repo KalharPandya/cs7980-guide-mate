@@ -30,11 +30,20 @@ ARG VITE_BASE_PATH=/viz/
 # useWorldRoom.ts already falls back to for local dev.
 ARG VITE_WORLD_SERVER_URL=ws://localhost:2567
 
+# Google Cloud Maps API key for the Photorealistic 3D Tiles backdrop (see src/scene/GoogleTiles.tsx
+# and src/App.tsx). Baked in at build time like the two ARGs above, because Vite inlines
+# import.meta.env.* into the static bundle -- there is no runtime env for a static build. Default is
+# EMPTY on purpose: with no key App.tsx falls back to the procedural Skyline, so a bare `docker
+# build` with no args still produces a working image. agent_service/compose.yaml passes the real
+# value from GOOGLE_MAPS_API_KEY in /etc/guidemate.env.
+ARG VITE_GOOGLE_MAPS_API_KEY=
+
 # Vite's loadEnv() picks VITE_-prefixed vars straight out of the process environment (no .env
 # file needed), and vite.config.ts reads VITE_BASE_PATH from process.env directly, so promoting
-# both ARGs to ENV is what actually gets them into the build.
+# these ARGs to ENV is what actually gets them into the build.
 ENV VITE_BASE_PATH=${VITE_BASE_PATH} \
-    VITE_WORLD_SERVER_URL=${VITE_WORLD_SERVER_URL}
+    VITE_WORLD_SERVER_URL=${VITE_WORLD_SERVER_URL} \
+    VITE_GOOGLE_MAPS_API_KEY=${VITE_GOOGLE_MAPS_API_KEY}
 
 COPY world-client/tsconfig.json world-client/vite.config.ts world-client/index.html /app/
 COPY world-client/src /app/src

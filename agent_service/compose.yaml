@@ -68,6 +68,13 @@ services:
         # (wss://localhost/world) rather than the malformed "wss:///world" a bare
         # ${GUIDEMATE_DOMAIN} would yield.
         - VITE_WORLD_SERVER_URL=${GUIDEMATE_WORLD_WS_URL:-wss://${GUIDEMATE_DOMAIN:-localhost}/world}
+        # Google Cloud Maps API key for the Photorealistic 3D Tiles backdrop (the REAL downtown
+        # Vancouver around the 14th-floor plan; see world-client/src/scene/GoogleTiles.tsx). Baked
+        # in at build time (Vite inlines import.meta.env.* -- a static bundle has no runtime env).
+        # Reads GOOGLE_MAPS_API_KEY from /etc/guidemate.env. Empty by default: with no key the
+        # client falls back to the procedural Skyline, so a bare `docker compose up` still builds a
+        # working image.
+        - VITE_GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
     restart: unless-stopped
     expose:
       - "8080"
