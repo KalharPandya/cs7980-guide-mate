@@ -143,8 +143,12 @@ top of this workspace. Work happens on branch **`kalhar/dog-agent-poc`**.
 ## ACTIVE: virtual world guide fleet (2026-07-26 to 2026-07-31, Phases 0-5 done)
 The closure-demo direction decided 2026-07-26: instead of more physical-robot work, the
 existing central agent (Moses) drives up to ~50 virtual guide-robots through a
-browser-based 3D floor of Northeastern Vancouver. Physical robot 468 stays emotes-only
-(with an optional emote-mirror hook, see below). Work happens on branch
+browser-based 3D floor of Northeastern Vancouver. Physical robot 468 stays emotes-only.
+The physical-vs-virtual split is now an explicit per-session admin choice and Moses's
+behavior follows it: a session assigned a PHYSICAL robot does emotes only (no navigation),
+a session assigned a VIRTUAL robot does navigation only (no emotes). The old opt-in
+emote-mirror hook was removed 2026-08-10 (virtual sessions no longer emote, so it could
+never fire). Work happens on branch
 **`feat/kalhar-virtual-world`**, in the isolated worktree
 `.claude/worktrees/feat+kalhar-virtual-world` (this repo has multiple concurrent Claude
 sessions sharing the main tree, see memory `multi-agent-shared-worktree-git-discipline`).

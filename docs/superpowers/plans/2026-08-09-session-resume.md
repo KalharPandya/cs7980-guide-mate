@@ -26,6 +26,35 @@ top to bottom, then check "In progress" and "Not done" before touching anything.
    shadow step failed on `/dev/stdout` and had to be run separately.
 
 ## DONE and DEPLOYED (all on kalhar-main, live)
+
+### Moses physical-vs-virtual mode, admin-assignable (added 2026-08-10, commits `ecd4aee`, `4091660`)
+The physical/virtual capability split is now an EXPLICIT per-session admin choice and Moses's
+behavior follows it. Mode is derived in `dog_agent._resolve_session`: `physical =
+robot_for_session(session_id) is not None` (a session holding a physical robot lock is physical;
+no lock is virtual). Both `/api/chat` and the WebSocket path funnel through `DogAgent.chat`, so
+the gate applies to both.
+- **Emotes are now PHYSICAL-only.** `send_emote` and `EMOTE_INSTRUCTION` are gated on `physical`
+  in `_enabled_tool_names` / `_system_prompt`. A virtual session gets `guide_to_room` only (no
+  emote/motion/status); a physical session gets emote + run_motion/stop/get_status, no
+  `guide_to_room`. This closed a real bug: virtual sessions used to emote.
+- **Emote-mirror feature REMOVED** (was `GUIDEMATE_EMOTE_MIRROR_ROBOT_ID`, opt-in Task 5.3). It
+  echoed a virtual session's emote onto a physical robot; with virtual sessions no longer
+  emoting it can never fire, so it plus its env var (compose.yaml) and 6 tests are gone.
+- **Admin assignment:** physical assignment already existed (approve/reassign acquires the lock).
+  Added the explicit virtual side: `sessions.assign_virtual(session_id, registry)` (releases any
+  held robot, docks it, clears the binding, session stays active) and `POST
+  /api/admin/session/{id}/assign-virtual`. Admin Sessions tab now shows a MODE label
+  (`Physical: <id>` or `Virtual (navigation)`) with "Assign Physical" (robot dropdown) and
+  "Assign Virtual (navigation)" buttons.
+- **Fleet counts stay hardcoded** (`GUIDE_ROBOT_COUNT=5`, `RESERVED_ROBOTS_FOR_REAL_USERS=2` in
+  `world/`); the admin allocates MODE per session, not fleet size. Editing those two numbers +
+  redeploy is the way to change fleet capacity (no runtime knob was built, by decision).
+- **LIVE E2E, traced on the instance (SSM, real Bedrock), all four checks passed:** virtual
+  assigned -> Moses navigates (fleet dispatched `virtual/2`), `emote=None`. Physical assigned
+  (throwaway id `phys-e2e-noop`, robot 468 never touched) -> Moses refuses navigation
+  ("I cannot walk anywhere since I have no navigation") and emotes (`happy`). Admin flip
+  physical->virtual -> Moses navigates again, `emote=None`. Full suite green: 311 passed.
+
 Floor plan (`world/data/floor-14.json`, twin `world-client/public/data/floor-14.json`, byte-identical):
 - Rebuilt from primitives, 124 -> 84 walls. Root causes fixed: the `elevator-stair-core-upper`
   hole polygon was self-intersecting (broke the drop-walls-inside-a-hole filter, leaving 13
