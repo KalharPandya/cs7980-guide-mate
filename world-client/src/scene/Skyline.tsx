@@ -57,11 +57,25 @@ const MOUNTAIN_FAR_COLOR = '#5a6a76'
 const GROUND_COLOR = '#9fb0ba'
 
 /* --------------------------------------------------------------------------------------------- */
+/* Elevation. The rendered floor plan is the building's 14TH FLOOR, so the whole city is built     */
+/* relative to that height instead of at street level.                                             */
+/* --------------------------------------------------------------------------------------------- */
+
+/** The floor plan we render (walls/agents/route) is the building's 14th floor: roughly 13 storeys
+ *  at ~3.5 m each above the street (~45 m). The floor slab itself stays at y=0 (do NOT move it);
+ *  instead the surrounding city is built DOWN to the street at y = -FLOOR_ELEVATION_M and UP around
+ *  this elevated floor, so orbiting reads as "up high on the 14th floor" -- street + tower bases far
+ *  below, tower mid-sections at eye level, tops rising above, mountains beyond. Single named
+ *  constant so the whole sense of height is one knob to tune after a visual review. Meters. */
+const FLOOR_ELEVATION_M = 45
+
+/* --------------------------------------------------------------------------------------------- */
 /* Layout multipliers (of the floor's half-extent HALF). Tune these after a visual review.        */
 /* --------------------------------------------------------------------------------------------- */
 
 /** Tower ring band: inner edge at 1.7x, outer edge at 3.0x the floor half-extent out from center,
- *  i.e. always BEYOND the floor bounds (the prompt's ~1.5x-3x "encircle it" range). */
+ *  i.e. always BEYOND the floor bounds (the prompt's ~1.5x-3x "encircle it" range). Horizontal
+ *  only -- unchanged by the elevation work, which is purely vertical. */
 const RING_INNER_MULT = 1.7
 const RING_OUTER_MULT = 3.0
 /** How many towers ring the floor. A few dozen: dense enough to read as downtown, cheap enough
@@ -70,16 +84,37 @@ const TOWER_COUNT = 46
 /** Chance a given tower is a tall "landmark" spire rather than a mid-rise. */
 const LANDMARK_CHANCE = 0.16
 
+/** Tower HEIGHTS in absolute meters (downtown Vancouver runs ~100-200 m). Every tower BASE sits at
+ *  the street (y = -FLOOR_ELEVATION_M), so with the floor plane at y=0 a mid-rise of ~110 m tops out
+ *  at +65 m: you are surrounded by tower mid-sections, many crowns land ABOVE the floor, and the
+ *  bases drop far below. Landmarks are the taller spires. Tuned so a good share of tops clear y=0. */
+const TOWER_HEIGHT_MIN_M = 55
+const TOWER_HEIGHT_MAX_M = 170
+const LANDMARK_HEIGHT_MIN_M = 170
+const LANDMARK_HEIGHT_MAX_M = 210
+
+/** North-Shore ridge peak heights in absolute meters. The ridge base sits at the street
+ *  (MOUNTAIN_BASE_Y) and peaks rise well above the floor plane so, from the elevated floor, the
+ *  ridge reads BEHIND and slightly ABOVE the tower tops rather than buried below. Far layer taller
+ *  so it stacks behind the near one. (These are backdrop-scaled, not real 1000 m+ mountains: the
+ *  towers are only ~200 m here, so the ridge just needs to clear them.) */
+const MOUNTAIN_BASE_Y = -FLOOR_ELEVATION_M
+const MOUNTAIN_NEAR_PEAK_M = 190
+const MOUNTAIN_FAR_PEAK_M = 240
+
 /** Distances (x HALF) of the two ridge layers and the ground disc / sky dome radii. */
 const MOUNTAIN_NEAR_DIST_MULT = 3.4
 const MOUNTAIN_FAR_DIST_MULT = 4.3
 const GROUND_RADIUS_MULT = 7.0
-const SKY_RADIUS_MULT = 11.0
+/** Sky dome radius (x HALF). Bumped up from 11x so the dome still encloses the now much deeper
+ *  scene: the street/tower bases at -FLOOR_ELEVATION_M and the tall towers + ridge above y=0. */
+const SKY_RADIUS_MULT = 13.0
 
 /** Linear fog: floor + near towers stay crisp inside `near`, the skyline fades out toward `far`.
- *  Pushed out past the whole floor+camera distance so the floor plan itself reads clean. */
-const FOG_NEAR_MULT = 2.8
-const FOG_FAR_MULT = 6.5
+ *  Pushed out (from 2.8/6.5) for the now taller/deeper scene so the FLOOR PLAN near the camera
+ *  stays crisp and un-fogged while the far street below and distant towers/ridge haze out. */
+const FOG_NEAR_MULT = 3.2
+const FOG_FAR_MULT = 8.5
 
 /* --------------------------------------------------------------------------------------------- */
 /* Shared, bounds-independent geometry + materials (module scope, matching Walls.tsx's pattern of  */
@@ -248,8 +283,11 @@ export function Skyline({ floorPlan }: { floorPlan: FloorPlan }) {
       const angle = (i / TOWER_COUNT) * Math.PI * 2 + (rng() - 0.5) * (Math.PI / TOWER_COUNT) * 1.6
       const radius = ringInner + rng() * (ringOuter - ringInner)
       const landmark = rng() < LANDMARK_CHANCE
-      // Vancouver is slender glass towers: tall relative to their small footprint.
-      const height = landmark ? half * (1.8 + rng() * 1.1) : half * (0.45 + rng() * 1.0)
+      // Vancouver is slender glass towers: tall relative to their small footprint. Absolute-meter
+      // heights (not HALF-scaled) so the vertical drama is calibrated to the 45 m floor elevation.
+      const height = landmark
+        ? LANDMARK_HEIGHT_MIN_M + rng() * (LANDMARK_HEIGHT_MAX_M - LANDMARK_HEIGHT_MIN_M)
+        : TOWER_HEIGHT_MIN_M + rng() * (TOWER_HEIGHT_MAX_M - TOWER_HEIGHT_MIN_M)
       const width = 2.6 + rng() * 3.4
       const depth = 2.6 + rng() * 3.4
       towers.push({
@@ -262,8 +300,8 @@ export function Skyline({ floorPlan }: { floorPlan: FloorPlan }) {
       })
     }
 
-    const ridgeNear = buildRidgeGeometry(rng, half * 6.5, half * 1.4, 26)
-    const ridgeFar = buildRidgeGeometry(rng, half * 8.0, half * 1.8, 22)
+    const ridgeNear = buildRidgeGeometry(rng, half * 6.5, MOUNTAIN_NEAR_PEAK_M, 26)
+    const ridgeFar = buildRidgeGeometry(rng, half * 8.0, MOUNTAIN_FAR_PEAK_M, 22)
     return { towers, ridgeNear, ridgeFar }
   }, [bounds, half])
 
@@ -294,12 +332,13 @@ export function Skyline({ floorPlan }: { floorPlan: FloorPlan }) {
         frustumCulled={false}
       />
 
-      {/* Muted ground/water hint so the towers do not float. Sits just below the floor slab
-          (Floor.tsx is at y=-0.005) to avoid z-fighting, and its far edge fades into the fog. */}
+      {/* Muted ground/water hint so the towers do not float. Sits at the STREET, a full
+          FLOOR_ELEVATION_M below the floor slab, so it reads as the ground far below the 14th
+          floor; its far edge fades into the fog. */}
       <mesh
         geometry={UNIT_DISC}
         material={GROUND_MATERIAL}
-        position={[bounds.centerX, -0.1, bounds.centerZ]}
+        position={[bounds.centerX, -FLOOR_ELEVATION_M, bounds.centerZ]}
         rotation={[-Math.PI / 2, 0, 0]}
         scale={[groundRadius, groundRadius, groundRadius]}
         renderOrder={-9}
@@ -307,29 +346,32 @@ export function Skyline({ floorPlan }: { floorPlan: FloorPlan }) {
 
       {/* North-Shore ridge silhouette on one side (floor-plan +z / north), two layers for depth;
           unlit (MeshBasic) + fog so distance desaturates them toward the horizon. Rotated 180 so
-          the DoubleSide face reads from the default south-ish camera; DoubleSide makes orbit safe. */}
+          the DoubleSide face reads from the default south-ish camera; DoubleSide makes orbit safe.
+          Base dropped to the street (MOUNTAIN_BASE_Y) with tall peaks, so from the elevated floor
+          the ridge rises from near the horizon and reads BEHIND and slightly ABOVE the towers. */}
       <mesh
         geometry={ridgeNear}
         material={MOUNTAIN_NEAR_MATERIAL}
-        position={[bounds.centerX, 0, bounds.centerZ + mountainNearDist]}
+        position={[bounds.centerX, MOUNTAIN_BASE_Y, bounds.centerZ + mountainNearDist]}
         rotation={[0, Math.PI, 0]}
       />
       <mesh
         geometry={ridgeFar}
         material={MOUNTAIN_FAR_MATERIAL}
-        position={[bounds.centerX, 0, bounds.centerZ + mountainFarDist]}
+        position={[bounds.centerX, MOUNTAIN_BASE_Y, bounds.centerZ + mountainFarDist]}
         rotation={[0, Math.PI, 0]}
       />
 
-      {/* The tower ring. Each tower is the shared unit box scaled to (width, height, depth) and
-          lifted so its base sits on y=0; a lighter crown cap catches the sky. None cast shadows
-          (they are far and must never darken the floor) and none receive shadows. */}
+      {/* The tower ring. Each tower is the shared unit box scaled to (width, height, depth) with its
+          BASE at the street (y = -FLOOR_ELEVATION_M) so it rises from far below the floor, up past
+          the floor plane (y=0) and above it; a lighter crown cap at the very top catches the sky.
+          None cast shadows (they are far and must never darken the floor) and none receive shadows. */}
       {towers.map((t, i) => (
         <group key={i}>
           <mesh
             geometry={UNIT_BOX}
             material={TOWER_MATERIALS[t.matIndex]}
-            position={[t.x, t.height / 2, t.z]}
+            position={[t.x, -FLOOR_ELEVATION_M + t.height / 2, t.z]}
             scale={[t.width, t.height, t.depth]}
             castShadow={false}
             receiveShadow={false}
@@ -337,7 +379,7 @@ export function Skyline({ floorPlan }: { floorPlan: FloorPlan }) {
           <mesh
             geometry={UNIT_BOX}
             material={CROWN_MATERIAL}
-            position={[t.x, t.height + 0.35, t.z]}
+            position={[t.x, -FLOOR_ELEVATION_M + t.height + 0.35, t.z]}
             scale={[t.width * 0.72, 0.7, t.depth * 0.72]}
             castShadow={false}
             receiveShadow={false}
