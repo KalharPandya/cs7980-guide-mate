@@ -14,6 +14,7 @@ import { Furniture } from './scene/Furniture'
 import { ChargingPads } from './scene/ChargingPads'
 import { RouteLines } from './scene/RouteLine'
 import { Floor } from './scene/Floor'
+import { Skyline } from './scene/Skyline'
 import { Cores } from './scene/Cores'
 import { Walls } from './scene/Walls'
 import { RoomLabels } from './scene/RoomLabels'
@@ -268,6 +269,13 @@ function App() {
             normals, culling, and shadows for the floor and walls stay correct. The camera, lights,
             and MapControls target sit OUTSIDE this group and have their z negated (see above). */}
         <group scale={[1, 1, -1]}>
+          {/* Suggested downtown-Vancouver backdrop (sky dome, fog, encircling glass towers, a
+              North-Shore ridge, a muted ground/water hint) sized to the floor's own bounds and
+              rendered FIRST so it sits behind the floor plan. Deliberately dim + fogged so the
+              floor, walls, labels and agents stay the readable focus. Inside this reflection group
+              like the rest of the floor-plan content, so it stays centered on the same building
+              and mirrors north-up with it. See scene/Skyline.tsx. */}
+          <Skyline floorPlan={floorPlan} />
           <Floor floorPlan={floorPlan} />
           {/* The elevator/stair shafts, as solid mass standing in the openings Floor.tsx cuts out
               of the slab. MUST be inside this reflection group with the floor, or the blocks would
