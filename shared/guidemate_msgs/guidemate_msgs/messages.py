@@ -101,6 +101,17 @@ class Command(BaseModel):
                     "assign params 'from_room' must be a string when present, got "
                     f"{self.params!r}"
                 )
+            # OPTIONAL: the visitor's real human name, carried all the way to the world so
+            # their in-world tag shows it ("Kalhar") instead of a client-derived pool
+            # name. Validated exactly like `from_room`: a non-string present value is a
+            # schema violation, while absent/None means "not provided" and the world falls
+            # back to its id-derived label, so every pre-existing caller is unchanged.
+            name = self.params.get("name")
+            if name is not None and not _is_string(name):
+                raise ValueError(
+                    "assign params 'name' must be a string when present, got "
+                    f"{self.params!r}"
+                )
         return self
 
 

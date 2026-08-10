@@ -120,7 +120,14 @@ export function stableHash(text: string): number {
  * explicitly a robot is treated as a person, which fails toward a friendly name rather than
  * toward a machine id leaking onto the screen.
  */
-export function displayNameForAgent(id: string, kind: string): string {
+export function displayNameForAgent(id: string, kind: string, name = ''): string {
+  // An explicit, non-empty server name is the real operator/user-supplied name (a Moses
+  // `assign` carried it: see world/src/rooms/schema/WorldState.ts's Agent.name). It wins
+  // over any id-derived label -- show "Kalhar", not a pool name. Empty/absent falls
+  // through to the existing id-derivation below, so simulated visitors and seeded robots
+  // (which never set a name) render exactly as before.
+  if (typeof name === 'string' && name.length > 0) return name
+
   if (kind === 'robot') {
     const number = trailingNumber(id)
     if (number !== null) return `${ROBOT_NAME_PREFIX}${number}`

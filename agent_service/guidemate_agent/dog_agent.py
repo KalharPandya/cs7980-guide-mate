@@ -545,6 +545,14 @@ class DogAgent:
             sessions.bind_visitor(session_id, visitor_id)
 
         params = {"visitor_id": visitor_id, "room": room}
+        # Carry the session user's real name to the world so their in-world tag shows it
+        # ("Kalhar") instead of a client-derived pool name. Defensive: a missing session or
+        # a blank/absent name simply omits the field (the world then falls back to the
+        # id-derived label), so nothing breaks when the session has no name on file.
+        sess = sessions.get_session(session_id) if session_id else None
+        name = (sess or {}).get("name")
+        if isinstance(name, str) and name.strip():
+            params["name"] = name.strip()
         # Strip whitespace before deciding: the tool schema gives from_room a "" default
         # (see _build_tools), and a model that "answers" with " " must be treated as
         # not-provided too, not shipped as a blank room name.

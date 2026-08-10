@@ -115,7 +115,12 @@ export interface WorldRoomLike {
    * Returns `false` (adds nothing) if the world is already at MAX_AGENTS --
    * `handleFleetCommand` below acks failed/"world_at_capacity" in that case rather than
    * proceeding to `requestGuide` for a visitor that was never actually added. */
-  addAgent(id: string, kind: "robot" | "visitor", spawn: { x: number; z: number }): boolean;
+  addAgent(
+    id: string,
+    kind: "robot" | "visitor",
+    spawn: { x: number; z: number },
+    name?: string,
+  ): boolean;
   /** Nav-space entrance point to spawn a fresh real visitor at -- see
    * `WorldRoom.getEntrancePoint`. Used only when an `assign` carries no `from_room`. */
   getEntrancePoint(): { x: number; z: number };
@@ -394,6 +399,10 @@ export class IotBridge {
     const visitorId = cmd.params.visitor_id as string;
     const roomName = cmd.params.room as string;
     const fromRoom = typeof cmd.params.from_room === "string" ? cmd.params.from_room : null;
+    // Optional real visitor name (see messages.py's assign validation): defaults to "" so
+    // a spawn without one behaves exactly as before -- the world/client derive a label
+    // from the id. parseCommand already guaranteed it is a string when present.
+    const name = typeof cmd.params.name === "string" ? cmd.params.name : "";
 
     // requestGuide requires visitorId to already be a tracked agent (it only lazily
     // creates its own bookkeeping record, not the Crowd/schema agent -- see
@@ -428,7 +437,7 @@ export class IotBridge {
         spawn = room.getEntrancePoint();
       }
 
-      const added = room.addAgent(visitorId, "visitor", spawn);
+      const added = room.addAgent(visitorId, "visitor", spawn, name);
       if (!added) {
         this.publishFleetAck(
           makeAck({ cmd_id: cmd.cmd_id, state: "failed", reason: "world_at_capacity", simulated: true }),

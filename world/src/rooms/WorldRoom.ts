@@ -393,7 +393,12 @@ export class WorldRoom extends Room<{ state: WorldState }> {
    * room's peak concurrent agent count, `new Agent()` is never called again for the rest
    * of the process's life.
    */
-  addAgent(id: string, kind: "robot" | "visitor", spawn: { x: number; z: number }): boolean {
+  addAgent(
+    id: string,
+    kind: "robot" | "visitor",
+    spawn: { x: number; z: number },
+    name = "",
+  ): boolean {
     if (this.state.agents.size >= MAX_AGENTS) {
       console.warn(
         `WorldRoom.addAgent: refusing to add agent "${id}" -- world already at MAX_AGENTS (${MAX_AGENTS})`,
@@ -416,6 +421,10 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     agent.x = spawn.x;
     agent.z = spawn.z;
     agent.heading = 0;
+    // Empty by default (simulated visitors and seeded robots pass nothing); only a real
+    // operator/user-supplied name sets this. Reset explicitly since a pooled Agent
+    // instance may carry a previous occupant's name.
+    agent.name = name;
     if (agent.route.length > 0) agent.route.clear();
     this.state.agents.set(id, agent);
     return true;

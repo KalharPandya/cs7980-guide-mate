@@ -28,6 +28,14 @@ export interface AgentSnapshot {
   heading: number;
   state: string;
   /**
+   * Explicit human-readable name synced from the server (world's Agent.name), e.g. a real
+   * visitor's name a Moses `assign` carried in. Empty ("") when the server set none, in
+   * which case the tag falls back to an id-derived label (see scene/agentLabel.ts's
+   * displayNameForAgent). Captured once in onAdd like id/kind -- it never changes for an
+   * agent's lifetime, so it is not re-read in the onChange poll below.
+   */
+  name: string;
+  /**
    * Flattened (x0, z0, x1, z1, ...) polyline of this agent's current navigation route, or
    * empty when idle -- see world/src/rooms/schema/WorldState.ts's Agent.route doc comment
    * for why it's flattened numbers rather than an ArraySchema of a Point sub-schema.
@@ -182,6 +190,7 @@ export function useWorldRoom(): {
             agentsRef.current.set(key, {
               id: agent.id,
               kind: agent.kind,
+              name: agent.name ?? "",
               x: agent.x,
               z: agent.z,
               heading: agent.heading,

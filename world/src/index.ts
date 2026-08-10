@@ -16,6 +16,44 @@ app.get("/healthz", (_req, res) => {
   res.json({ ok: true });
 });
 
+// Read-only observability endpoint (no mutation): dumps the live world's agents so an
+// operator or an E2E test can OBSERVE the fleet directly (real name, kind, state,
+// position) instead of inferring it from an MQTT ack. Reachable in prod at /world/agents
+// (Caddy strips the /world prefix, same as /world/healthz). Returns { agents: [] } when no
+// room exists yet (before the eager boot pre-creation resolves, or after a dispose).
+app.get("/agents", (_req, res) => {
+  if (!activeRoom) {
+    res.json({ agents: [] });
+    return;
+  }
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const agents: { id: string; kind: string; name: string; state: string; x: number; z: number }[] = [];
+  // WorldRoomLike.state.agents (bridge.ts) is deliberately a minimal structural type
+  // exposing only `.get`; the live map is a colyseus MapSchema<Agent> with the full agent
+  // fields. Cast just here to iterate it read-only for this dump -- no mutation.
+  const liveAgents = activeRoom.state.agents as unknown as {
+    forEach(cb: (agent: {
+      id?: string;
+      kind?: string;
+      name?: string;
+      state?: string;
+      x?: number;
+      z?: number;
+    }) => void): void;
+  };
+  liveAgents.forEach((agent) => {
+    agents.push({
+      id: agent.id ?? "",
+      kind: agent.kind ?? "",
+      name: agent.name ?? "",
+      state: agent.state ?? "",
+      x: round2(agent.x ?? 0),
+      z: round2(agent.z ?? 0),
+    });
+  });
+  res.json({ agents });
+});
+
 const httpServer = createServer(app);
 
 const gameServer = new Server({

@@ -285,7 +285,7 @@ export function AgentLabels({
   // never changes identity and never re-triggers this on a position patch.
   const tags = useMemo(() => {
     const entries = agentIds
-      .map((id) => ({ id, kind: agents.get(id)?.kind ?? 'visitor' }))
+      .map((id) => ({ id, kind: agents.get(id)?.kind ?? 'visitor', name: agents.get(id)?.name ?? '' }))
       .sort(
         (a, b) =>
           kindRank(a.kind) - kindRank(b.kind) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
@@ -293,7 +293,7 @@ export function AgentLabels({
     return entries.map((entry, index) => ({
       ...entry,
       priority: index,
-      name: displayNameForAgent(entry.id, entry.kind),
+      name: displayNameForAgent(entry.id, entry.kind, entry.name),
     }))
   }, [agentIds, agents])
 

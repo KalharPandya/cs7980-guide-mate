@@ -22,6 +22,15 @@ export class Agent extends Schema {
   @type("string") kind!: "robot" | "visitor";
   @type("string") state = "idle";
   @type(["number"]) route = new ArraySchema<number>();
+  /**
+   * Explicit human-readable name for this agent's tag, e.g. the real visitor's name a
+   * Moses `assign` carried in ("Kalhar") instead of a pool name. EMPTY ("") means "no
+   * explicit name": the client may then derive a label from the id as before (see
+   * world-client/src/scene/agentLabel.ts's displayNameForAgent). Simulated visitors and
+   * seeded guide-robots leave this "" and render exactly as they did before this field
+   * existed -- only an operator/user-supplied name is ever set here.
+   */
+  @type("string") name = "";
 }
 
 /**
