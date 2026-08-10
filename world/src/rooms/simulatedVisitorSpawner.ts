@@ -297,9 +297,12 @@ export class SimulatedVisitorSpawner {
   }
 
   /** Advances the non-escort parts of each simulated visitor's ROAMING lifecycle:
-   * "waiting_for_robot" retries requestGuide on cooldown; "dwelling" counts down then picks
-   * the NEXT random room and re-enters "waiting_for_robot" so the visitor is escorted onward
-   * (it roams room to room forever, never returning to the entrance and never despawning).
+   * "waiting_for_robot" retries requestGuide on cooldown; "dwelling" first PARKS the visitor
+   * (points its Detour target at its own position so it comes cleanly to rest at the room
+   * instead of trailing the departed robot / drifting under crowd separation), then counts
+   * down and picks the NEXT random room and re-enters "waiting_for_robot" so the visitor is
+   * escorted onward (it roams room to room forever, never returning to the entrance and never
+   * despawning).
    * "walking_to_room" is intentionally not handled here -- that whole span (the escort's
    * approaching -> greeting -> leading phases in EscortManager) is entirely driven by
    * `EscortManager.tick()`, which transitions this to "dwelling" on arrival/timeout. The
@@ -319,6 +322,21 @@ export class SimulatedVisitorSpawner {
         }
 
         case "dwelling": {
+          // Clean stop while dwelling. When the escort ended (EscortManager.endEscort seeded
+          // this dwell) the visitor was left trailing the robot that just walked it here, and
+          // it is still being shoved by crowd separation from nearby agents -- so its Crowd
+          // agent keeps jittering/orbiting/drifting instead of coming to rest at the room.
+          // Park it: point its Detour move target at its OWN current position so the crowd
+          // decelerates it to a halt and holds it there for the whole dwell. Re-issue this ONLY
+          // while the agent still reads "moving"; once it has settled to "idle" we stop
+          // re-targeting, so a parked visitor is not handed a fresh target every single frame
+          // (no churn). This does not move the visitor anywhere -- the target IS where it
+          // already is -- so it never disturbs the roam-onward transition below.
+          const agent = this.host.agents.get(visitor.id);
+          if (agent && agent.state === "moving") {
+            this.host.moveAgentTo(visitor.id, { x: agent.x, z: agent.z });
+          }
+
           visitor.simulatedCooldownSeconds -= dtSeconds;
           if (visitor.simulatedCooldownSeconds <= 0) {
             // ROAM onward: instead of walking back to the entrance and despawning, the

@@ -1589,6 +1589,134 @@ async function testSimulatedVisitorRoamsToNextRoomAfterDwell(): Promise<void> {
   room.onDispose();
 }
 
+/**
+ * CLEAN STOP while dwelling (the bug this fixes): when a simulated visitor's escort ends it
+ * enters "dwelling", but it was left trailing the robot that walked it in and is still shoved
+ * around by crowd separation, so its Crowd agent keeps jittering/orbiting/drifting instead of
+ * coming to rest at the room. `tickLifecycle`'s "dwelling" branch must PARK it -- point its
+ * Detour move target at its OWN current position -- so it settles and holds still for the dwell,
+ * and it must NOT be routed anywhere else while dwelling.
+ *
+ * Drives the spawner's lifecycle tick DIRECTLY (not `room.update()`) so the agent's forced
+ * "moving" state -- standing in for the post-escort trailing/drift -- is not overwritten by the
+ * crowd's own idle/moving reclassification before the dwell branch reads it. Spies
+ * `WorldRoom.moveAgentTo` (the host routes every park through it) to prove: while the agent reads
+ * "moving" the dwell issues a park to the agent's OWN live x/z (never a far target), and once the
+ * agent has settled to "idle" it stops re-issuing (no per-frame churn on an already-parked visitor).
+ */
+async function testDwellingSimulatedVisitorParksInPlace(): Promise<void> {
+  const room = new WorldRoom();
+  // disableSimulatedVisitors: no background spawner minting/moving other visitors (also sets the
+  // spawner target to 0, so tickSpawner is a no-op and only the hand-registered visitor's
+  // lifecycle ticks). disableGuideRobots: no escort ever binds this visitor, so nothing but the
+  // dwell parking touches it.
+  await room.onCreate({ disableSimulatedVisitors: true, disableGuideRobots: true });
+  room.setSimulationInterval();
+
+  const plan = loadFloorPlan();
+  const escorts = (room as unknown as { visitors: { escorts: EscortManager } }).visitors.escorts;
+  // Reach the spawner so we can tick its lifecycle in isolation (same test-only private-field
+  // reach the sibling tests use for `.visitors.escorts`).
+  const spawner = (room as unknown as { visitors: { spawner: { tick: (dt: number) => void } } })
+    .visitors.spawner;
+  const agents = agentsMap(room);
+
+  // A simulated visitor parked at a room door, already "dwelling", with a LONG dwell cooldown so
+  // it never roams onward during this test (we are testing the park, not the roam).
+  const startRoom = plan.rooms.find((r) => r.name === "Kitchen") ?? plan.rooms[0];
+  const startPos = { x: startRoom.door[0], z: startRoom.door[1] };
+  const id = "park-sim";
+  room.addAgent(id, "visitor", startPos);
+  const record: VisitorRecord = {
+    id,
+    kind: "simulated",
+    robotId: null,
+    escortPhase: null,
+    greetSecondsRemaining: 0,
+    escortDestination: null,
+    escortLeadTarget: null,
+    escortElapsedSeconds: 0,
+    escortSinceLastTrailUpdateSeconds: 0,
+    robotPositionHistory: [],
+    simulatedPhase: "dwelling",
+    simulatedTargetRoom: startRoom.name,
+    simulatedCooldownSeconds: 1000, // never expires during this test -> stays "dwelling"
+    realDespawnSeconds: null,
+  };
+  escorts.registerVisitor(record);
+
+  // Spy on moveAgentTo (the host routes every park through room.moveAgentTo). Capture, at call
+  // time, both the target the dwell asked for AND the agent's OWN live position, so we can assert
+  // the two match exactly. String (room-name) targets are recorded too so any "sent elsewhere"
+  // routing would show up -- the dwell never uses one.
+  type Call = { agentId: string; tx: number | null; tz: number | null; ax: number; az: number };
+  const calls: Call[] = [];
+  const original = room.moveAgentTo.bind(room);
+  (room as unknown as { moveAgentTo: WorldRoom["moveAgentTo"] }).moveAgentTo = (agentId, target) => {
+    const a = agents.get(agentId);
+    calls.push({
+      agentId,
+      tx: typeof target === "string" ? null : target.x,
+      tz: typeof target === "string" ? null : target.z,
+      ax: a ? a.x : NaN,
+      az: a ? a.z : NaN,
+    });
+    return original(agentId, target);
+  };
+
+  // Force the agent into the drifting "moving" state the post-escort trailing leaves it in, then
+  // tick the lifecycle a few times -- each moving tick must re-park it to its own position.
+  agents.get(id)!.state = "moving";
+  for (let i = 0; i < 3; i++) spawner.tick(0.1);
+
+  const movingCalls = calls.filter((c) => c.agentId === id);
+  assert.ok(
+    movingCalls.length > 0,
+    "a dwelling visitor whose agent is still moving must be PARKED (moveAgentTo issued) so it comes to rest",
+  );
+  for (const c of movingCalls) {
+    assert.ok(
+      c.tx !== null && c.tz !== null,
+      "the dwell park must target a literal {x,z} point (the agent's own position), not a room name -- it must not route the visitor to a room while dwelling",
+    );
+    // The park must point at the agent's OWN live position, i.e. "stay exactly here".
+    assert.equal(c.tx, c.ax, "the dwell park must target the agent's own current x (park in place, not sent elsewhere)");
+    assert.equal(c.tz, c.az, "the dwell park must target the agent's own current z (park in place, not sent elsewhere)");
+    // And that position is where it dwelled -- never the entrance or another room.
+    assert.ok(
+      Math.hypot(c.tx! - startPos.x, c.tz! - startPos.z) < 0.5,
+      `the dwell park must hold the visitor at its dwell spot; got a target ${Math.hypot(
+        c.tx! - startPos.x,
+        c.tz! - startPos.z,
+      ).toFixed(3)}m away from it`,
+    );
+  }
+
+  // It must stay dwelling (not roam / despawn) -- the long cooldown has not expired.
+  const still = [...escorts.allVisitors()].find((v) => v.id === id);
+  assert.ok(still, "the dwelling visitor must not be despawned by the park logic");
+  assert.equal(still!.simulatedPhase, "dwelling", "the visitor must remain in the dwelling phase while parked");
+
+  // Churn guard: once the agent has SETTLED to idle, the dwell must stop re-issuing a target
+  // every frame (only re-park while moving).
+  const callsBeforeSettle = calls.length;
+  agents.get(id)!.state = "idle";
+  for (let i = 0; i < 5; i++) spawner.tick(0.1);
+  assert.equal(
+    calls.length,
+    callsBeforeSettle,
+    "a settled (idle) dwelling visitor must NOT be handed a fresh move target every frame -- re-park only while it is still moving",
+  );
+
+  (room as unknown as { moveAgentTo: WorldRoom["moveAgentTo"] }).moveAgentTo = original;
+  console.log(
+    `PASS: a dwelling simulated visitor whose agent is still moving is parked to its own position ` +
+      `(${movingCalls.length} park call(s), all in place) and stops being re-targeted once it settles`,
+  );
+
+  room.onDispose();
+}
+
 async function main(): Promise<void> {
   // Both tick rates, for the reason in this scenario's header: a previous attempt at the
   // doorway deadlock passed at 100ms and still deadlocked at the production 16.6ms interval.
@@ -1601,6 +1729,7 @@ async function main(): Promise<void> {
   await testEscortTimeoutPauseCorrectness();
   await testSimulatedSpawnerPauseFreezesLifecycle();
   await testSimulatedVisitorRoamsToNextRoomAfterDwell();
+  await testDwellingSimulatedVisitorParksInPlace();
   await testSetSimulatedEnabledStopsAndResumesAmbientTraffic();
   await testDeliveredRealVisitorAutoDespawns();
   await testClearRealVisitorsRemovesAllAndFreesRobots();
