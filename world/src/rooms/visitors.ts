@@ -113,6 +113,20 @@ export class VisitorManager {
     return this.escorts.requestGuide(visitorId, roomNameOrCoords);
   }
 
+  /** Enables/disables ONLY the ambient simulated-visitor spawner at runtime, leaving the
+   * rest of the world (crowd tick, real Moses-dispatched escorts) running -- distinct from
+   * WorldRoom.pause()'s whole-world freeze. Disabling also despawns the currently-tracked
+   * simulated visitors, freeing any robots they held. See `SimulatedVisitorSpawner.setEnabled`. */
+  setSimulatedEnabled(enabled: boolean): void {
+    this.spawner.setEnabled(enabled);
+  }
+
+  /** Whether the ambient simulated-visitor spawner is currently enabled -- see
+   * `setSimulatedEnabled`. */
+  isSimulatedEnabled(): boolean {
+    return this.spawner.isEnabled();
+  }
+
   /** Passthrough to `EscortManager.isRobotEscorting` -- lets WorldRoom.update() tell a
    * genuinely-idle robot (send it home to park) apart from one that is schema-idle for a
    * split second mid-escort (leave its escort-owned move target alone). */

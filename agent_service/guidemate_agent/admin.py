@@ -248,6 +248,29 @@ def world_resume(request: Request, _: bool = Depends(admin_required)) -> dict:
     return {"ok": True, "acks": [a.model_dump() for a in acks]}
 
 
+# SCOPED sim-stop / sim-resume: pause ONLY the ambient simulated visitors (the
+# ones that autonomously book guide robots) without freezing the whole world.
+# Same `type="stop"`/`name="stop"` command overload as /world/stop above, but
+# carrying `params={"scope": "simulated"}` so the world-server's bridge only
+# halts the sim spawner and leaves operator-driven guide robots running.
+# Resume reuses the same `resume` boolean bit as /world/resume.
+@router.post("/world/sim-stop")
+def world_sim_stop(request: Request, _: bool = Depends(admin_required)) -> dict:
+    cmd = Command(type="stop", name="stop", params={"scope": "simulated"})
+    acks = request.app.state.registry.send_fleet_command(cmd)
+    log.warning("virtual-world simulated-visitor stop fired")
+    return {"ok": True, "acks": [a.model_dump() for a in acks]}
+
+
+@router.post("/world/sim-resume")
+def world_sim_resume(request: Request, _: bool = Depends(admin_required)) -> dict:
+    cmd = Command(type="stop", name="stop",
+                  params={"scope": "simulated", "resume": True})
+    acks = request.app.state.registry.send_fleet_command(cmd)
+    log.warning("virtual-world simulated-visitor resume fired")
+    return {"ok": True, "acks": [a.model_dump() for a in acks]}
+
+
 _UNSAFE_KEY_CHARS = re.compile(r"[^A-Za-z0-9._-]")
 
 

@@ -346,6 +346,15 @@ async function reloadRequests() {
   if (!rs.length) ul.innerHTML = "<li class=\"hint\">No pending requests. Approved companion requests will appear here for robot assignment.</li>";
 }
 
+// Brief inline confirmation for assign actions -- lives OUTSIDE the sessions
+// list (which reloadSessions rebuilds), so the message survives the refresh.
+function setSessionsStatus(text, ok) {
+  const el = $("sessions-status");
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = ok ? "" : "var(--danger, #c0392b)";
+}
+
 async function reloadSessions() {
   // Pull the same registry robot-id list the Requests tab uses, so the
   // per-session physical picker offers every configured robot (not a hardcode).
@@ -385,10 +394,13 @@ async function reloadSessions() {
     const assignPhysical = document.createElement("button");
     assignPhysical.textContent = "Assign Physical";
     assignPhysical.addEventListener("click", async () => {
-      await api(`/robot/${robotSelect.value}/reassign`, {
+      const resp = await api(`/robot/${robotSelect.value}/reassign`, {
         method: "POST", headers: jsonHeaders,
         body: JSON.stringify({ session_id: s.session_id }),
       });
+      setSessionsStatus(resp.ok
+        ? `${s.name} assigned to ${robotSelect.value} (physical)`
+        : `Assign to ${robotSelect.value} failed (${resp.status})`, resp.ok);
       reloadSessions();
       reloadAssignEvents();
     });
@@ -398,7 +410,10 @@ async function reloadSessions() {
     assignVirtual.textContent = "Assign Virtual (navigation)";
     assignVirtual.className = "secondary";
     assignVirtual.addEventListener("click", async () => {
-      await api(`/session/${s.session_id}/assign-virtual`, { method: "POST" });
+      const resp = await api(`/session/${s.session_id}/assign-virtual`, { method: "POST" });
+      setSessionsStatus(resp.ok
+        ? `${s.name} set to Virtual (navigation)`
+        : `Assign Virtual failed (${resp.status})`, resp.ok);
       reloadSessions();
       reloadAssignEvents();
     });
@@ -432,6 +447,26 @@ async function sendRobotCommand(type, name) {
 }
 $("robot-dock").addEventListener("click", () => sendRobotCommand("motion", "dock"));
 $("robot-stop").addEventListener("click", () => sendRobotCommand("stop", "stop"));
+
+// Scoped simulated-visitor pause/resume (see admin.py /world/sim-stop|resume).
+// Halts only the ambient sim visitors that book guide robots; world keeps going.
+async function sendSimCommand(path, label) {
+  const el = $("sim-command-result");
+  if (el) el.textContent = `${label}...`;
+  try {
+    const resp = await api(path, { method: "POST", headers: jsonHeaders });
+    const out = await resp.json();
+    if (el) el.textContent = resp.ok && out.ok
+      ? `OK: ${label} (${(out.acks || []).length} ack(s))`
+      : `FAILED: ${label} (${resp.status})`;
+  } catch (err) {
+    if (el) el.textContent = `FAILED: ${label} (${err})`;
+  }
+}
+$("sim-stop").addEventListener("click",
+  () => sendSimCommand("/world/sim-stop", "Stop simulated visitors"));
+$("sim-resume").addEventListener("click",
+  () => sendSimCommand("/world/sim-resume", "Resume simulated visitors"));
 
 // --- maps ------------------------------------------------------------------
 // Robot picker is populated from the same /status list the Robot tab uses

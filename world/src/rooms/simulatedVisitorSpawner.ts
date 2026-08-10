@@ -76,6 +76,19 @@ export class SimulatedVisitorSpawner {
   private spawnCooldownSeconds: number;
 
   /**
+   * Runtime enable flag for the AMBIENT simulated-visitor spawner ONLY -- a scoped control
+   * distinct from `WorldRoom.pause()`'s whole-world freeze. When `false`, `tickSpawner`
+   * stops minting new simulated visitors (they stop booking guide robots) while the rest of
+   * the world -- the crowd tick, real Moses-dispatched escorts, every other simulated
+   * visitor's in-flight lifecycle -- keeps running normally. Toggled at runtime via
+   * `setEnabled` (see its doc comment for why disabling also despawns the existing ones),
+   * wired to a fleet `stop` command carrying `params.scope === "simulated"` -- see
+   * `world/src/iot/bridge.ts`'s `handleFleetStop`. Defaults to `true` so a freshly-created
+   * room spawns ambient traffic exactly as before this flag existed.
+   */
+  private enabled = true;
+
+  /**
    * Soak-test finding (world/scripts/soaktest.ts, the persistent-world memory-leak audit):
    * this used to be a single ever-incrementing `nextSimulatedId`, minting a BRAND NEW,
    * NEVER-REUSED id string (`sim-visitor-0`, `sim-visitor-1`, ...) on every spawn for the
@@ -145,6 +158,45 @@ export class SimulatedVisitorSpawner {
   }
 
   /**
+   * Runtime toggle for the ambient simulated-visitor spawner (see the `enabled` field's doc
+   * comment for the scope). Wired to a fleet `stop` command carrying
+   * `params.scope === "simulated"` (bridge.ts's `handleFleetStop`), completely separate from
+   * `WorldRoom.pause()`'s whole-world freeze.
+   *
+   * Disabling (enabled=false) does BOTH things an operator asking "stop the ambient visitors
+   * booking robots" means: it stops new spawns (the `tickSpawner` guard above) AND despawns
+   * every simulated visitor currently tracked, so the guide robots those visitors were
+   * holding are freed for real users immediately rather than only once each visitor happens
+   * to finish its trip. Despawn is via the SAME `despawn` path the normal lifecycle uses,
+   * which calls `EscortManager.removeVisitor` -- that already deletes the robot-side binding
+   * (`robotToVisitor.delete`), so a despawned simulated visitor never keeps a robot bound.
+   * The ids are COLLECTED first, then despawned, because `despawn` mutates the underlying
+   * visitor map (`EscortManager.removeVisitor`) that `allVisitors()` iterates -- deleting
+   * while iterating would skip entries.
+   *
+   * Enabling (enabled=true) just flips the flag back; the normal `tickSpawner` ramp-up refills
+   * toward `simulatedTarget` on subsequent ticks, staggered exactly as on a fresh room.
+   * Idempotent on both edges: re-disabling an already-disabled spawner finds nothing left to
+   * despawn, and re-enabling an already-enabled one is a no-op flag write.
+   */
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    if (!enabled) {
+      const simulatedIds: string[] = [];
+      for (const visitor of this.escorts.allVisitors()) {
+        if (visitor.kind === "simulated") simulatedIds.push(visitor.id);
+      }
+      for (const id of simulatedIds) this.despawn(id);
+    }
+  }
+
+  /** Whether the ambient simulated-visitor spawner is currently minting visitors -- see
+   * `setEnabled`. Read by `VisitorManager.isSimulatedEnabled` / `WorldRoom`. */
+  isEnabled(): boolean {
+    return this.enabled;
+  }
+
+  /**
    * Advances the spawner and every simulated visitor's lifecycle by `dtSeconds`. Call
    * ORDER within this method matters, for the same reason it did before this file split:
    * a visitor spawned this call (`tickSpawner`) shouldn't also have its (freshly seeded)
@@ -165,6 +217,12 @@ export class SimulatedVisitorSpawner {
    */
   private tickSpawner(dtSeconds: number): void {
     if (this.simulatedTarget <= 0) return;
+    // Runtime-disabled ambient spawner (fleet stop scope="simulated"): mint nothing. Every
+    // already-tracked simulated visitor was despawned by setEnabled(false) at the moment of
+    // disabling, so there is nothing left to tick down here either -- a plain early-return
+    // freezes future spawns without touching the rest of the world (crowd tick, real
+    // escorts) that WorldRoom.update() keeps driving. See the `enabled` field's doc comment.
+    if (!this.enabled) return;
 
     this.spawnCooldownSeconds -= dtSeconds;
     if (this.spawnCooldownSeconds > 0) return;

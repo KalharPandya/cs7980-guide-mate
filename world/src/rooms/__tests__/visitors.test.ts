@@ -1216,6 +1216,114 @@ async function testReservedCapacityForRealUsers(): Promise<void> {
   room.onDispose();
 }
 
+/**
+ * Scoped runtime control of ONLY the ambient simulated-visitor spawner
+ * (`WorldRoom.setSimulatedVisitorsEnabled`, wired to a fleet `stop` command carrying
+ * `params.scope === "simulated"` -- see world/src/iot/bridge.ts's `handleFleetStop`). This
+ * is deliberately NOT the whole-world pause (`testSimulatedSpawnerPauseFreezesLifecycle`
+ * covers that): the operator wants the ambient visitors to stop BOOKING guide robots while
+ * the rest of the world -- crowd tick, real Moses-dispatched escorts -- keeps running.
+ *
+ * Asserts the full contract:
+ *   (a) disabling despawns EVERY active simulated visitor immediately AND frees every robot
+ *       they held (robotBindings drops to 0), while the world is NOT paused;
+ *   (b) no new simulated visitor spawns for as long as the spawner stays disabled;
+ *   (c) a REAL escort still binds a freed robot while disabled -- proof the world keeps
+ *       running, not frozen;
+ *   (d) re-enabling lets ambient traffic ramp back up toward the target.
+ */
+async function testSetSimulatedEnabledStopsAndResumesAmbientTraffic(): Promise<void> {
+  const room = new WorldRoom();
+  const SIM_TARGET = 6;
+  await room.onCreate({
+    disableGuideRobots: true,
+    visitorManagerOptions: {
+      simulatedTarget: SIM_TARGET,
+      spawnStaggerSeconds: 0.2,
+      dwellMinSeconds: 0.5,
+      dwellMaxSeconds: 1,
+    },
+  });
+  room.setSimulationInterval();
+
+  const plan = loadFloorPlan();
+  const entrance = { x: plan.entrance.point[0], z: plan.entrance.point[1] };
+  const ROBOT_COUNT = 10; // comfortably above SIM_TARGET so ambient traffic actually binds robots
+  for (let i = 0; i < ROBOT_COUNT; i++) {
+    room.addAgent(`toggle-robot-${i}`, "robot", entrance);
+  }
+
+  assert.equal(room.isSimulatedVisitorsEnabled(), true, "the spawner must start enabled by default");
+
+  // Warm up until ambient traffic is active AND some robot is actually bound to a simulated
+  // visitor, so disabling has a real binding to free (not just an empty no-op).
+  let sawBinding = false;
+  for (let i = 0; i < 2000 && !sawBinding; i++) {
+    room.update(TICK_MS);
+    const stats = room.getVisitorDebugStats();
+    if (stats.simulatedActive > 0 && stats.robotBindings > 0) sawBinding = true;
+  }
+  const beforeDisable = room.getVisitorDebugStats();
+  assert.ok(
+    sawBinding,
+    "test setup: ambient simulated visitors should be active and holding robots before disabling",
+  );
+  assert.ok(beforeDisable.simulatedActive > 0 && beforeDisable.robotBindings > 0, "test setup precondition");
+
+  // ---- (a) disable: despawn all simulated visitors + free their robots, immediately ----
+  room.setSimulatedVisitorsEnabled(false);
+  assert.equal(room.isSimulatedVisitorsEnabled(), false, "the spawner should report disabled");
+  assert.equal(room.isPaused, false, "the scoped disable must NOT pause the whole world");
+
+  const afterDisable = room.getVisitorDebugStats();
+  assert.equal(afterDisable.simulatedActive, 0, "disabling must despawn every active simulated visitor immediately");
+  assert.equal(
+    afterDisable.robotBindings,
+    0,
+    "disabling must free every robot the despawned simulated visitors held (no robot left bound)",
+  );
+  assert.equal(afterDisable.escortedVisitors, 0, "no simulated visitor should remain escorted after disabling");
+  console.log(
+    `PASS: setSimulatedVisitorsEnabled(false) despawned ${beforeDisable.simulatedActive} simulated visitor(s) and ` +
+      `freed ${beforeDisable.robotBindings} robot binding(s) immediately, without pausing the world`,
+  );
+
+  // ---- (b) no new simulated visitor spawns while disabled, no matter how long we run ----
+  for (let i = 0; i < 1500; i++) {
+    room.update(TICK_MS);
+    assert.equal(
+      room.getVisitorDebugStats().simulatedActive,
+      0,
+      `no simulated visitor may spawn while the spawner is disabled (tick ${i})`,
+    );
+  }
+  console.log("PASS: no new simulated visitors spawn while the spawner is disabled");
+
+  // ---- (c) a REAL escort still binds a freed robot while disabled: the world keeps running ----
+  room.addAgent("real-while-disabled", "visitor", entrance);
+  const realResult = room.requestGuide("real-while-disabled", "Kitchen");
+  assert.ok(
+    realResult.robotId,
+    "a REAL escort must still bind a robot while the ambient spawner is disabled (the world is not frozen)",
+  );
+  console.log(
+    `PASS: a real escort still binds a robot ("${realResult.robotId}") while the ambient spawner is disabled -- world keeps running`,
+  );
+
+  // ---- (d) re-enable: ambient traffic ramps back up ----
+  room.setSimulatedVisitorsEnabled(true);
+  assert.equal(room.isSimulatedVisitorsEnabled(), true, "the spawner should report enabled again");
+  let resumed = false;
+  for (let i = 0; i < 2000 && !resumed; i++) {
+    room.update(TICK_MS);
+    if (room.getVisitorDebugStats().simulatedActive > 0) resumed = true;
+  }
+  assert.ok(resumed, "re-enabling must let the spawner ramp ambient simulated visitors back up");
+  console.log("PASS: setSimulatedVisitorsEnabled(true) resumes ambient simulated-visitor spawning");
+
+  room.onDispose();
+}
+
 async function main(): Promise<void> {
   // Both tick rates, for the reason in this scenario's header: a previous attempt at the
   // doorway deadlock passed at 100ms and still deadlocked at the production 16.6ms interval.
@@ -1227,6 +1335,7 @@ async function main(): Promise<void> {
   await testEscortTimeoutStillFiresWhenVisitorNeverCatchesUp();
   await testEscortTimeoutPauseCorrectness();
   await testSimulatedSpawnerPauseFreezesLifecycle();
+  await testSetSimulatedEnabledStopsAndResumesAmbientTraffic();
   await testReservedCapacityForRealUsers();
   await testSimulatedSpawnerConvergence();
 

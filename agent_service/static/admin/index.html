@@ -109,6 +109,7 @@
             <button id="reload-sessions" class="btn btn-ghost btn-sm">Reload</button>
           </div>
           <ul id="sessions-list" class="list"></ul>
+          <div id="sessions-status" class="result-line"></div>
           <h3 class="subhead">Transcript</h3>
           <div id="transcript" class="transcript">Select a session to view its transcript.</div>
         </div>
@@ -138,6 +139,18 @@
             <button id="robot-stop" class="btn btn-warning">Send stop</button>
           </div>
           <div id="robot-command-result" class="result-line"></div>
+        </div>
+
+        <div class="card card-safety">
+          <div class="card-head">
+            <h2>Simulated visitors</h2>
+            <p class="hint">Pause or resume the ambient simulated visitors that autonomously book guide robots. The rest of the world keeps running.</p>
+          </div>
+          <div class="row row-controls">
+            <button id="sim-stop" class="btn btn-warning">Stop simulated visitors</button>
+            <button id="sim-resume" class="btn btn-ghost">Resume simulated visitors</button>
+          </div>
+          <div id="sim-command-result" class="result-line"></div>
         </div>
 
         <div class="card">

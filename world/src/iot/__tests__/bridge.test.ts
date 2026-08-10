@@ -106,6 +106,10 @@ class FakeWorldRoom implements WorldRoomLike {
   resumeCalls = 0;
   paused = false;
 
+  // ---- scoped simulated-visitor stop test hooks ----
+  setSimulatedVisitorsEnabledCalls: boolean[] = [];
+  simulatedVisitorsEnabled = true;
+
   moveAgentTo(agentId: string, target: string | { x: number; z: number }): boolean {
     this.moveCalls.push({ agentId, target });
     if (this.moveResult && !this.state.agents.has(agentId)) {
@@ -156,6 +160,13 @@ class FakeWorldRoom implements WorldRoomLike {
    * this bug fix's use of it in pollPending(). */
   get isPaused(): boolean {
     return this.paused;
+  }
+
+  /** Mirrors the real WorldRoom.setSimulatedVisitorsEnabled -- records the enable/disable
+   * calls so the scoped-stop tests can assert the bridge toggled only this, not pause. */
+  setSimulatedVisitorsEnabled(enabled: boolean): void {
+    this.setSimulatedVisitorsEnabledCalls.push(enabled);
+    this.simulatedVisitorsEnabled = enabled;
   }
 }
 
@@ -899,6 +910,107 @@ async function main(): Promise<void> {
     assert.equal(room.pauseCalls, 0, "a per-robot stop must never pause the room");
     assert.equal(room.resumeCalls, 0, "a per-robot stop must never resume the room");
     console.log("PASS: the existing per-robot `stop` (unsupported_command_type) is unaffected by the fleet-stop feature");
+  }
+
+  // ==================================================================================
+  // Scoped fleet `stop`: params.scope==="simulated" toggles ONLY the ambient
+  // simulated-visitor spawner, and must NOT pause/resume the whole world.
+  // ==================================================================================
+
+  // ---- scope="simulated" (no resume) DISABLES the spawner and never pauses the room ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(fleetStopCmd("cmd-ss1", { scope: "simulated" })));
+
+    assert.deepEqual(
+      room.setSimulatedVisitorsEnabledCalls,
+      [false],
+      "scope=simulated with no resume must disable the spawner exactly once",
+    );
+    assert.equal(room.pauseCalls, 0, "a scoped simulated stop must NOT pause the whole world");
+    assert.equal(room.resumeCalls, 0, "a scoped simulated stop must NOT resume the whole world");
+    assert.deepEqual(client.acksFor("cmd-ss1"), ["received", "done"]);
+    for (const { topic } of client.published) {
+      assert.equal(topic, fleetStatusTopic(), "scoped stop acks must publish on the fleet status topic");
+    }
+    console.log("PASS: fleet stop scope=simulated (no resume) disables ONLY the simulated spawner, does not pause the world");
+  }
+
+  // ---- scope="simulated" with resume=true ENABLES the spawner and never resumes the room ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(
+      fleetCmdTopic(),
+      JSON.stringify(fleetStopCmd("cmd-ss2", { scope: "simulated", resume: true })),
+    );
+
+    assert.deepEqual(
+      room.setSimulatedVisitorsEnabledCalls,
+      [true],
+      "scope=simulated with resume=true must enable the spawner exactly once",
+    );
+    assert.equal(room.pauseCalls, 0, "a scoped simulated resume must NOT pause the whole world");
+    assert.equal(room.resumeCalls, 0, "a scoped simulated resume must NOT resume the whole world");
+    assert.deepEqual(client.acksFor("cmd-ss2"), ["received", "done"]);
+    console.log("PASS: fleet stop scope=simulated resume=true enables ONLY the simulated spawner, does not resume the world");
+  }
+
+  // ---- a plain (unscoped) stop STILL pauses the whole world and never touches the
+  // simulated-spawner toggle -- the existing behavior must be entirely unchanged ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(fleetStopCmd("cmd-ss3")));
+
+    assert.equal(room.pauseCalls, 1, "an unscoped stop must still pause the whole world exactly as before");
+    assert.equal(
+      room.setSimulatedVisitorsEnabledCalls.length,
+      0,
+      "an unscoped stop must NEVER touch the scoped simulated-spawner toggle",
+    );
+    assert.deepEqual(client.acksFor("cmd-ss3"), ["received", "done"]);
+    console.log("PASS: a plain (unscoped) fleet stop still pauses the whole world, never touching the simulated toggle");
+  }
+
+  // ---- a truthy-but-not-strictly-true resume on a scoped stop still disables (strict
+  // === true check, mirroring the unscoped resume convention) ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(
+      fleetCmdTopic(),
+      JSON.stringify(fleetStopCmd("cmd-ss4", { scope: "simulated", resume: "true" })),
+    );
+
+    assert.deepEqual(
+      room.setSimulatedVisitorsEnabledCalls,
+      [false],
+      "a non-strict-true resume on a scoped stop must fall back to disabling the spawner",
+    );
+    assert.equal(room.pauseCalls, 0);
+    console.log("PASS: scoped stop with a non-strict-true resume param falls back to disabling the spawner");
+  }
+
+  // ---- no live WorldRoom on a scoped stop -> failed/world_not_ready, same as an unscoped one ----
+  {
+    const client = new FakeMqttClient();
+    const bridge = new IotBridge({ getRoom: () => undefined, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(fleetStopCmd("cmd-ss5", { scope: "simulated" })));
+
+    assert.deepEqual(client.acksFor("cmd-ss5"), ["received", "failed"]);
+    assert.equal(client.published.find((p) => p.payload.state === "failed")!.payload.reason, "world_not_ready");
+    console.log("PASS: no active WorldRoom on a scoped simulated stop acks failed/world_not_ready");
   }
 
   // ==================================================================================

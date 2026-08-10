@@ -560,6 +560,27 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   }
 
   /**
+   * Scoped runtime control for the AMBIENT simulated-visitor spawner ONLY -- deliberately
+   * NOT the same thing as pause()/resume() above, which freeze the WHOLE world. Disabling
+   * stops new simulated visitors from spawning (so they stop booking guide robots) AND
+   * despawns the ones currently active (freeing any robots they held for real users), while
+   * the crowd tick, real Moses-dispatched escorts, and everything else keep running. Enabling
+   * lets the normal spawner ramp back up toward its target. Triggered by a fleet-scoped `stop`
+   * Command carrying `params.scope === "simulated"` -- see world/src/iot/bridge.ts's
+   * `handleFleetStop`. Delegates to `VisitorManager.setSimulatedEnabled` /
+   * `SimulatedVisitorSpawner.setEnabled` for the full behavior and rationale.
+   */
+  setSimulatedVisitorsEnabled(enabled: boolean): void {
+    this.visitors.setSimulatedEnabled(enabled);
+  }
+
+  /** Read-only: whether the ambient simulated-visitor spawner is currently enabled -- see
+   * `setSimulatedVisitorsEnabled`. */
+  isSimulatedVisitorsEnabled(): boolean {
+    return this.visitors.isSimulatedEnabled();
+  }
+
+  /**
    * Resolves `roomNameOrCoords` (a room name/alias via Task 1.1's `findRoomTarget`, or a
    * literal nav-space `{x, z}` point) and requests the crowd agent `agentId` move there.
    * Returns `false` (and logs why) if the agent id is unknown or the target can't be

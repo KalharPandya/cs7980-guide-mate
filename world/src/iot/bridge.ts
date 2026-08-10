@@ -146,6 +146,17 @@ export interface WorldRoomLike {
   pause(): void;
   resume(): void;
   /**
+   * Scoped runtime control for ONLY the ambient simulated-visitor spawner -- distinct from
+   * pause()/resume() above, which freeze the whole world. Disabling stops new simulated
+   * visitors spawning (so they stop booking guide robots) and despawns the active ones
+   * (freeing any robots they held), while real Moses-dispatched escorts and the crowd tick
+   * keep running; enabling ramps the spawner back up. Wired to a fleet `stop` command
+   * carrying `params.scope === "simulated"` -- see `handleFleetStop`. The real WorldRoom
+   * satisfies this via `WorldRoom.setSimulatedVisitorsEnabled`; a structural addition only,
+   * no change to WorldRoom.ts was needed beyond exposing that method.
+   */
+  setSimulatedVisitorsEnabled(enabled: boolean): void;
+  /**
    * Bug fix (found by code review of Task 5.2's commit f6b79f2): exposes WorldRoom's
    * pause flag so pollPending() can stop a pending navigate's nav_timeout deadline from
    * advancing while the whole world is frozen -- see pollPending()'s doc comment for the
@@ -494,6 +505,19 @@ export class IotBridge {
    * un-freezing the world), which is why it's documented here AND at the admin route
    * that publishes it (agent_service/guidemate_agent/admin.py's `/api/admin/world/stop`
    * and `/api/admin/world/resume`) rather than left to be inferred from the wire alone.
+   *
+   * ---- SCOPED variant: stop only the ambient simulated visitors ----
+   * A `stop` carrying `params.scope === "simulated"` is a NARROWER control: it stops (or
+   * resumes) ONLY the ambient simulated-visitor spawner, so those visitors stop booking
+   * guide robots, while the world itself keeps running (crowd tick, real Moses-dispatched
+   * escorts). This is deliberately NOT the whole-world pause above -- an operator can quiet
+   * the ambient traffic during a live demo without freezing the whole scene. Same
+   * resume-overload convention on the same command:
+   *   - scope="simulated", no resume (or falsy)   -> DISABLE the spawner (room.setSimulatedVisitorsEnabled(false)).
+   *   - scope="simulated", `params.resume === true` -> ENABLE  it     (room.setSimulatedVisitorsEnabled(true)).
+   * Any `stop` WITHOUT scope="simulated" falls through to the existing whole-world
+   * pause/resume above, byte-for-byte unchanged. `params` is already free-form on both the
+   * Python and TS sides, so carrying `scope` needs no wire-schema change.
    */
   private handleFleetStop(cmd: Command): void {
     const room = this.getRoom();
@@ -504,7 +528,12 @@ export class IotBridge {
       return;
     }
 
-    if (cmd.params.resume === true) {
+    if (cmd.params.scope === "simulated") {
+      // Scoped: toggle ONLY the ambient simulated-visitor spawner. resume===true enables
+      // (ramp back up), anything else disables (stop spawning + despawn the active ones).
+      // The whole-world pause/resume is deliberately NOT touched on this path.
+      room.setSimulatedVisitorsEnabled(cmd.params.resume === true);
+    } else if (cmd.params.resume === true) {
       room.resume();
     } else {
       room.pause();

@@ -290,6 +290,41 @@ def test_world_stop_requires_auth(monkeypatch):
         assert app.state.registry.fleet_sent == [], "unauthenticated calls must not publish anything"
 
 
+def test_world_sim_stop_publishes_scoped_simulated_stop(monkeypatch):
+    app = _make_app(monkeypatch)
+    with TestClient(app) as client:
+        resp = client.post("/api/admin/world/sim-stop", headers=_auth_header())
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        assert len(app.state.registry.fleet_sent) == 1
+        cmd_type, cmd_name, params = app.state.registry.fleet_sent[0]
+        assert cmd_type == "stop"
+        assert cmd_name == "stop"
+        assert params == {"scope": "simulated"}, "sim-stop must scope the stop to simulated visitors"
+
+
+def test_world_sim_resume_publishes_scoped_simulated_resume(monkeypatch):
+    app = _make_app(monkeypatch)
+    with TestClient(app) as client:
+        resp = client.post("/api/admin/world/sim-resume", headers=_auth_header())
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        assert len(app.state.registry.fleet_sent) == 1
+        cmd_type, cmd_name, params = app.state.registry.fleet_sent[0]
+        assert cmd_type == "stop"
+        assert cmd_name == "stop"
+        assert params == {"scope": "simulated", "resume": True}, \
+            "sim-resume must scope to simulated visitors and set resume=True"
+
+
+def test_world_sim_routes_require_auth(monkeypatch):
+    app = _make_app(monkeypatch)
+    with TestClient(app) as client:
+        assert client.post("/api/admin/world/sim-stop").status_code == 401
+        assert client.post("/api/admin/world/sim-resume").status_code == 401
+        assert app.state.registry.fleet_sent == [], "unauthenticated calls must not publish anything"
+
+
 def test_kb_upload_list_sync(monkeypatch):
     app = _make_app(monkeypatch)
     with TestClient(app) as client:
