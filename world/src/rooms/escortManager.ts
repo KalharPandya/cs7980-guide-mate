@@ -458,19 +458,19 @@ const DWELL_MAX_S = 20;
  * visitor's DWELL_MIN_S..DWELL_MAX_S "linger at a room then roam to the next one" dwell: a
  * real visitor does not roam anywhere afterward, it is simply removed.
  *
- * ---- why 90s (was 20s, which caused the despawn-mid-conversation defect) ----
+ * ---- why 300s / 5 min (was 20s, which caused the despawn-mid-conversation defect) ----
  * The old 20s was a fixed post-delivery timer with no keepalive: a real chat user guided to a
  * room had her avatar removed 20s later even while her chat session was still active and she
- * was still talking. 20s is shorter than a single normal gap between chat turns (reading
- * Moses's reply, waiting on TTS playback, thinking, typing the next message easily runs
- * 30-60s), so the avatar vanished between turns. 90s is now the window AFTER the last
- * keepalive: it comfortably survives any normal inter-turn gap (so a live session never
- * despawns), while still self-cleaning ~90s after the session actually goes quiet.
+ * was still talking. This is now the window AFTER the last keepalive, and a real visitor only
+ * despawns once no interaction has been made for a full 5 minutes. agent_service publishes a
+ * keepalive on every chat turn, so any visitor whose user is still interacting (even slowly,
+ * across long reads, TTS playback, and typing) keeps their avatar, and the world only
+ * self-cleans a real visitor 5 minutes after that person actually goes quiet.
  *
  * Exported so tests can assert against the same number instead of a duplicated magic
  * constant (mirrors `RESERVED_ROBOTS_FOR_REAL_USERS` / `SIMULATED_VISITOR_TARGET`).
  */
-export const REAL_VISITOR_DESPAWN_S = 90;
+export const REAL_VISITOR_DESPAWN_S = 300;
 
 /**
  * How many idle guide robots are held in reserve for REAL (Moses-dispatched) users, out of
