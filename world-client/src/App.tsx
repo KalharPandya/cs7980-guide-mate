@@ -345,9 +345,20 @@ function App() {
             <Skyline/> above renders instead. */}
         {USE_GOOGLE_TILES && <GoogleTiles center={[bounds.centerX, bounds.centerZ]} />}
 
+        {/* MapControls default maps LEFT-drag to PAN and rotate to the RIGHT button (which the
+            browser context menu tends to swallow), so users could only pan/zoom and "could not
+            rotate". Remap so LEFT-drag ORBITS the scene (the intuitive way to look around the 3D
+            city / building), wheel zooms, and RIGHT-drag pans. TOUCH: one finger orbits, two
+            fingers dolly+pan, so the same rotate-first feel holds on the big screen. */}
         <MapControls
           ref={mapControlsRef}
           target={target}
+          mouseButtons={{
+            LEFT: THREE.MOUSE.ROTATE,
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.PAN,
+          }}
+          touches={{ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }}
           onStart={onInteractionStart}
           onEnd={onInteractionEnd}
         />
