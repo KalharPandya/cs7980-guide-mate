@@ -454,88 +454,57 @@ def test_guide_impl_requires_a_session():
     assert reg.fleet_sent == []
 
 
-def test_guide_impl_builds_assign_command_and_binds_visitor(ddb):
+# --- guide_to_room now CREATES A REQUEST (operator-approved), it no longer
+# dispatches a robot directly. The named assign that spawns the visitor + guide
+# robot moved to sessions.approve_guide_request (covered in test_guide_request.py).
+# These pin the new tool-call behaviour: a pending guide request, no fleet publish.
+def test_guide_impl_creates_guide_request_no_fleet_publish(ddb):
     sid = sessions.create_session("Ada", True)
-    acks = [
-        Ack(cmd_id="c", state="received", simulated=True),
-        Ack(cmd_id="c", state="done", simulated=True, assigned_robot_id="virtual/3"),
-    ]
-    reg = FleetRegistry(acks=acks)
+    reg = FleetRegistry(acks=[Ack(cmd_id="c", state="done", simulated=True,
+                                  assigned_robot_id="virtual/3")])
 
     result = _agent(reg)._guide_impl("Classroom 1425", sid, _captured())
 
-    assert len(reg.fleet_sent) == 1
-    cmd = reg.fleet_sent[0]
-    assert cmd.type == "assign"
-    assert cmd.name == "assign"
-    assert cmd.params["room"] == "Classroom 1425"
-    visitor_id = cmd.params["visitor_id"]
-    assert visitor_id
-    assert sessions.visitor_for_session(sid) == visitor_id
-    assert "virtual/3" in result
+    # No robot dispatched at tool-call time.
+    assert reg.fleet_sent == []
+    # A pending GUIDE request now exists, carrying the destination.
+    pending = [r for r in sessions.list_pending_requests()
+               if r.get("session_id") == sid]
+    assert len(pending) == 1
+    assert pending[0]["kind"] == "guide"
+    assert pending[0]["to_room"] == "Classroom 1425"
+    assert sessions.get_session(sid)["request_status"] == "pending"
+    # The visitor is told the front desk will approve; not "your robot is coming".
+    lowered = result.lower()
+    assert "front desk" in lowered
+    assert "heading over" not in lowered
 
 
-def test_guide_impl_reuses_existing_visitor_binding(ddb):
+def test_guide_impl_request_stores_from_room_when_supplied(ddb):
     sid = sessions.create_session("Ada", True)
-    sessions.bind_visitor(sid, "visitor-existing")
-    reg = FleetRegistry(acks=[Ack(cmd_id="c", state="done", simulated=True,
-                                  assigned_robot_id="virtual/1")])
-
-    _agent(reg)._guide_impl("Kitchen", sid, _captured())
-
-    assert len(reg.fleet_sent) == 1
-    assert reg.fleet_sent[0].params["visitor_id"] == "visitor-existing"
-
-
-# --- from_room: WHERE THE VISITOR IS (optional on the wire) -------------------
-# The world spawns the visitor at from_room and sends the robot to them first, so a
-# from_room that is present-but-wrong is worse than absent: absent means "entrance",
-# the documented pre-existing behaviour. These pin both halves of that contract.
-
-
-def test_guide_impl_publishes_from_room_when_supplied(ddb):
-    sid = sessions.create_session("Ada", True)
-    reg = FleetRegistry(acks=[Ack(cmd_id="c", state="done", simulated=True,
-                                  assigned_robot_id="virtual/2")])
+    reg = FleetRegistry()
 
     _agent(reg)._guide_impl("Kitchen", sid, _captured(), "Classroom 1425")
 
-    params = reg.fleet_sent[0].params
-    assert params["room"] == "Kitchen"
-    assert params["from_room"] == "Classroom 1425"
+    pending = [r for r in sessions.list_pending_requests()
+               if r.get("session_id") == sid]
+    assert pending[0]["to_room"] == "Kitchen"
+    assert pending[0]["from_room"] == "Classroom 1425"
+    assert reg.fleet_sent == []
 
 
-def test_guide_impl_omits_from_room_when_not_supplied(ddb):
-    """Absent, not empty-string: "" is a valid string against the wire schema, so it
-    would reach the world as an unresolvable room name instead of meaning "unknown"."""
+def test_guide_impl_request_omits_from_room_when_blank(ddb):
+    """A blank/whitespace-only from_room is treated as not-provided, so the request
+    row carries no from_room (the escort later falls back to the entrance)."""
     sid = sessions.create_session("Ada", True)
-    reg = FleetRegistry(acks=[Ack(cmd_id="c", state="done", simulated=True,
-                                  assigned_robot_id="virtual/2")])
-    agent = _agent(reg)
+    reg = FleetRegistry()
 
-    agent._guide_impl("Kitchen", sid, _captured())            # arg omitted entirely
-    agent._guide_impl("Kitchen", sid, _captured(), "")        # tool-schema default
-    agent._guide_impl("Kitchen", sid, _captured(), "   ")     # whitespace-only answer
+    _agent(reg)._guide_impl("Kitchen", sid, _captured(), "   ")
 
-    for cmd in reg.fleet_sent:
-        assert "from_room" not in cmd.params
-
-
-def test_guide_impl_from_room_unresolved_tells_the_model_to_re_ask(ddb):
-    """The world resolved nothing and dispatched nobody. The model must hear a
-    re-ask instruction, not something it can paraphrase as "your guide is coming"."""
-    sid = sessions.create_session("Ada", True)
-    reg = FleetRegistry(acks=[Ack(cmd_id="c", state="failed", simulated=True,
-                                  reason="from_room_unresolved")])
-
-    result = _agent(reg)._guide_impl("Kitchen", sid, _captured(), "the blue sofa")
-
-    lowered = result.lower()
-    assert "failed" in lowered
-    assert "ask the visitor again" in lowered
-    assert "do not tell them a guide is coming" in lowered
-    # and it must not read like a success anywhere in the string
-    assert "heading over" not in lowered and "on its way" not in lowered
+    pending = [r for r in sessions.list_pending_requests()
+               if r.get("session_id") == sid]
+    assert "from_room" not in pending[0]
+    assert reg.fleet_sent == []
 
 
 def test_describe_acks_surfaces_from_room_unresolved_as_a_re_ask():
@@ -543,15 +512,6 @@ def test_describe_acks_surfaces_from_room_unresolved_as_a_re_ask():
     failure into the vague "the robot refused: from_room_unresolved" fallback."""
     acks = [Ack(cmd_id="c", state="failed", simulated=True, reason="from_room_unresolved")]
     assert DogAgent._describe_acks(acks) == dog_agent._FROM_ROOM_UNRESOLVED
-
-
-def test_guide_impl_target_unresolved_tells_the_model_to_re_ask(ddb):
-    sid = sessions.create_session("Ada", True)
-    reg = FleetRegistry(acks=[Ack(cmd_id="c", state="failed", simulated=True,
-                                  reason="target_unresolved")])
-    result = _agent(reg)._guide_impl("Narnia", sid, _captured(), "Kitchen")
-    assert "failed" in result.lower()
-    assert "guide_to_room again" in result
 
 
 def test_guide_tool_spec_exposes_from_room():
@@ -610,21 +570,6 @@ def test_room_vocabulary_degrades_to_empty_when_floor_plan_missing(monkeypatch, 
         assert "guide_to_room" in prompt              # the tool is still advertised
     finally:
         dog_agent._floor_plan_rooms.cache_clear()     # don't poison other tests
-
-
-def test_guide_impl_no_idle_robot(ddb):
-    sid = sessions.create_session("Ada", True)
-    reg = FleetRegistry(acks=[Ack(cmd_id="c", state="failed", reason="no_idle_robot",
-                                  simulated=True)])
-    result = _agent(reg)._guide_impl("Kitchen", sid, _captured())
-    assert "busy" in result.lower()
-
-
-def test_guide_impl_offline_when_no_acks(ddb):
-    sid = sessions.create_session("Ada", True)
-    reg = FleetRegistry(acks=[])
-    result = _agent(reg)._guide_impl("Kitchen", sid, _captured())
-    assert result == dog_agent._OFFLINE
 
 
 # --- tool gating: guide_to_room is virtual-only (inverse of run_motion/stop) ---

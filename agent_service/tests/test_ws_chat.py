@@ -435,16 +435,14 @@ class _FakeStrandsGuide:
         return f"woof! {guide_reply}"
 
 
-def test_ws_virtual_turn_guide_to_room_does_not_raise_and_dispatches_real_fleet_command(
+def test_ws_virtual_turn_guide_to_room_creates_request_not_dispatch(
     monkeypatch, ddb
 ):
-    """Regression for the CaptureRegistry.send_fleet_command gap on the REAL WS chat
-    path (app.state.ws_agent, not a Task-4.2 fake registry). A virtual (no-robot)
-    session asking to be guided must NOT crash the turn -- no AttributeError, no
-    generic apology -- and the fleet "assign" command must actually reach the real
-    registry backing app.state.registry (FakeRobotRegistry under
-    GUIDEMATE_FAKE_ROBOT=1), not just a fake ack that sounds right but dispatches
-    nothing."""
+    """Virtual guiding is now OPERATOR-APPROVED: a virtual (no-robot) session asking
+    to be guided must NOT crash the turn (no AttributeError, no generic apology) and
+    must create a pending GUIDE request rather than dispatching a robot inline. The
+    named fleet "assign" now fires only at approval time (sessions.approve_guide_
+    request), so NOTHING should reach the fleet registry during the chat turn."""
     monkeypatch.setattr(dog_agent, "Agent", _FakeStrandsGuide)
     monkeypatch.setattr(dog_agent, "BedrockModel", lambda **kw: None)
     with _fake_client(monkeypatch) as client:
@@ -458,14 +456,18 @@ def test_ws_virtual_turn_guide_to_room_does_not_raise_and_dispatches_real_fleet_
     # The turn completed normally -- did NOT hit the pipeline-exception apology.
     assert reply["type"] == "reply"
     assert reply["text"] != "sorry, I got a little confused"
-    assert "heading" in reply["text"].lower()
-    assert "virtual/demo-1" in reply["text"]
+    # The guide tool now confirms the front desk will send a guide, not "on its way".
+    assert "front desk" in reply["text"].lower()
     # guide_to_room was offered (virtual session -- no bound robot).
     assert "guide_to_room" in _FakeStrandsGuide.last.tool_names
-    # The fleet assign command reached the REAL registry (delegated through
-    # CaptureRegistry(fleet_registry=...) in app.py), proving this is a real
-    # dispatch, not an isolated fake ack.
-    assert ("(fleet)", "assign", "assign") in client.app.state.registry.sent
+    # A pending guide request was created for this session.
+    pending = sessions.list_pending_requests()
+    assert len(pending) == 1
+    assert pending[0]["session_id"] == sid
+    assert pending[0]["kind"] == "guide"
+    assert pending[0]["to_room"] == "Kitchen"
+    # No fleet dispatch happened during the chat turn (it moved to approval time).
+    assert ("(fleet)", "assign", "assign") not in client.app.state.registry.sent
 
 
 def test_ws_non_kb_reply_frame_has_no_sources(monkeypatch, ddb):

@@ -284,6 +284,37 @@ async function reloadRequests() {
   rs.forEach((r) => {
     const li = document.createElement("li");
     li.dataset.testid = "request-row";
+
+    const deny = document.createElement("button");
+    deny.textContent = "Deny";
+    deny.className = "secondary";
+    deny.addEventListener("click", async () => {
+      await api(`/requests/${r.request_id}/deny`, { method: "POST" });
+      reloadRequests();
+    });
+
+    if (r.kind === "guide") {
+      // VIRTUAL guide request: no physical-robot dropdown -- one button whose
+      // approval fires the named assign (spawns the visitor + a guide robot).
+      const from = r.from_room || "?";
+      const to = r.to_room || "?";
+      li.textContent = `${r.name} wants a guide: ${from} -> ${to}`;
+
+      const approve = document.createElement("button");
+      approve.textContent = "Approve (send guide)";
+      approve.className = "btn-primary btn-sm";
+      approve.dataset.testid = "approve-guide-btn";
+      approve.addEventListener("click", async () => {
+        await api(`/requests/${r.request_id}/approve-guide`, { method: "POST" });
+        reloadRequests();
+        reloadSessions();
+      });
+      li.append(" ", approve, " ", deny);
+      ul.appendChild(li);
+      return;
+    }
+
+    // companion / default: keep the existing physical-robot dropdown + Approve.
     li.textContent = `${r.name} (comfortable=${r.comfortable}) — ${r.session_id}`;
 
     const robotSelect = document.createElement("select");
@@ -308,13 +339,6 @@ async function reloadRequests() {
       });
       reloadRequests();
       reloadAssignEvents();
-    });
-    const deny = document.createElement("button");
-    deny.textContent = "Deny";
-    deny.className = "secondary";
-    deny.addEventListener("click", async () => {
-      await api(`/requests/${r.request_id}/deny`, { method: "POST" });
-      reloadRequests();
     });
     li.append(" ", robotSelect, " ", approve, " ", deny);
     ul.appendChild(li);

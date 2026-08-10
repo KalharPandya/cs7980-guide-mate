@@ -344,6 +344,18 @@ def admin_approve(
     )
 
 
+@router.post("/requests/{request_id}/approve-guide")
+def admin_approve_guide(
+    request_id: str, request: Request, _: bool = Depends(admin_required),
+) -> dict:
+    # VIRTUAL guide approval: fires the named fleet assign that spawns the visitor
+    # and dispatches a guide robot (no physical-robot dropdown -- the world picks
+    # the robot). Records the assigned robot on the session for Moses's awareness.
+    return sessions.approve_guide_request(
+        request_id, registry=request.app.state.registry
+    )
+
+
 @router.post("/requests/{request_id}/deny")
 def admin_deny(request_id: str, _: bool = Depends(admin_required)) -> dict:
     sessions.deny_request(request_id)

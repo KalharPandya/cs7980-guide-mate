@@ -146,7 +146,21 @@ def _update_session(session_id: str, **attrs) -> None:
     )
 
 
-def create_request(session_id: str) -> str:
+def create_request(
+    session_id: str,
+    kind: str = "companion",
+    from_room: Optional[str] = None,
+    to_room: Optional[str] = None,
+) -> str:
+    """Create a pending request row for an operator to approve.
+
+    `kind` distinguishes the two approval paths: "companion" (the default, a
+    physical-robot lock) and "guide" (a virtual-fleet escort). `from_room` and
+    `to_room` carry a guide request's origin/destination and are stored only
+    when supplied, so existing companion callers keep their exact row shape.
+    The dedup-on-pending guard is unchanged: a session already pending reuses
+    its open request rather than stacking a second one.
+    """
     session = get_session(session_id) or {}
     if session.get("request_status") == "pending":
         existing = [
@@ -155,16 +169,20 @@ def create_request(session_id: str) -> str:
         if existing:
             return existing[0]["request_id"]
     request_id = new_id()
-    _table(TABLE_REQUESTS).put_item(
-        Item={
-            "request_id": request_id,
-            "session_id": session_id,
-            "name": session.get("name", ""),
-            "comfortable": bool(session.get("comfortable", False)),
-            "status": "pending",
-            "created_ts": _now_iso(),
-        }
-    )
+    item = {
+        "request_id": request_id,
+        "session_id": session_id,
+        "name": session.get("name", ""),
+        "comfortable": bool(session.get("comfortable", False)),
+        "status": "pending",
+        "created_ts": _now_iso(),
+        "kind": kind,
+    }
+    if from_room is not None:
+        item["from_room"] = from_room
+    if to_room is not None:
+        item["to_room"] = to_room
+    _table(TABLE_REQUESTS).put_item(Item=item)
     _update_session(session_id, request_status="pending")
     return request_id
 
@@ -374,6 +392,69 @@ def approve_request(request_id: str, robot_id: str, registry=None) -> dict:
     aborted = _bind_robot(robot_id, req["session_id"], registry=registry)
     _set_request_status(request_id, "approved")
     return {"session_id": req["session_id"], "aborted_session_id": aborted}
+
+
+def approve_guide_request(request_id: str, registry=None) -> dict:
+    """Operator-approve a VIRTUAL guide request: fire the named fleet "assign"
+    that spawns the visitor and dispatches a guide robot, then record which robot
+    was assigned on the session so Moses can tell the visitor about it later.
+
+    This is the virtual counterpart of approve_request (which binds a PHYSICAL
+    robot lock). The assign that dog_agent used to publish inline at tool-call
+    time now happens HERE, at approval time -- the visitor id is minted/reused
+    here (the virtual fleet has no scarcity to arbitrate, so no lock), and the
+    assigned robot id is parsed from the last ack that carries one.
+    """
+    req = get_request(request_id)
+    if not req:
+        raise KeyError(f"no such request {request_id}")
+    session_id = req["session_id"]
+    name = req.get("name")
+    from_room = req.get("from_room")
+    to_room = req.get("to_room")
+
+    visitor_id = visitor_for_session(session_id)
+    if visitor_id is None:
+        visitor_id = f"visitor-{uuid.uuid4().hex[:12]}"
+        bind_visitor(session_id, visitor_id)
+
+    params = {"visitor_id": visitor_id, "room": to_room}
+    if isinstance(from_room, str) and from_room.strip():
+        params["from_room"] = from_room
+    if isinstance(name, str) and name.strip():
+        params["name"] = name
+    cmd = Command(type="assign", name="assign", params=params)
+    acks = registry.send_fleet_command(cmd) if registry is not None else []
+    assigned_robot_id = None
+    for a in acks:
+        rid = getattr(a, "assigned_robot_id", None)
+        if rid:
+            assigned_robot_id = rid
+
+    _set_request_status(request_id, "approved")
+    _update_session(
+        session_id,
+        request_status="approved",
+        guide_robot_id=assigned_robot_id,
+        guide_from_room=from_room,
+        guide_to_room=to_room,
+    )
+    return {
+        "session_id": session_id,
+        "assigned_robot_id": assigned_robot_id,
+        "acks": [a.model_dump() for a in acks],
+    }
+
+
+def get_guide_status(session_id: str) -> dict:
+    """The virtual-guide fields recorded on the session by approve_guide_request,
+    for Moses's awareness on later turns. None values when no guide was dispatched."""
+    session = get_session(session_id) or {}
+    return {
+        "guide_robot_id": session.get("guide_robot_id") or None,
+        "guide_from_room": session.get("guide_from_room") or None,
+        "guide_to_room": session.get("guide_to_room") or None,
+    }
 
 
 def deny_request(request_id: str) -> None:

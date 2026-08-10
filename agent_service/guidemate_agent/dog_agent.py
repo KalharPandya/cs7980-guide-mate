@@ -374,11 +374,16 @@ class DogAgent:
 
     def _build_system_prompt(
         self, user_name: Optional[str], history, flags: Optional[dict] = None,
-        physical: bool = True,
+        physical: bool = True, guide_status: Optional[dict] = None,
     ) -> str:
         """Persona/flag prompt + optional 'talking with <name>' line + last-10
         message recap. Layers session awareness on top of the flag-driven
-        persona so an admin persona/mute flip still steers the base prompt."""
+        persona so an admin persona/mute flip still steers the base prompt.
+
+        `guide_status` (virtual sessions only) is sessions.get_guide_status: when
+        it names a dispatched guide robot, a line is appended so Moses can tell the
+        visitor which robot is escorting them. Defensive: absent/empty adds nothing.
+        """
         if flags is None:
             flags = self._flags()
         parts = [self._system_prompt(flags, physical)]
@@ -386,6 +391,16 @@ class DogAgent:
             parts.append(
                 f"You are talking with {user_name}. Greet them warmly by name "
                 "now and then."
+            )
+        # Moses awareness: a virtual session whose guide request the operator has
+        # approved now knows which robot is on its way (see approve_guide_request).
+        if not physical and guide_status and guide_status.get("guide_robot_id"):
+            who = user_name or "the visitor"
+            parts.append(
+                f"Operator update: guide robot {guide_status['guide_robot_id']} has "
+                f"been dispatched to take {who} from {guide_status.get('guide_from_room')} "
+                f"to {guide_status.get('guide_to_room')}. If they ask about their guide, "
+                "tell them their robot is on its way."
             )
         if history:
             lines = []
@@ -514,72 +529,36 @@ class DogAgent:
     def _guide_impl(self, room: str, session_id: Optional[str], captured: dict,
                     from_room: Optional[str] = None) -> str:
         """Body of the guide_to_room tool -- virtual-fleet-only (see
-        _enabled_tool_names). Unlike the robot-targeted tools above, this has no
-        `target` robot id closure var: it needs the CALLER's own visitor identity
-        instead. The first call for a session mints a fresh visitor_id and binds
-        it to the session (sessions.bind_visitor -- no lock/approval step, the
-        virtual fleet has no scarcity to arbitrate); later calls reuse it. Then
-        publishes a fleet-scoped "assign" command (not robot-addressed -- no
-        robot is known yet, requestGuide on the world-server picks one) and
-        reports the outcome.
+        _enabled_tool_names). This no longer dispatches a robot directly: virtual
+        guiding is now OPERATOR-APPROVED. The tool creates a pending GUIDE request
+        (carrying the visitor's name, from_room and destination) that surfaces in
+        the admin Requests tab; the operator's approval is what fires the named
+        fleet "assign" that spawns the visitor and dispatches a guide robot (see
+        sessions.approve_guide_request). Moses learns which robot was assigned on a
+        later turn via sessions.get_guide_status.
 
-        `from_room` is where the VISITOR currently stands, and it is what makes the
-        escort start at the person instead of at the building entrance: the world
-        spawns the visitor's avatar there, then the robot drives to them (phase
-        "approaching") before leading them on (phase "leading"). It is OPTIONAL on the
-        wire, so it is omitted from params entirely when the model did not supply one
-        rather than sent as an empty string -- an empty string is a *string*, so it
-        would pass the schema's "must be a string when present" check and then arrive at
-        the world as a room name that cannot possibly resolve, turning "the model didn't
-        ask yet" into a hard from_room_unresolved failure. Absent means "not provided",
-        which is exactly the pre-existing entrance-spawn behaviour.
+        `from_room` is where the VISITOR currently stands. It is OPTIONAL: a blank or
+        whitespace-only value is treated as "not provided" (stored as None, later
+        omitted from the assign) so the escort falls back to the building entrance,
+        exactly as before.
         """
         if session_id is None:
             return "I can't guide you anywhere without a session — try reloading the page"
 
         from guidemate_agent import sessions
 
-        visitor_id = sessions.visitor_for_session(session_id)
-        if visitor_id is None:
-            visitor_id = f"visitor-{uuid.uuid4().hex[:12]}"
-            sessions.bind_visitor(session_id, visitor_id)
-
-        params = {"visitor_id": visitor_id, "room": room}
-        # Carry the session user's real name to the world so their in-world tag shows it
-        # ("Kalhar") instead of a client-derived pool name. Defensive: a missing session or
-        # a blank/absent name simply omits the field (the world then falls back to the
-        # id-derived label), so nothing breaks when the session has no name on file.
-        sess = sessions.get_session(session_id) if session_id else None
-        name = (sess or {}).get("name")
-        if isinstance(name, str) and name.strip():
-            params["name"] = name.strip()
-        # Strip whitespace before deciding: the tool schema gives from_room a "" default
-        # (see _build_tools), and a model that "answers" with " " must be treated as
-        # not-provided too, not shipped as a blank room name.
-        cleaned_from_room = (from_room or "").strip()
-        if cleaned_from_room:
-            params["from_room"] = cleaned_from_room
-        cmd = Command(type="assign", name="assign", params=params)
-        acks = self._registry.send_fleet_command(cmd)
-        captured["acks"].extend(a.model_dump() for a in acks)
-        if not acks:
-            return _OFFLINE
-        last = acks[-1]
-        if last.state == "failed":
-            if last.reason == "no_idle_robot":
-                return "every guide robot is busy right now — try again in a moment"
-            # The world could not turn one of the two room names into a place. Both are
-            # recoverable by asking the visitor again, so they get explicit re-ask
-            # instructions instead of the generic refusal string below.
-            if last.reason == "from_room_unresolved":
-                return _FROM_ROOM_UNRESOLVED
-            if last.reason == "target_unresolved":
-                return _TARGET_UNRESOLVED
-            return f"couldn't start your guide: {last.reason}"
-        robot_id = getattr(last, "assigned_robot_id", None)
-        if robot_id:
-            return f"{robot_id} is heading over to guide you to {room}"
-        return "a guide robot is on its way"
+        # Strip whitespace before deciding: the tool schema gives from_room a ""
+        # default (see _build_tools), and a model that "answers" with " " must be
+        # treated as not-provided too, not stored as a blank room name.
+        cleaned_from_room = (from_room or "").strip() or None
+        sessions.create_request(
+            session_id, kind="guide", from_room=cleaned_from_room, to_room=room
+        )
+        where = cleaned_from_room or "your location"
+        return (
+            f"I have asked the front desk to send a guide robot to take you from "
+            f"{where} to {room}. They will approve it in just a moment, hang tight!"
+        )
 
     @staticmethod
     def _load_retrieve_passages():
@@ -741,8 +720,14 @@ class DogAgent:
         turn_id = str(uuid.uuid4())
         flags = self._flags()
 
+        guide_status = None
         if session_id is not None:
             user_name, history, physical, target = self._resolve_session(session_id)
+            # Virtual sessions only: surface an operator-dispatched guide to Moses.
+            if not physical:
+                from guidemate_agent import sessions
+
+                guide_status = sessions.get_guide_status(session_id)
         else:
             # Legacy (no session): physical against the caller-named / first robot.
             user_name, history, physical = None, None, True
@@ -772,7 +757,9 @@ class DogAgent:
         if not allow_motion:
             names = [n for n in names if n not in ("run_motion", "stop")]
         tools = self._build_tools(names, target, captured, physical, session_id)
-        system_prompt = self._build_system_prompt(user_name, history, flags, physical)
+        system_prompt = self._build_system_prompt(
+            user_name, history, flags, physical, guide_status
+        )
         if system_event is not None:
             system_prompt += (
                 "\n\nThis turn was triggered by a system event, not a user message — "
