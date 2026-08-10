@@ -3,7 +3,9 @@
 from guidemate_msgs.messages import Ack
 
 from guidemate_agent import dog_agent, sessions
-from guidemate_agent.dog_agent import DogAgent, EMOTE_INSTRUCTION, PERSONA
+from guidemate_agent.dog_agent import (
+    DogAgent, EMOTE_INSTRUCTION, GUIDE_INSTRUCTION, PERSONA,
+)
 from guidemate_agent.store import DEFAULT_FLAGS
 
 
@@ -325,6 +327,45 @@ def test_awareness_line_omits_from_room_and_warns_not_location():
     assert "not the visitor's current location" in prompt.lower()
 
 
+# --- after a guide, the LAST destination is the presumed current location ---
+# Regression: a visitor guided from "event space" to "South Collaboration Space"
+# then asked to go somewhere new; Moses reused the pre-guide "event space" from
+# history instead of asking. The awareness block must now name the last guide's
+# destination as the PRESUMED current location for a next guide and tell Moses to
+# confirm it, without blindly reusing an earlier-stated location.
+def test_awareness_line_treats_last_destination_as_presumed_location():
+    agent = _agent(RecordingRegistry())
+    guide_status = {
+        "guide_robot_id": "virtual/7",
+        "guide_from_room": "event space",
+        "guide_to_room": "South Collaboration Space",
+    }
+    prompt = agent._build_system_prompt(
+        "Yuki", None, physical=False, guide_status=guide_status
+    )
+    lowered = prompt.lower()
+    # (a) the last destination is named as the presumed current location and
+    #     Moses is told to confirm it before the next guide.
+    assert "south collaboration space" in lowered
+    assert "presumed current location" in lowered
+    assert "confirm" in lowered
+    # (b) Moses is told NOT to blindly reuse an earlier-stated location.
+    assert "do not reuse a location" in lowered
+    # The c774096 guard is untouched: the operator line is still not the location.
+    assert "not the visitor's current location" in lowered
+
+
+# --- GUIDE_INSTRUCTION: the "reuse earlier location" rule is scoped off after a
+# guide has been dispatched (same Yuki bug, at the static-instruction layer). ---
+def test_guide_instruction_disables_reuse_after_a_guide():
+    lowered = GUIDE_INSTRUCTION.lower()
+    # The reuse rule still exists for the pre-guide case.
+    assert "reuse that and do not ask again" in lowered
+    # But it is explicitly scoped off once a guide has been dispatched.
+    assert "does not apply once a guide has already been dispatched" in lowered
+    assert "destination of the most recent guide" in lowered
+
+
 # --- tool gating by physical/virtual mode ---
 # Emotes are PHYSICAL-only now: the physical TurtleBot is the emote/trick fleet,
 # the virtual fleet is navigation-only. A virtual session gets guide_to_room and
@@ -581,6 +622,24 @@ def test_room_vocabulary_matches_the_floor_plan_file():
     assert expected                                   # guard: the fixture file has rooms
     for name in expected:
         assert name in line
+
+
+def test_room_vocabulary_from_env_override(monkeypatch):
+    """Production ships no world/ dir, so it relies on GUIDEMATE_FLOOR_PLAN_PATH pointing at
+    the COPYed in-image floor plan (agent_service/Dockerfile + compose.yaml). Point the env
+    var at the repo's real plan and confirm the vocabulary comes back non-empty, proving the
+    override path the container uses actually feeds the room list."""
+    from pathlib import Path
+
+    repo_root = Path(dog_agent.__file__).resolve().parents[2]
+    plan_path = repo_root / "world" / "data" / "floor-14.json"
+    monkeypatch.setenv(dog_agent._FLOOR_PLAN_ENV, str(plan_path))
+    dog_agent._floor_plan_rooms.cache_clear()
+    try:
+        assert dog_agent._floor_plan_rooms()             # non-empty from the override path
+        assert "South Collaboration Space" in dog_agent._room_vocabulary_line()
+    finally:
+        dog_agent._floor_plan_rooms.cache_clear()        # don't poison other tests
 
 
 def test_room_vocabulary_degrades_to_empty_when_floor_plan_missing(monkeypatch, tmp_path):

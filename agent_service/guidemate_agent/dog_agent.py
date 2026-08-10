@@ -83,7 +83,13 @@ GUIDE_INSTRUCTION = (
     "the visitor, then walks them to the destination, so it needs to know where the "
     "person actually is or it will start from the building entrance. "
     "Never guess `from_room`. If the visitor has already said where they are anywhere "
-    "earlier in this conversation, reuse that and do NOT ask again. Otherwise ask them "
+    "earlier in this conversation, reuse that and do NOT ask again. This reuse rule does "
+    "NOT apply once a guide has already been dispatched in this conversation: a completed "
+    "guide physically relocates the visitor, so any location they gave before that guide "
+    "is now stale. In that case their current location is most likely the destination of "
+    "the most recent guide; confirm it in one short friendly line (or ask if you are "
+    "unsure) before calling guide_to_room, and never reuse a location they stated before "
+    "that guide. Otherwise ask them "
     "once, in one short friendly line, which room or area they are in right now, and "
     "wait for their answer before calling guide_to_room. "
     "The operator-update line above (if present) tells you which robot is coming, NOT "
@@ -403,7 +409,7 @@ class DogAgent:
         # Moses awareness: a virtual session whose guide request the operator has
         # approved now knows which robot is on its way (see approve_guide_request).
         if not physical and guide_status and guide_status.get("guide_robot_id"):
-            parts.append(
+            awareness = (
                 f"Operator update: guide robot {guide_status['guide_robot_id']} has "
                 f"been assigned to your visitor's guide request (destination "
                 f"{guide_status.get('guide_to_room')}). If they ask about their guide, "
@@ -411,6 +417,17 @@ class DogAgent:
                 "them up. This line is NOT the visitor's current location: do not use it "
                 "as their from_room."
             )
+            last_to = guide_status.get("guide_to_room")
+            if last_to:
+                awareness += (
+                    f" A guide has already taken (or is taking) this visitor to "
+                    f"{last_to}, so they are most likely there now. For any NEW guide "
+                    f"request, treat {last_to} as their PRESUMED current location and "
+                    "confirm it with them in one short line before calling guide_to_room; "
+                    "do not reuse a location they gave earlier, before this guide, because "
+                    "the guide has since moved them."
+                )
+            parts.append(awareness)
         if history:
             lines = []
             for m in history[-10:]:
