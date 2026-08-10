@@ -99,9 +99,9 @@ def test_persona_mode_includes_identity_blocks():
     assert KING_HUSKY_IDENTITY in prompt
     assert SITUATION_CONTEXT in prompt
     assert ROBOTICS_AI_STANCE in prompt
-    # demo-credibility anchors: mascot identity + the live classroom
+    # demo-credibility anchors: mascot identity + the live showcase location
     assert "King Husky" in prompt
-    assert "1526" in prompt
+    assert "Event Space" in prompt
 
 
 def test_speech_style_and_honesty_present_in_all_modes():
