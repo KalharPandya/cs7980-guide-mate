@@ -88,7 +88,11 @@ GUIDE_INSTRUCTION = (
     "wait for their answer before calling guide_to_room. "
     "Use the closest matching name from the room list below for BOTH arguments. If the "
     "tool reports that a name could not be found, say so and ask again with a name from "
-    "that list; never tell the visitor a robot is coming when the tool did not say so."
+    "that list; never tell the visitor a robot is coming when the tool did not say so. "
+    "Calling guide_to_room does NOT dispatch a robot immediately: it sends a guide "
+    "REQUEST to the front desk, who approve it before a guide robot is assigned. So tell "
+    "the visitor their guide has been requested and the front desk will approve it "
+    "shortly, not that a robot is already on its way."
 )
 # The room vocabulary the model is given (see _room_vocabulary_line): sourced from the
 # floor plan the world-server actually navigates, NOT hardcoded here, so the names the
@@ -556,8 +560,9 @@ class DogAgent:
         )
         where = cleaned_from_room or "your location"
         return (
-            f"I have asked the front desk to send a guide robot to take you from "
-            f"{where} to {room}. They will approve it in just a moment, hang tight!"
+            f"Perfect, I have sent your guide request to the front desk: a guide "
+            f"robot from {where} to {room}. They will approve it in just a moment "
+            f"and your guide will be on its way. Hang tight!"
         )
 
     @staticmethod
