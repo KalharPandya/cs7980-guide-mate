@@ -122,6 +122,14 @@ export interface VisitorRecord {
    * two phases. Owned by simulatedVisitorSpawner.ts (this module only seeds it once, on
    * escort-end -- see `endEscort`). */
   simulatedCooldownSeconds: number;
+  /** Countdown (simulated seconds) until a delivered REAL visitor auto-despawns, or `null`
+   * when no despawn is scheduled. `null` for the whole life of a simulated visitor (their
+   * removal is driven by simulatedVisitorSpawner.ts's walk-back lifecycle, not this field).
+   * For a real visitor it is `null` while it is being escorted, seeded to
+   * REAL_VISITOR_DESPAWN_S by `endEscort` the instant its escort ends, ticked down by
+   * `tickRealDespawns`, and cleared back to `null` if the visitor is (re)bound to a new
+   * escort so it is never removed mid-escort. See REAL_VISITOR_DESPAWN_S's doc comment. */
+  realDespawnSeconds: number | null;
 }
 
 /** Safety valve for an escort phase that never reaches its own "done" condition (e.g. a
@@ -425,6 +433,22 @@ const DWELL_MIN_S = 3;
 const DWELL_MAX_S = 8;
 
 /**
+ * How long (simulated seconds) a delivered REAL (Moses/operator-dispatched) visitor lingers
+ * at its destination before it auto-despawns and the world self-cleans. A real visitor's
+ * record is created lazily by `requestGuide` (kind "real") and, unlike a simulated one, it
+ * has NO ambient lifecycle to walk it back out and remove it -- so without this it would sit
+ * idle at the destination forever and real visitors would accumulate over a long-running demo.
+ * The instant its escort ends (delivered or timed out), `endEscort` schedules this countdown;
+ * `tickRealDespawns` counts it down and removes the visitor when it reaches zero. 20s leaves
+ * the arrival visible on the big screen for a beat before the person leaves. This is distinct
+ * from the simulated visitor's DWELL_MIN_S..DWELL_MAX_S "look around the room then walk back"
+ * dwell: a real visitor does not walk anywhere afterward, it is simply removed.
+ * Exported so tests can assert against the same number instead of a duplicated magic
+ * constant (mirrors `RESERVED_ROBOTS_FOR_REAL_USERS` / `SIMULATED_VISITOR_TARGET`).
+ */
+export const REAL_VISITOR_DESPAWN_S = 20;
+
+/**
  * How many idle guide robots are held in reserve for REAL (Moses-dispatched) users, out of
  * `WorldRoom.GUIDE_ROBOT_COUNT` (= 5). A SIMULATED (ambient) visitor may only bind an idle
  * robot if doing so still leaves at least this many idle assignable robots free; a REAL
@@ -663,6 +687,7 @@ export class EscortManager {
         simulatedPhase: null,
         simulatedTargetRoom: null,
         simulatedCooldownSeconds: 0,
+        realDespawnSeconds: null,
       };
       this.visitors.set(visitorId, record);
     }
@@ -746,6 +771,11 @@ export class EscortManager {
     record.escortElapsedSeconds = 0;
     record.escortSinceLastTrailUpdateSeconds = 0;
     record.robotPositionHistory = [];
+    // Cancel any pending auto-despawn: a real visitor delivered once and now re-dispatched
+    // (Moses assigning it a new destination during its post-arrival dwell) must not be
+    // removed out from under the new escort. No-op for a visitor that never had one
+    // scheduled (already null on a fresh record and on every simulated record).
+    record.realDespawnSeconds = null;
 
     return { robotId: bestRobotId };
   }
@@ -1100,7 +1130,58 @@ export class EscortManager {
     if (visitor.kind === "simulated") {
       visitor.simulatedPhase = "dwelling";
       visitor.simulatedCooldownSeconds = randomBetween(this.dwellMinS, this.dwellMaxS);
+    } else {
+      // Real visitor: no walk-back lifecycle to remove it, so schedule an auto-despawn.
+      // The escort just ended -- delivered at the destination or timed out -- and either
+      // way the person should leave so the world self-cleans instead of accumulating idle
+      // real visitors. `tickRealDespawns` counts this down and removes the visitor at zero;
+      // a new escort binding (requestGuide) clears it back to null first. See
+      // REAL_VISITOR_DESPAWN_S's doc comment.
+      visitor.realDespawnSeconds = REAL_VISITOR_DESPAWN_S;
     }
+  }
+
+  /**
+   * Counts down every scheduled real-visitor auto-despawn by `dtSeconds` and removes the
+   * ones whose countdown has elapsed -- the lifecycle step that keeps delivered REAL
+   * (Moses/operator-dispatched) visitors from lingering at their destination forever (a
+   * real visitor has no ambient walk-back lifecycle of its own, unlike a simulated one; see
+   * REAL_VISITOR_DESPAWN_S / `VisitorRecord.realDespawnSeconds`).
+   *
+   * Removal is BOTH halves of a despawn: `host.removeAgent` (the Crowd/schema agent) and
+   * `removeVisitor` (this module's bookkeeping + any dangling robot binding). Ids are
+   * collected first and removed afterward so `removeVisitor` never mutates the `visitors`
+   * map while it is being iterated (deleting mid-iteration would skip entries).
+   *
+   * Called by `VisitorManager.tick()` AFTER the escort + spawner steps, so a real escort
+   * that ended THIS frame (which seeds `realDespawnSeconds` via `endEscort`) starts its
+   * countdown this frame and is not removed until REAL_VISITOR_DESPAWN_S of ticks later.
+   */
+  tickRealDespawns(dtSeconds: number): void {
+    const toRemove: string[] = [];
+    for (const visitor of this.visitors.values()) {
+      if (visitor.kind !== "real") continue;
+      if (visitor.realDespawnSeconds === null) continue;
+      visitor.realDespawnSeconds -= dtSeconds;
+      if (visitor.realDespawnSeconds <= 0) toRemove.push(visitor.id);
+    }
+    for (const id of toRemove) {
+      this.host.removeAgent(id);
+      this.removeVisitor(id);
+    }
+  }
+
+  /** Every currently-tracked REAL visitor's id, for `WorldRoom.clearRealVisitors`'s
+   * immediate manual clear (the ids are collected here so the caller can remove each from
+   * both the Crowd/schema and this module's bookkeeping without mutating the `visitors` map
+   * mid-iteration). Simulated visitors are excluded -- an admin "clear real visitors" must
+   * leave the ambient scene running. */
+  realVisitorIds(): string[] {
+    const ids: string[] = [];
+    for (const visitor of this.visitors.values()) {
+      if (visitor.kind === "real") ids.push(visitor.id);
+    }
+    return ids;
   }
 
   /**

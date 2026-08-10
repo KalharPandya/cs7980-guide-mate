@@ -110,6 +110,11 @@ class FakeWorldRoom implements WorldRoomLike {
   setSimulatedVisitorsEnabledCalls: boolean[] = [];
   simulatedVisitorsEnabled = true;
 
+  // ---- scoped clear-real-visitors test hooks ----
+  clearRealVisitorsCalls = 0;
+  /** Count the fake reports as "removed" for a clear-real-visitors command. */
+  clearRealVisitorsResult = 0;
+
   moveAgentTo(agentId: string, target: string | { x: number; z: number }): boolean {
     this.moveCalls.push({ agentId, target });
     if (this.moveResult && !this.state.agents.has(agentId)) {
@@ -167,6 +172,13 @@ class FakeWorldRoom implements WorldRoomLike {
   setSimulatedVisitorsEnabled(enabled: boolean): void {
     this.setSimulatedVisitorsEnabledCalls.push(enabled);
     this.simulatedVisitorsEnabled = enabled;
+  }
+
+  /** Mirrors the real WorldRoom.clearRealVisitors -- records that the bridge invoked it (so
+   * the clear-real-visitors scoped-stop test can assert the bridge cleared without pausing). */
+  clearRealVisitors(): number {
+    this.clearRealVisitorsCalls++;
+    return this.clearRealVisitorsResult;
   }
 }
 
@@ -1011,6 +1023,123 @@ async function main(): Promise<void> {
     assert.deepEqual(client.acksFor("cmd-ss5"), ["received", "failed"]);
     assert.equal(client.published.find((p) => p.payload.state === "failed")!.payload.reason, "world_not_ready");
     console.log("PASS: no active WorldRoom on a scoped simulated stop acks failed/world_not_ready");
+  }
+
+  // ==================================================================================
+  // Scoped fleet `stop`: params.scope==="clear-real-visitors" is a one-shot ACTION that
+  // removes every real (Moses-dispatched) visitor. It must call room.clearRealVisitors()
+  // and must NOT pause/resume the world or touch the simulated-spawner toggle. There is no
+  // resume overload -- it is an action, not a pause.
+  // ==================================================================================
+
+  // ---- scope="clear-real-visitors" clears real visitors and pauses nothing ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    room.clearRealVisitorsResult = 3;
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(
+      fleetCmdTopic(),
+      JSON.stringify(fleetStopCmd("cmd-cr1", { scope: "clear-real-visitors" })),
+    );
+
+    assert.equal(
+      room.clearRealVisitorsCalls,
+      1,
+      "scope=clear-real-visitors must call room.clearRealVisitors() exactly once",
+    );
+    assert.equal(room.pauseCalls, 0, "clearing real visitors must NOT pause the whole world");
+    assert.equal(room.resumeCalls, 0, "clearing real visitors must NOT resume the whole world");
+    assert.equal(
+      room.setSimulatedVisitorsEnabledCalls.length,
+      0,
+      "clearing real visitors must NOT touch the simulated-spawner toggle",
+    );
+    assert.deepEqual(client.acksFor("cmd-cr1"), ["received", "done"]);
+    for (const { topic } of client.published) {
+      assert.equal(topic, fleetStatusTopic(), "clear-real-visitors acks must publish on the fleet status topic");
+    }
+    console.log("PASS: fleet stop scope=clear-real-visitors clears real visitors, pauses nothing, touches no other scope");
+  }
+
+  // ---- a resume flag on clear-real-visitors is ignored (one-shot action, no resume overload) ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(
+      fleetCmdTopic(),
+      JSON.stringify(fleetStopCmd("cmd-cr2", { scope: "clear-real-visitors", resume: true })),
+    );
+
+    assert.equal(
+      room.clearRealVisitorsCalls,
+      1,
+      "scope=clear-real-visitors clears regardless of a resume flag (there is no resume overload for it)",
+    );
+    assert.equal(room.pauseCalls, 0);
+    assert.equal(
+      room.resumeCalls,
+      0,
+      "a resume flag on the clear scope must NOT be interpreted as a whole-world resume",
+    );
+    assert.deepEqual(client.acksFor("cmd-cr2"), ["received", "done"]);
+    console.log("PASS: clear-real-visitors ignores a resume flag (it is a one-shot action, not a pause/resume)");
+  }
+
+  // ---- the three fleet-stop routes stay disjoint: clear-real-visitors, scope=simulated,
+  // and unscoped each hit ONLY their own path ----
+  {
+    const client = new FakeMqttClient();
+
+    // clear-real-visitors: only clears.
+    const clearRoom = new FakeWorldRoom();
+    const clearBridge = new IotBridge({ getRoom: () => clearRoom, client, log: { log() {}, warn() {}, error() {} } });
+    clearBridge.handleMessage(
+      fleetCmdTopic(),
+      JSON.stringify(fleetStopCmd("cmd-cr3", { scope: "clear-real-visitors" })),
+    );
+    assert.equal(clearRoom.clearRealVisitorsCalls, 1);
+    assert.equal(clearRoom.pauseCalls, 0);
+    assert.equal(clearRoom.setSimulatedVisitorsEnabledCalls.length, 0);
+
+    // scope=simulated: still toggles ONLY the spawner, never clears.
+    const simRoom = new FakeWorldRoom();
+    const simBridge = new IotBridge({ getRoom: () => simRoom, client, log: { log() {}, warn() {}, error() {} } });
+    simBridge.handleMessage(
+      fleetCmdTopic(),
+      JSON.stringify(fleetStopCmd("cmd-cr4", { scope: "simulated" })),
+    );
+    assert.deepEqual(simRoom.setSimulatedVisitorsEnabledCalls, [false], "scope=simulated must still toggle the spawner");
+    assert.equal(simRoom.clearRealVisitorsCalls, 0, "scope=simulated must never clear real visitors");
+    assert.equal(simRoom.pauseCalls, 0);
+
+    // unscoped: still pauses, never clears.
+    const pauseRoom = new FakeWorldRoom();
+    const pauseBridge = new IotBridge({ getRoom: () => pauseRoom, client, log: { log() {}, warn() {}, error() {} } });
+    pauseBridge.handleMessage(fleetCmdTopic(), JSON.stringify(fleetStopCmd("cmd-cr5")));
+    assert.equal(pauseRoom.pauseCalls, 1, "an unscoped stop must still pause the whole world");
+    assert.equal(pauseRoom.clearRealVisitorsCalls, 0, "an unscoped stop must never clear real visitors");
+    assert.equal(pauseRoom.setSimulatedVisitorsEnabledCalls.length, 0);
+
+    console.log("PASS: clear-real-visitors, scope=simulated, and unscoped fleet stops each hit only their own path");
+  }
+
+  // ---- no live WorldRoom on a clear-real-visitors stop -> failed/world_not_ready ----
+  {
+    const client = new FakeMqttClient();
+    const bridge = new IotBridge({ getRoom: () => undefined, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(
+      fleetCmdTopic(),
+      JSON.stringify(fleetStopCmd("cmd-cr6", { scope: "clear-real-visitors" })),
+    );
+
+    assert.deepEqual(client.acksFor("cmd-cr6"), ["received", "failed"]);
+    assert.equal(client.published.find((p) => p.payload.state === "failed")!.payload.reason, "world_not_ready");
+    console.log("PASS: no active WorldRoom on a clear-real-visitors stop acks failed/world_not_ready");
   }
 
   // ==================================================================================

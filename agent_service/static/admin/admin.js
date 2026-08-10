@@ -468,6 +468,26 @@ $("sim-stop").addEventListener("click",
 $("sim-resume").addEventListener("click",
   () => sendSimCommand("/world/sim-resume", "Resume simulated visitors"));
 
+// One-shot bulk removal of all real (guide) visitors (see admin.py
+// /world/clear-visitors). Confirm first since it removes everyone at once.
+async function clearGuideVisitors() {
+  const label = "Clear guide visitors";
+  const el = $("clear-visitors-result");
+  if (!window.confirm("Remove all guide visitors from the world?")) return;
+  if (el) el.textContent = `${label}...`;
+  try {
+    const resp = await api("/world/clear-visitors",
+      { method: "POST", headers: jsonHeaders });
+    const out = await resp.json();
+    if (el) el.textContent = resp.ok && out.ok
+      ? `OK: ${label} (${(out.acks || []).length} ack(s))`
+      : `FAILED: ${label} (${resp.status})`;
+  } catch (err) {
+    if (el) el.textContent = `FAILED: ${label} (${err})`;
+  }
+}
+$("clear-visitors").addEventListener("click", clearGuideVisitors);
+
 // --- maps ------------------------------------------------------------------
 // Robot picker is populated from the same /status list the Robot tab uses
 // (data.robots), not hardcoded to ROBOT_ID -- the Maps tab supports every

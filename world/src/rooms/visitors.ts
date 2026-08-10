@@ -172,5 +172,23 @@ export class VisitorManager {
   tick(dtSeconds: number): void {
     this.escorts.tick(dtSeconds);
     this.spawner.tick(dtSeconds);
+    // AFTER both escort + spawner steps: an escort that ended THIS frame (step 1) has just
+    // seeded its real visitor's despawn countdown, so running this last starts that
+    // countdown this frame rather than removing the just-delivered visitor immediately. See
+    // `EscortManager.tickRealDespawns`.
+    this.escorts.tickRealDespawns(dtSeconds);
+  }
+
+  /** Every currently-tracked REAL visitor's id -- passthrough to
+   * `EscortManager.realVisitorIds`, for `WorldRoom.clearRealVisitors`'s admin clear. */
+  realVisitorIds(): string[] {
+    return this.escorts.realVisitorIds();
+  }
+
+  /** Removes one visitor's escort bookkeeping (and frees any robot it held) --
+   * passthrough to `EscortManager.removeVisitor`. Paired with `WorldRoom.removeAgent`
+   * (which removes the Crowd/schema agent) by `WorldRoom.clearRealVisitors`. */
+  removeVisitorRecord(visitorId: string): void {
+    this.escorts.removeVisitor(visitorId);
   }
 }

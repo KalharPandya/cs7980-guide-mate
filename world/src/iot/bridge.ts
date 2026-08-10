@@ -157,6 +157,15 @@ export interface WorldRoomLike {
    */
   setSimulatedVisitorsEnabled(enabled: boolean): void;
   /**
+   * Immediately removes every real (Moses/operator-dispatched) visitor and returns the count
+   * removed -- the admin "clear real visitors" control, distinct from setSimulatedVisitorsEnabled
+   * (which affects only ambient simulated visitors) and from pause()/resume() (which freeze the
+   * whole world). Wired to a fleet `stop` command carrying `params.scope === "clear-real-visitors"`
+   * -- see `handleFleetStop`. The real WorldRoom satisfies this via `WorldRoom.clearRealVisitors`;
+   * a structural addition only, no change to WorldRoom.ts's public shape beyond that method.
+   */
+  clearRealVisitors(): number;
+  /**
    * Bug fix (found by code review of Task 5.2's commit f6b79f2): exposes WorldRoom's
    * pause flag so pollPending() can stop a pending navigate's nav_timeout deadline from
    * advancing while the whole world is frozen -- see pollPending()'s doc comment for the
@@ -515,7 +524,17 @@ export class IotBridge {
    * resume-overload convention on the same command:
    *   - scope="simulated", no resume (or falsy)   -> DISABLE the spawner (room.setSimulatedVisitorsEnabled(false)).
    *   - scope="simulated", `params.resume === true` -> ENABLE  it     (room.setSimulatedVisitorsEnabled(true)).
-   * Any `stop` WITHOUT scope="simulated" falls through to the existing whole-world
+   *
+   * ---- SCOPED variant: clear all real visitors ----
+   * A `stop` carrying `params.scope === "clear-real-visitors"` is a one-shot ACTION, not a
+   * pause: it immediately removes every real (Moses-dispatched) visitor from the world
+   * (room.clearRealVisitors()) -- freeing any robots they were escorting with -- and acks
+   * done, WITHOUT freezing anything and with no resume overload. The ambient simulated scene
+   * and the whole-world pause state are left untouched. This is the manual counterpart to the
+   * automatic post-delivery despawn (EscortManager.tickRealDespawns), for an admin who wants
+   * to wipe the real visitors immediately rather than wait out their dwell.
+   *
+   * Any `stop` WITHOUT a recognized `scope` falls through to the existing whole-world
    * pause/resume above, byte-for-byte unchanged. `params` is already free-form on both the
    * Python and TS sides, so carrying `scope` needs no wire-schema change.
    */
@@ -528,7 +547,12 @@ export class IotBridge {
       return;
     }
 
-    if (cmd.params.scope === "simulated") {
+    if (cmd.params.scope === "clear-real-visitors") {
+      // Scoped: immediately remove every real (Moses-dispatched) visitor. This is a
+      // one-shot action, NOT a pause -- nothing is frozen and there is no resume overload;
+      // the ambient simulated scene and the whole-world pause state are left untouched.
+      room.clearRealVisitors();
+    } else if (cmd.params.scope === "simulated") {
       // Scoped: toggle ONLY the ambient simulated-visitor spawner. resume===true enables
       // (ramp back up), anything else disables (stop spawning + despawn the active ones).
       // The whole-world pause/resume is deliberately NOT touched on this path.

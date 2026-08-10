@@ -22,7 +22,7 @@ import assert from "node:assert/strict";
 import { WorldRoom, GUIDE_ROBOT_COUNT } from "../WorldRoom.js";
 import { loadFloorPlan } from "../../nav/loadFloorPlan.js";
 import { SIMULATED_VISITOR_TARGET } from "../simulatedVisitorSpawner.js";
-import { RESERVED_ROBOTS_FOR_REAL_USERS } from "../escortManager.js";
+import { RESERVED_ROBOTS_FOR_REAL_USERS, REAL_VISITOR_DESPAWN_S } from "../escortManager.js";
 import type { EscortManager, VisitorRecord } from "../escortManager.js";
 
 const DOOR_TOLERANCE_M = 1.0; // matches WorldRoom.test.ts's convergence tolerance
@@ -1112,6 +1112,7 @@ async function testReservedCapacityForRealUsers(): Promise<void> {
       simulatedPhase: "waiting_for_robot",
       simulatedTargetRoom: "Kitchen",
       simulatedCooldownSeconds: 0,
+      realDespawnSeconds: null,
     };
     escorts.registerVisitor(record);
     return id;
@@ -1324,6 +1325,179 @@ async function testSetSimulatedEnabledStopsAndResumesAmbientTraffic(): Promise<v
   room.onDispose();
 }
 
+/** Builds an inert "parked" SIMULATED visitor record for the auto-despawn / clear tests
+ * below: registered directly on the EscortManager, kind "simulated", no robot bound, in the
+ * "walking_to_room" lifecycle state -- the one state `SimulatedVisitorSpawner.tickLifecycle`
+ * takes NO action for (that whole span is escort-driven), so with no escort it just sits
+ * still. That isolates exactly what's under test: the only thing that could remove it is the
+ * real-visitor path (`tickRealDespawns` / `clearRealVisitors`), which by construction skips
+ * kind "simulated". `realDespawnSeconds: null` -- a simulated record never uses that field. */
+function registerParkedSimulatedVisitor(
+  room: WorldRoom,
+  entrance: { x: number; z: number },
+  id: string,
+): void {
+  const escorts = (room as unknown as { visitors: { escorts: EscortManager } }).visitors.escorts;
+  room.addAgent(id, "visitor", entrance);
+  const record: VisitorRecord = {
+    id,
+    kind: "simulated",
+    robotId: null,
+    escortPhase: null,
+    greetSecondsRemaining: 0,
+    escortDestination: null,
+    escortLeadTarget: null,
+    escortElapsedSeconds: 0,
+    escortSinceLastTrailUpdateSeconds: 0,
+    robotPositionHistory: [],
+    simulatedPhase: "walking_to_room",
+    simulatedTargetRoom: "Kitchen",
+    simulatedCooldownSeconds: 0,
+    realDespawnSeconds: null,
+  };
+  escorts.registerVisitor(record);
+}
+
+type AgentsMap = Map<string, { state?: string; x: number; z: number }>;
+function agentsMap(room: WorldRoom): AgentsMap {
+  return (room as unknown as { state: { agents: AgentsMap } }).state.agents;
+}
+
+/**
+ * A) auto-despawn: a delivered REAL (Moses-dispatched) visitor must LEAVE after
+ * REAL_VISITOR_DESPAWN_S rather than lingering at its destination forever (the accumulate-
+ * forever defect this fixes). Simulated visitors must NOT be removed by that path.
+ *
+ * The escort is ended deterministically by removing the escorting robot mid-escort (the
+ * EscortManager's "robot vanished mid-escort" -> endEscort path), which is exactly what
+ * schedules the real visitor's auto-despawn -- no need to drive a full multi-second arrival.
+ */
+async function testDeliveredRealVisitorAutoDespawns(): Promise<void> {
+  const room = new WorldRoom();
+  await room.onCreate({ disableSimulatedVisitors: true, disableGuideRobots: true });
+  room.setSimulationInterval();
+
+  const plan = loadFloorPlan();
+  const entrance = { x: plan.entrance.point[0], z: plan.entrance.point[1] };
+  const agents = agentsMap(room);
+  const escorts = (room as unknown as { visitors: { escorts: EscortManager } }).visitors.escorts;
+
+  // A parked simulated visitor the auto-despawn path must never touch.
+  registerParkedSimulatedVisitor(room, entrance, "sim-parked");
+
+  // A REAL visitor bound to a robot; removing the robot ends the escort next tick.
+  room.addAgent("despawn-robot", "robot", entrance);
+  room.addAgent("real-v", "visitor", entrance);
+  const bound = room.requestGuide("real-v", "Kitchen");
+  assert.ok(bound.robotId, "test setup: the real visitor should bind the only idle robot");
+  room.removeAgent("despawn-robot"); // robot vanishes -> next tick ends the escort
+
+  const DT_MS = 100;
+  const DT_S = DT_MS / 1000;
+
+  // One tick: escort step ends the escort (schedules the 20s despawn) + realDespawn step
+  // starts the countdown this same frame (must NOT remove it yet -- the delay must be real).
+  room.update(DT_MS);
+  assert.ok(
+    agents.get("real-v"),
+    "the delivered real visitor must still be present the tick its escort ends -- the despawn is delayed, not immediate",
+  );
+  assert.equal(
+    room.getVisitorDebugStats().robotBindings,
+    0,
+    "the vanished robot's escort binding must be released when the escort ends",
+  );
+
+  // Still present partway through the despawn window.
+  const halfTicks = Math.floor(REAL_VISITOR_DESPAWN_S / 2 / DT_S);
+  for (let i = 0; i < halfTicks; i++) room.update(DT_MS);
+  assert.ok(
+    agents.get("real-v"),
+    `the real visitor must still be present ~${REAL_VISITOR_DESPAWN_S / 2}s after its escort ended (well before the ${REAL_VISITOR_DESPAWN_S}s window)`,
+  );
+
+  // Past REAL_VISITOR_DESPAWN_S total elapsed: gone (agent AND bookkeeping).
+  const remainingTicks = Math.ceil((REAL_VISITOR_DESPAWN_S + 1) / DT_S) - halfTicks;
+  for (let i = 0; i < remainingTicks; i++) room.update(DT_MS);
+  assert.ok(
+    !agents.get("real-v"),
+    `the real visitor must be auto-despawned once ${REAL_VISITOR_DESPAWN_S}s have elapsed since its escort ended`,
+  );
+  assert.ok(
+    !escorts.realVisitorIds().includes("real-v"),
+    "the despawned real visitor's escort bookkeeping must be removed too, not just its agent",
+  );
+
+  // The whole point of the isolation: the simulated visitor is untouched by this path.
+  assert.ok(
+    agents.get("sim-parked"),
+    "a simulated visitor must NOT be auto-despawned by the real-visitor despawn path",
+  );
+  console.log(
+    `PASS: a delivered real visitor auto-despawns ~${REAL_VISITOR_DESPAWN_S}s after its escort ends (agent + bookkeeping); simulated visitors are untouched by that path`,
+  );
+
+  room.onDispose();
+}
+
+/**
+ * B) admin clear: `WorldRoom.clearRealVisitors()` immediately removes every real visitor
+ * (including ones mid-escort, freeing the robots they held) and returns the count, while
+ * leaving simulated visitors and every robot in place.
+ */
+async function testClearRealVisitorsRemovesAllAndFreesRobots(): Promise<void> {
+  const room = new WorldRoom();
+  await room.onCreate({ disableSimulatedVisitors: true, disableGuideRobots: true });
+  room.setSimulationInterval();
+
+  const plan = loadFloorPlan();
+  const entrance = { x: plan.entrance.point[0], z: plan.entrance.point[1] };
+  const agents = agentsMap(room);
+  const escorts = (room as unknown as { visitors: { escorts: EscortManager } }).visitors.escorts;
+
+  const ROBOT_COUNT = 4;
+  for (let i = 0; i < ROBOT_COUNT; i++) room.addAgent(`clr-robot-${i}`, "robot", entrance);
+
+  // Two REAL visitors, each bound to a robot (in-escort, so clearing must free their robots).
+  const realIds = ["clr-real-0", "clr-real-1"];
+  for (const id of realIds) {
+    room.addAgent(id, "visitor", entrance);
+    const bound = room.requestGuide(id, "Kitchen");
+    assert.ok(bound.robotId, `test setup: real visitor ${id} should bind an idle robot`);
+  }
+  // A parked simulated visitor that must survive the clear.
+  registerParkedSimulatedVisitor(room, entrance, "clr-sim");
+
+  const before = room.getVisitorDebugStats();
+  assert.equal(before.robotBindings, 2, "test setup: the two real escorts should have bound two robots");
+
+  const removed = room.clearRealVisitors();
+  assert.equal(removed, 2, "clearRealVisitors must report removing exactly the two real visitors");
+
+  for (const id of realIds) {
+    assert.ok(!agents.get(id), `real visitor ${id}'s agent must be gone after the clear`);
+  }
+  assert.ok(agents.get("clr-sim"), "the simulated visitor's agent must remain after the clear");
+  for (let i = 0; i < ROBOT_COUNT; i++) {
+    assert.ok(agents.get(`clr-robot-${i}`), `robot clr-robot-${i} must remain (clear removes visitors, not robots)`);
+  }
+
+  const after = room.getVisitorDebugStats();
+  assert.equal(after.robotBindings, 0, "clearing in-escort real visitors must free their robot bindings");
+  assert.equal(after.escortedVisitors, 0, "no escorted visitors should remain after the clear");
+  assert.deepEqual(escorts.realVisitorIds(), [], "no real-visitor escort bookkeeping should remain after the clear");
+
+  // A freed robot is assignable again immediately.
+  room.addAgent("clr-real-2", "visitor", entrance);
+  const rebind = room.requestGuide("clr-real-2", "Kitchen");
+  assert.ok(rebind.robotId, "a freed robot must be assignable to a new real visitor after the clear");
+
+  console.log(
+    "PASS: clearRealVisitors removed all real visitors (freeing their robots) and left the simulated visitor and every robot intact",
+  );
+  room.onDispose();
+}
+
 async function main(): Promise<void> {
   // Both tick rates, for the reason in this scenario's header: a previous attempt at the
   // doorway deadlock passed at 100ms and still deadlocked at the production 16.6ms interval.
@@ -1336,6 +1510,8 @@ async function main(): Promise<void> {
   await testEscortTimeoutPauseCorrectness();
   await testSimulatedSpawnerPauseFreezesLifecycle();
   await testSetSimulatedEnabledStopsAndResumesAmbientTraffic();
+  await testDeliveredRealVisitorAutoDespawns();
+  await testClearRealVisitorsRemovesAllAndFreesRobots();
   await testReservedCapacityForRealUsers();
   await testSimulatedSpawnerConvergence();
 

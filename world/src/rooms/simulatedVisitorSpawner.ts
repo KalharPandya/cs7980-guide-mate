@@ -264,6 +264,7 @@ export class SimulatedVisitorSpawner {
       simulatedPhase: "waiting_for_robot",
       simulatedTargetRoom: room,
       simulatedCooldownSeconds: 0,
+      realDespawnSeconds: null, // only ever used by real visitors; null satisfies the type
     };
     this.escorts.registerVisitor(record);
 

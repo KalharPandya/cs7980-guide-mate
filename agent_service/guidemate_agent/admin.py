@@ -271,6 +271,20 @@ def world_sim_resume(request: Request, _: bool = Depends(admin_required)) -> dic
     return {"ok": True, "acks": [a.model_dump() for a in acks]}
 
 
+# SCOPED clear-real-visitors: immediately REMOVE every real (guide) visitor
+# from the 3D world. Same `type="stop"`/`name="stop"` command overload as the
+# sim-stop routes above, but carrying `params={"scope": "clear-real-visitors"}`
+# so the world-server clears the operator-driven guide visitors on receipt. This
+# is a one-shot bulk removal, not a pause, so there is no paired resume route.
+@router.post("/world/clear-visitors")
+def world_clear_visitors(request: Request, _: bool = Depends(admin_required)) -> dict:
+    cmd = Command(type="stop", name="stop",
+                  params={"scope": "clear-real-visitors"})
+    acks = request.app.state.registry.send_fleet_command(cmd)
+    log.warning("virtual-world clear real (guide) visitors fired")
+    return {"ok": True, "acks": [a.model_dump() for a in acks]}
+
+
 _UNSAFE_KEY_CHARS = re.compile(r"[^A-Za-z0-9._-]")
 
 

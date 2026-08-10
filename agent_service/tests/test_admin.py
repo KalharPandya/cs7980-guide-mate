@@ -325,6 +325,27 @@ def test_world_sim_routes_require_auth(monkeypatch):
         assert app.state.registry.fleet_sent == [], "unauthenticated calls must not publish anything"
 
 
+def test_world_clear_visitors_publishes_scoped_clear(monkeypatch):
+    app = _make_app(monkeypatch)
+    with TestClient(app) as client:
+        resp = client.post("/api/admin/world/clear-visitors", headers=_auth_header())
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        assert len(app.state.registry.fleet_sent) == 1
+        cmd_type, cmd_name, params = app.state.registry.fleet_sent[0]
+        assert cmd_type == "stop"
+        assert cmd_name == "stop"
+        assert params == {"scope": "clear-real-visitors"}, \
+            "clear-visitors must scope the stop to clearing real (guide) visitors"
+
+
+def test_world_clear_visitors_requires_auth(monkeypatch):
+    app = _make_app(monkeypatch)
+    with TestClient(app) as client:
+        assert client.post("/api/admin/world/clear-visitors").status_code == 401
+        assert app.state.registry.fleet_sent == [], "unauthenticated calls must not publish anything"
+
+
 def test_kb_upload_list_sync(monkeypatch):
     app = _make_app(monkeypatch)
     with TestClient(app) as client:

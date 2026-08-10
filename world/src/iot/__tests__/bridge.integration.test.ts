@@ -102,6 +102,13 @@ class FakeWorldRoom implements WorldRoomLike {
    * exercised by bridge.test.ts's in-process fakes; this round trip only drives `navigate`. */
   setSimulatedVisitorsEnabled(): void {}
 
+  /** Same stand-in rationale as `setSimulatedVisitorsEnabled`: the scoped clear-real-visitors
+   * path is exercised by bridge.test.ts's in-process fakes; this round trip only drives
+   * `navigate`. */
+  clearRealVisitors(): number {
+    return 0;
+  }
+
   /** Bug fix's `isPaused` addition to WorldRoomLike -- this round trip never pauses, so a
    * constant `false` is a sufficient stand-in. */
   get isPaused(): boolean {

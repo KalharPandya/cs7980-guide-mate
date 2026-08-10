@@ -581,6 +581,26 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   }
 
   /**
+   * Immediately removes EVERY real (Moses/operator-dispatched) visitor from the world and
+   * returns how many were removed -- the admin "clear real visitors" control, distinct from
+   * the automatic post-delivery despawn (`EscortManager.tickRealDespawns`). Each id is
+   * removed from BOTH the Crowd/schema (via `removeAgent`) and the visitor bookkeeping (via
+   * `VisitorManager.removeVisitorRecord`, which also frees any robot the visitor was still
+   * escorting with), so an in-escort real visitor's robot is released back to idle. Simulated
+   * visitors and their robots are left untouched, so the ambient scene keeps running.
+   * Triggered by a fleet `stop` command carrying `params.scope === "clear-real-visitors"` --
+   * see world/src/iot/bridge.ts's `handleFleetStop`.
+   */
+  clearRealVisitors(): number {
+    const ids = this.visitors.realVisitorIds();
+    for (const id of ids) {
+      this.removeAgent(id);
+      this.visitors.removeVisitorRecord(id);
+    }
+    return ids.length;
+  }
+
+  /**
    * Resolves `roomNameOrCoords` (a room name/alias via Task 1.1's `findRoomTarget`, or a
    * literal nav-space `{x, z}` point) and requests the crowd agent `agentId` move there.
    * Returns `false` (and logs why) if the agent id is unknown or the target can't be
