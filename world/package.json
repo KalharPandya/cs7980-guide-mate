@@ -14,7 +14,7 @@
     "start": "node dist/index.js",
     "test": "tsx src/test/join.test.ts",
     "test:persistence": "tsx src/test/persistence.test.ts",
-    "test:nav": "tsx src/nav/__tests__/loadFloorPlan.test.ts && tsx src/nav/__tests__/buildNavMesh.geometry.test.ts && tsx src/nav/__tests__/buildNavMesh.test.ts && tsx src/nav/__tests__/roomResolution.test.ts && tsx src/nav/__tests__/roomDoorSanity.test.ts",
+    "test:nav": "tsx src/nav/__tests__/loadFloorPlan.test.ts && tsx src/nav/__tests__/buildNavMesh.geometry.test.ts && tsx src/nav/__tests__/buildNavMesh.test.ts && tsx src/nav/__tests__/buildNavMesh.furniture.test.ts && tsx src/nav/__tests__/roomResolution.test.ts && tsx src/nav/__tests__/roomDoorSanity.test.ts",
     "test:crowd": "tsx src/nav/__tests__/crowd.test.ts && tsx src/rooms/__tests__/WorldRoom.test.ts",
     "test:visitors": "tsx src/rooms/__tests__/visitors.test.ts",
     "test:iot": "tsx src/iot/__tests__/bridge.test.ts",

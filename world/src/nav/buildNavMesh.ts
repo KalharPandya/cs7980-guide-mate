@@ -142,6 +142,75 @@ function addFloorTriangles(
 }
 
 /**
+ * Height (meters) obstacle footprints are extruded to. Furniture is 0.45-0.75m tall in the render,
+ * but for the navmesh only one thing matters: the extrusion must exceed AGENT_MAX_CLIMB_M (0.20m)
+ * so Recast treats it as an obstruction to step AROUND, not a threshold to step OVER. Extruded to
+ * full AGENT_HEIGHT_M so the footprint blocks unambiguously regardless of how the voxel grid rounds
+ * a shorter box -- an agent can't duck under a table, so modelling low furniture as full-height in
+ * the navmesh is the safe direction to err.
+ */
+const OBSTACLE_HEIGHT_M = AGENT_HEIGHT_M;
+
+/**
+ * Emits one obstacle FOOTPRINT polygon (e.g. a furniture item, in floor-plan (x, z) meters) as a
+ * SOLID BOX: the four vertical side quads that fence it (exactly the way `walls[]` fence a room)
+ * PLUS a horizontal cap over the top. Furniture is carved as a box rather than as a floor `hole`
+ * for two reasons: (1) it uses the SAME wall-quad mechanism the reachability gate already trusts,
+ * and (2) unlike earcut holes, overlapping footprints (adjacent tables) and footprints near the
+ * outline are harmless -- overlapping quads just co-occupy voxels, whereas overlapping earcut holes
+ * corrupt the triangulation.
+ *
+ * The CAP is load-bearing, not decoration. Four side walls alone leave the enclosed floor
+ * triangulated as a walkable-but-disconnected ISLAND; erosion keeps agents from crossing the fence,
+ * but a spawn/target snap (NavMeshQuery.findClosestPoint, used by guideFleetSpawns and findRoomTarget)
+ * can still latch onto that island and strand an agent inside the furniture. The cap sits at
+ * OBSTACLE_HEIGHT_M above the footprint, which drops the vertical clearance over that interior floor
+ * below `walkableHeight`, so Recast filters the interior floor out entirely -- the footprint becomes
+ * genuinely non-walkable (no island) instead of merely fenced. The cap is wound DOWN-FACING so
+ * Recast marks it non-walkable (a table TOP must not become a walkable rooftop island either); it
+ * still rasterizes into a solid span, which is all the clearance filter needs.
+ */
+function addObstacleBox(footprint: Point2D[], positions: number[], indices: number[]): void {
+  for (let i = 0; i < footprint.length; i++) {
+    const a = footprint[i];
+    const b = footprint[(i + 1) % footprint.length];
+    addWallQuad({ a, b, height: OBSTACLE_HEIGHT_M, glass: false }, positions, indices);
+  }
+  addDownFacingCap(footprint, OBSTACLE_HEIGHT_M, positions, indices);
+}
+
+/**
+ * Emits a horizontal quad (2 triangles) at height `y` over `footprint`, wound so its face normal
+ * points DOWN (-Y). Down-facing so Recast's slope test marks it non-walkable (`markWalkableTriangles`
+ * treats a downward face as "too steep"), which is what stops the box top becoming a walkable
+ * rooftop poly -- while it still rasterizes as a solid span that removes head clearance from the
+ * floor beneath it (the whole reason the cap exists; see addObstacleBox). Each triangle's winding
+ * is forced to a downward normal directly (mirror of addFloorTriangles' upward-facing check), so it
+ * is correct regardless of how the footprint itself is wound.
+ */
+function addDownFacingCap(
+  footprint: Point2D[],
+  y: number,
+  positions: number[],
+  indices: number[],
+): void {
+  const base = positions.length / 3;
+  for (const [x, z] of footprint) {
+    positions.push(x, y, z);
+  }
+
+  // Fan-triangulate the (convex) footprint, forcing each triangle to a DOWN-facing normal.
+  for (let i = 1; i < footprint.length - 1; i++) {
+    const tri = [0, i, i + 1];
+    const [p0, p1, p2] = tri.map((k) => footprint[k]);
+    // normalY of (p1-p0)x(p2-p0): >0 faces up. We want it DOWN (<0), so flip when it comes out up.
+    const normalY = (p1[1] - p0[1]) * (p2[0] - p0[0]) - (p1[0] - p0[0]) * (p2[1] - p0[1]);
+    const [a, b, c] = normalY < 0 ? tri : [tri[0], tri[2], tri[1]];
+    indices.push(base + a, base + b, base + c);
+  }
+}
+
+/**
  * Emits a vertical quad (2 triangles) for one wall segment, from y=0 to y=`height`.
  * Winding follows the recast-navigation README's "right-handed, CCW" convention for the
  * `(a, 0)-(b, 0)-(b, height)` / `(a, 0)-(b, height)-(a, height)` triangle pair; a near-vertical
@@ -168,13 +237,19 @@ function addWallQuad(wall: FloorPlanWall, positions: number[], indices: number[]
   );
 }
 
-function buildGeometry(plan: FloorPlan): { positions: number[]; indices: number[] } {
+function buildGeometry(
+  plan: FloorPlan,
+  furnitureObstacles: Point2D[][] = [],
+): { positions: number[]; indices: number[] } {
   const positions: number[] = [];
   const indices: number[] = [];
 
   addFloorTriangles(plan, positions, indices);
   for (const wall of plan.walls) {
     addWallQuad(wall, positions, indices);
+  }
+  for (const footprint of furnitureObstacles) {
+    addObstacleBox(footprint, positions, indices);
   }
 
   return { positions, indices };
@@ -304,11 +379,14 @@ function makeRoomResolver(
  * Awaits recast-navigation's WASM init exactly once (memoized across calls) before
  * generating. Safe to call multiple times (e.g. once per test file).
  */
-export async function buildNavMesh(floorPlan?: FloorPlan): Promise<BuiltNavMesh> {
+export async function buildNavMesh(
+  floorPlan?: FloorPlan,
+  options: { furnitureObstacles?: Point2D[][] } = {},
+): Promise<BuiltNavMesh> {
   await ensureRecastInit();
 
   const plan = floorPlan ?? loadFloorPlan();
-  const { positions, indices } = buildGeometry(plan);
+  const { positions, indices } = buildGeometry(plan, options.furnitureObstacles ?? []);
 
   const result = generateSoloNavMesh(positions, indices, NAV_MESH_CONFIG);
   if (!result.success) {
@@ -340,6 +418,7 @@ export const __internal = {
   buildGeometry,
   addFloorTriangles,
   addWallQuad,
+  addObstacleBox,
   makeRoomResolver,
   stripNoise,
 };

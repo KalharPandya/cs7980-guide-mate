@@ -6,6 +6,7 @@ import { buildNavMesh } from "../nav/buildNavMesh.js";
 import type { BuiltNavMesh, RoomTarget } from "../nav/buildNavMesh.js";
 import { loadFloorPlan } from "../nav/loadFloorPlan.js";
 import type { FloorPlan } from "../nav/loadFloorPlan.js";
+import { loadFurniture, selectFurnitureObstacles } from "../nav/loadFurniture.js";
 import { AgentCrowd } from "../nav/crowd.js";
 import type { AgentParams } from "../nav/crowd.js";
 import { AGENT_HEIGHT_M, AGENT_RADIUS_M } from "../nav/agentProfile.js";
@@ -298,7 +299,30 @@ export class WorldRoom extends Room<{ state: WorldState }> {
 
     this.plan = loadFloorPlan();
     this.state.floor = this.plan.floor;
-    this.nav = await buildNavMesh(this.plan);
+
+    // Carve the rendered furniture (world/data/floor-14-furniture.json) into the navmesh as solid
+    // obstacles so robots and visitors route AROUND tables/desks instead of walking through them.
+    // selectFurnitureObstacles insets each footprint and skips any item that would pinch a doorway
+    // or shrink to a sliver, so the reachability gate (buildNavMesh.furniture.test.ts, 18/18 rooms)
+    // holds. Furniture is a cosmetic enhancement, so a missing/corrupt furniture file degrades to
+    // the previous bare-but-correct navmesh rather than taking the world down.
+    let furnitureObstacles: FloorPlan["walkableOutline"][] = [];
+    try {
+      const furniture = loadFurniture();
+      const selection = selectFurnitureObstacles(furniture, this.plan);
+      furnitureObstacles = selection.obstacles;
+      const included = selection.decisions.filter((d) => d.included).length;
+      console.log(
+        `WorldRoom: carved ${included}/${furniture.items.length} furniture items into the navmesh ` +
+          `as obstacles (${furniture.items.length - included} skipped as slivers/door-blockers)`,
+      );
+    } catch (err) {
+      console.warn(
+        `WorldRoom: furniture obstacles unavailable, navmesh built without them: ${(err as Error).message}`,
+      );
+    }
+
+    this.nav = await buildNavMesh(this.plan, { furnitureObstacles });
 
     this.crowd = new AgentCrowd(this.nav.navMesh, {
       maxAgents: MAX_AGENTS,
