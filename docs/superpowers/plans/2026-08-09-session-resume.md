@@ -55,6 +55,35 @@ the gate applies to both.
   ("I cannot walk anywhere since I have no navigation") and emotes (`happy`). Admin flip
   physical->virtual -> Moses navigates again, `emote=None`. Full suite green: 311 passed.
 
+### Operator-approved NAMED virtual guiding + sim toggle (added 2026-08-10, commits `3d8b2d6`, `9eb9a0a`, `54be9de`, `20f9295`, `fc45d0d`)
+Root cause a real user's visitor never showed their name on the big screen: the name was
+never transmitted. The Colyseus `Agent` schema had NO name field (labels like Ben/Ava are
+invented client-side by hashing the id in `world-client/src/scene/agentLabel.ts`), and the
+assign carried only a machine `visitor-<hex>` id. Fixed end to end:
+- **Named visitor:** added a synced `Agent.name`, threaded the session user's name through the
+  assign Command params, the wire schema, and `bridge.addAgent`; the client shows the server
+  name when present (else the old id-derived pool name, so sim visitors are unchanged). New
+  read-only `GET /world/agents` dumps live agents `{id,kind,name,state,x,z}` for observation
+  (this is how the E2E proves a NAMED visitor spawned, not an ack).
+- **Operator-approved flow (was auto-dispatch):** `dog_agent._guide_impl` now creates a guide
+  REQUEST (`sessions.create_request(kind="guide", from_room, to_room)`) that appears in the
+  admin Requests tab; approving it (`POST /api/admin/requests/{id}/approve-guide` ->
+  `sessions.approve_guide_request`) fires the named assign that spawns the named visitor + an
+  assigned robot and records `guide_robot_id`/from/to on the session. Moses's virtual prompt
+  carries that status (`get_guide_status`) so it can tell the visitor which robot is coming.
+  The guide reply says the guide was REQUESTED / front desk will approve, not "on its way".
+- **Sim toggle:** `POST /api/admin/world/sim-stop` / `sim-resume` publish a scoped fleet stop
+  (`params scope=simulated`); the world-server despawns the ambient simulated visitors (freeing
+  the robots they booked) and stops spawning, WITHOUT freezing the world (distinct from the
+  whole-world `/world/stop`). Robot-tab card drives it. Sessions tab now shows a confirmation
+  line after Assign Physical/Virtual.
+- **Deploy robustness:** `redeploy.sh` runs `docker system prune -f` before the build (a deploy
+  had failed with No space left on device; `-f` only, never `--volumes`, preserves the cert volume).
+- **LIVE E2E, observed via /world/agents (no ack loopholes):** chat -> guide request in admin
+  (name+from+to) -> approve -> visitor named "Kalhar-P2-Test" spawns at the Wellness Room fetched
+  by virtual/1 -> Moses reports "guide robot virtual/1 is on its way". Sim stop: sim-visitor
+  count 5 -> 0 -> 5 on resume. All agent_service + world tests green.
+
 Floor plan (`world/data/floor-14.json`, twin `world-client/public/data/floor-14.json`, byte-identical):
 - Rebuilt from primitives, 124 -> 84 walls. Root causes fixed: the `elevator-stair-core-upper`
   hole polygon was self-intersecting (broke the drop-walls-inside-a-hole filter, leaving 13
