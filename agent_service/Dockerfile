@@ -12,6 +12,13 @@ RUN pip install /app/shared/guidemate_msgs
 # The service.
 COPY agent_service /app/agent_service
 RUN pip install /app/agent_service
+# The floor plan Moses uses to build the room vocabulary line (see _floor_plan_rooms in
+# guidemate_agent/dog_agent.py). The rest of world/ is not shipped, so copy just this one
+# file to a stable in-image path and point GUIDEMATE_FLOOR_PLAN_PATH at it in compose.yaml.
+# Without it the prompt loses its room list and the model stops being constrained to the
+# real rooms. Build context is the repo root (see agent_service/compose.yaml), so this
+# source path resolves.
+COPY world/data/floor-14.json /app/floor-14.json
 # amazon-transcribe (streaming STT) is installed --no-deps on purpose: its metadata
 # hard-pins awscrt~=0.26.1 which conflicts with awsiotsdk's awscrt 0.34.x. Its only
 # dependency IS awscrt, already present at 0.34.1 (runtime-compatible; verified by the

@@ -8,6 +8,10 @@ services:
       - "8000"
     environment:
       - GUIDEMATE_ROBOTS=${GUIDEMATE_ROBOTS:-turtlebot468}
+      # In-image floor plan path (COPYed by agent_service/Dockerfile). Gives Moses the room
+      # vocabulary line, world/ itself is not shipped in the image so this fixed path is how
+      # _floor_plan_rooms finds the plan in production.
+      - GUIDEMATE_FLOOR_PLAN_PATH=/app/floor-14.json
       - GUIDEMATE_IOT_ENDPOINT=${GUIDEMATE_IOT_ENDPOINT:-}
       - GUIDEMATE_MODEL_ID=${GUIDEMATE_MODEL_ID:-us.anthropic.claude-sonnet-4-6}
       - AWS_REGION=${AWS_REGION:-us-west-2}
