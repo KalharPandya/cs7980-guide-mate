@@ -32,6 +32,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from guidemate_msgs.messages import Command
 from guidemate_msgs.metrics import emit_metric
 
+from guidemate_agent import sessions
 from guidemate_agent.emote_sync import emote_sync
 from guidemate_agent.speech import (
     TranscribeSession, downsample_pcm16, make_transcribe_session, synthesize_mp3,
@@ -158,6 +159,10 @@ async def _run_pipeline(ws: WebSocket, app: FastAPI, session_id: str, text: str)
 
     try:
         target = _physical_target(app, session_id)
+        # Keep this session's virtual-world avatar alive while the chat is active
+        # (best-effort, no-op unless a visitor is bound; never raises). Same shared
+        # sessions.keepalive_visitor the HTTP /api/chat path calls, so both paths refresh it.
+        sessions.keepalive_visitor(session_id, registry)
         t0 = time.monotonic()
         # Session-aware turn: DogAgent resolves name/history + virtual-vs-physical
         # framing + the per-session bound robot (never a hardcoded id), and persists

@@ -625,6 +625,22 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   }
 
   /**
+   * Re-arms a delivered REAL (Moses/operator-dispatched) visitor's post-inactivity despawn
+   * window, so a real chat user's avatar is NOT removed from the world while their chat
+   * session is still active -- the fix for the "guided to a room, then despawned ~20s later
+   * while still chatting" defect. agent_service publishes a keepalive on every chat turn of a
+   * guided session; it arrives as a fleet `stop` command carrying
+   * `params.scope === "keepalive"` + `params.visitor_id` (see world/src/iot/bridge.ts's
+   * `handleFleetStop`), which routes here. Delegates to `VisitorManager.keepAliveRealVisitor`
+   * / `EscortManager.keepAliveRealVisitor` (see that method's doc comment for the full model,
+   * including why an actively-escorting visitor is left untouched). Returns true iff a matching
+   * real visitor was found.
+   */
+  keepAliveRealVisitor(visitorId: string): boolean {
+    return this.visitors.keepAliveRealVisitor(visitorId);
+  }
+
+  /**
    * Resolves `roomNameOrCoords` (a room name/alias via Task 1.1's `findRoomTarget`, or a
    * literal nav-space `{x, z}` point) and requests the crowd agent `agentId` move there.
    * Returns `false` (and logs why) if the agent id is unknown or the target can't be

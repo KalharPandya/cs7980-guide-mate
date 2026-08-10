@@ -1442,6 +1442,78 @@ async function testDeliveredRealVisitorAutoDespawns(): Promise<void> {
 }
 
 /**
+ * A2) session keepalive (the headline fix): a delivered REAL visitor that keeps receiving
+ * keepalives -- one per chat turn, published by agent_service while the session is active --
+ * must SURVIVE well past the REAL_VISITOR_DESPAWN_S window instead of being removed from the
+ * map mid-conversation (the "guided to a room, then despawned ~20s later while still chatting"
+ * defect). Once the keepalives STOP (the session goes quiet), the window then elapses normally
+ * and the visitor is auto-despawned so the world still self-cleans.
+ *
+ * The escort is ended deterministically by removing the escorting robot mid-escort (the same
+ * endEscort path testDeliveredRealVisitorAutoDespawns uses), which arms the despawn window as
+ * if the visitor had just been delivered.
+ */
+async function testKeptAliveRealVisitorSurvivesThenDespawnsWhenQuiet(): Promise<void> {
+  const room = new WorldRoom();
+  await room.onCreate({ disableSimulatedVisitors: true, disableGuideRobots: true });
+  room.setSimulationInterval();
+
+  const plan = loadFloorPlan();
+  const entrance = { x: plan.entrance.point[0], z: plan.entrance.point[1] };
+  const agents = agentsMap(room);
+
+  room.addAgent("ka-robot", "robot", entrance);
+  room.addAgent("ka-real", "visitor", entrance);
+  const bound = room.requestGuide("ka-real", "Kitchen");
+  assert.ok(bound.robotId, "test setup: the real visitor should bind the only idle robot");
+  room.removeAgent("ka-robot"); // robot vanishes -> next tick ends the escort + arms the despawn
+
+  const DT_MS = 100;
+  const DT_S = DT_MS / 1000;
+
+  // End the escort (arms realDespawnSeconds = REAL_VISITOR_DESPAWN_S this frame).
+  room.update(DT_MS);
+  assert.ok(agents.get("ka-real"), "the delivered real visitor must be present right after delivery");
+
+  // Drive WELL PAST the whole despawn window (twice it, plus a margin) while sending a
+  // keepalive every ~third of the window -- exactly what a still-active chat session does. A
+  // keepalive resets the countdown to the full window, so the visitor must NEVER despawn here.
+  const KEEPALIVE_EVERY_S = REAL_VISITOR_DESPAWN_S / 3;
+  const totalSurviveS = REAL_VISITOR_DESPAWN_S * 2 + 5;
+  let sinceKeepalive = 0;
+  for (let elapsed = 0; elapsed < totalSurviveS; elapsed += DT_S) {
+    sinceKeepalive += DT_S;
+    if (sinceKeepalive >= KEEPALIVE_EVERY_S) {
+      sinceKeepalive = 0;
+      assert.ok(
+        room.keepAliveRealVisitor("ka-real"),
+        "keepAliveRealVisitor must find the still-present real visitor",
+      );
+    }
+    room.update(DT_MS);
+    assert.ok(
+      agents.get("ka-real"),
+      `a real visitor receiving keepalives must NOT despawn, even ~${(elapsed + DT_S).toFixed(0)}s after delivery ` +
+        `(well past the ${REAL_VISITOR_DESPAWN_S}s window)`,
+    );
+  }
+
+  // Now the session goes QUIET: no more keepalives. The window elapses and it despawns.
+  const quietTicks = Math.ceil((REAL_VISITOR_DESPAWN_S + 1) / DT_S);
+  for (let i = 0; i < quietTicks; i++) room.update(DT_MS);
+  assert.ok(
+    !agents.get("ka-real"),
+    `once keepalives STOP, the real visitor must be auto-despawned after ~${REAL_VISITOR_DESPAWN_S}s of quiet`,
+  );
+
+  console.log(
+    `PASS: a delivered real visitor receiving keepalives survives >2x the ${REAL_VISITOR_DESPAWN_S}s window, ` +
+      "then despawns once the keepalives stop and the window elapses",
+  );
+  room.onDispose();
+}
+
+/**
  * B) admin clear: `WorldRoom.clearRealVisitors()` immediately removes every real visitor
  * (including ones mid-escort, freeing the robots they held) and returns the count, while
  * leaving simulated visitors and every robot in place.
@@ -1732,6 +1804,7 @@ async function main(): Promise<void> {
   await testDwellingSimulatedVisitorParksInPlace();
   await testSetSimulatedEnabledStopsAndResumesAmbientTraffic();
   await testDeliveredRealVisitorAutoDespawns();
+  await testKeptAliveRealVisitorSurvivesThenDespawnsWhenQuiet();
   await testClearRealVisitorsRemovesAllAndFreesRobots();
   await testReservedCapacityForRealUsers();
   await testSimulatedSpawnerConvergence();

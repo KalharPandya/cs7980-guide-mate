@@ -279,6 +279,44 @@ def visitor_for_session(session_id: str) -> Optional[str]:
     return session.get("visitor_id") or None
 
 
+def keepalive_visitor(session_id: str, registry=None) -> bool:
+    """Keep this session's virtual visitor alive in the 3D world while the chat is active.
+
+    The world auto-despawns a delivered REAL visitor after an inactivity window
+    (world/src/rooms/escortManager.ts's REAL_VISITOR_DESPAWN_S). Without a
+    keepalive that window is a fixed post-delivery timer, so a real chat user
+    guided to a room had her avatar removed while she was still talking. Called
+    on EVERY chat turn (both the HTTP and WS paths -- the single shared point
+    both go through), this publishes a fleet keepalive that re-arms that window
+    in the world, so the avatar survives as long as the session keeps talking
+    and is only cleaned up once the turns stop.
+
+    Publishes ONLY when the session has a bound visitor_id: a session with no
+    bound virtual visitor (a physical/companion session, or a guided session
+    before its first assign) publishes nothing. Reuses the SAME fleet-command
+    path approve_guide_request uses -- a `stop` command carrying
+    `params.scope == "keepalive"` (mirrors the clear-real-visitors scope; keeps
+    the wire schema unchanged, params is free-form). Best-effort: any lookup or
+    publish failure is swallowed so a keepalive can NEVER break the chat turn.
+    Returns True iff a keepalive was actually published.
+    """
+    if registry is None:
+        return False
+    try:
+        visitor_id = visitor_for_session(session_id)
+        if not visitor_id:
+            return False
+        cmd = Command(
+            type="stop",
+            name="stop",
+            params={"scope": "keepalive", "visitor_id": visitor_id},
+        )
+        registry.send_fleet_command(cmd)
+        return True
+    except Exception:  # noqa: BLE001 — keepalive is best-effort, never breaks a turn
+        return False
+
+
 # ------------------------------------------------------------ orchestration ----
 ASSIGN_EVENTS_KEEP = 10
 

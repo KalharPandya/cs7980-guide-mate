@@ -127,8 +127,11 @@ export interface VisitorRecord {
    * removal is driven by simulatedVisitorSpawner.ts's walk-back lifecycle, not this field).
    * For a real visitor it is `null` while it is being escorted, seeded to
    * REAL_VISITOR_DESPAWN_S by `endEscort` the instant its escort ends, ticked down by
-   * `tickRealDespawns`, and cleared back to `null` if the visitor is (re)bound to a new
-   * escort so it is never removed mid-escort. See REAL_VISITOR_DESPAWN_S's doc comment. */
+   * `tickRealDespawns`, RE-ARMED back to the full REAL_VISITOR_DESPAWN_S by
+   * `keepAliveRealVisitor` on every chat turn of the visitor's still-active session (so it is
+   * a post-inactivity window, not a fixed timer), and cleared back to `null` if the visitor is
+   * (re)bound to a new escort so it is never removed mid-escort. See REAL_VISITOR_DESPAWN_S's
+   * doc comment. */
   realDespawnSeconds: number | null;
 }
 
@@ -437,20 +440,37 @@ const DWELL_MIN_S = 8;
 const DWELL_MAX_S = 20;
 
 /**
- * How long (simulated seconds) a delivered REAL (Moses/operator-dispatched) visitor lingers
- * at its destination before it auto-despawns and the world self-cleans. A real visitor's
- * record is created lazily by `requestGuide` (kind "real") and, unlike a simulated one, it
- * has NO ambient lifecycle to walk it back out and remove it -- so without this it would sit
- * idle at the destination forever and real visitors would accumulate over a long-running demo.
- * The instant its escort ends (delivered or timed out), `endEscort` schedules this countdown;
- * `tickRealDespawns` counts it down and removes the visitor when it reaches zero. 20s leaves
- * the arrival visible on the big screen for a beat before the person leaves. This is distinct
- * from the simulated visitor's DWELL_MIN_S..DWELL_MAX_S "linger at a room then roam to the
- * next one" dwell: a real visitor does not roam anywhere afterward, it is simply removed.
+ * How long (simulated seconds) a delivered REAL (Moses/operator-dispatched) visitor may sit
+ * idle -- WITHOUT a keepalive -- before it auto-despawns and the world self-cleans. This is a
+ * POST-INACTIVITY window measured from the LAST keepalive (or, if none ever arrives, from
+ * delivery), NOT a fixed "linger this long then leave" timer: `keepAliveRealVisitor` re-arms
+ * it to the full window on every chat turn of the visitor's still-active session (agent_service
+ * publishes a keepalive per turn -- see that method and sessions.py's `keepalive_visitor`), so
+ * a real chat user's avatar stays on the map for as long as they keep talking and is only
+ * removed once the keepalives STOP (the session goes quiet) and this whole window then elapses.
+ *
+ * A real visitor's record is created lazily by `requestGuide` (kind "real") and, unlike a
+ * simulated one, it has NO ambient lifecycle to walk it back out -- so without this it would
+ * sit at the destination forever and real visitors would accumulate over a long-running demo.
+ * The instant its escort ends (delivered or timed out), `endEscort` seeds this countdown;
+ * `tickRealDespawns` counts it down and removes the visitor when it reaches zero; a keepalive
+ * or a new escort binding resets/clears it first. This is distinct from the simulated
+ * visitor's DWELL_MIN_S..DWELL_MAX_S "linger at a room then roam to the next one" dwell: a
+ * real visitor does not roam anywhere afterward, it is simply removed.
+ *
+ * ---- why 90s (was 20s, which caused the despawn-mid-conversation defect) ----
+ * The old 20s was a fixed post-delivery timer with no keepalive: a real chat user guided to a
+ * room had her avatar removed 20s later even while her chat session was still active and she
+ * was still talking. 20s is shorter than a single normal gap between chat turns (reading
+ * Moses's reply, waiting on TTS playback, thinking, typing the next message easily runs
+ * 30-60s), so the avatar vanished between turns. 90s is now the window AFTER the last
+ * keepalive: it comfortably survives any normal inter-turn gap (so a live session never
+ * despawns), while still self-cleaning ~90s after the session actually goes quiet.
+ *
  * Exported so tests can assert against the same number instead of a duplicated magic
  * constant (mirrors `RESERVED_ROBOTS_FOR_REAL_USERS` / `SIMULATED_VISITOR_TARGET`).
  */
-export const REAL_VISITOR_DESPAWN_S = 20;
+export const REAL_VISITOR_DESPAWN_S = 90;
 
 /**
  * How many idle guide robots are held in reserve for REAL (Moses-dispatched) users, out of
@@ -1173,6 +1193,33 @@ export class EscortManager {
       this.host.removeAgent(id);
       this.removeVisitor(id);
     }
+  }
+
+  /**
+   * Re-arms the post-inactivity despawn window for a delivered REAL (Moses/operator-
+   * dispatched) visitor, so a real chat user's avatar is NOT removed from the world while
+   * their chat session is still active. agent_service publishes a keepalive on every chat
+   * turn of a guided session (see sessions.py's `keepalive_visitor`), which routes through
+   * the IoT bridge to here; each call resets `realDespawnSeconds` back to the full
+   * REAL_VISITOR_DESPAWN_S, so `tickRealDespawns` only ever removes the visitor once the
+   * keepalives STOP (the session goes quiet) and the whole window then elapses. This is the
+   * fix for the "guided to a room, then despawned 20s later while still chatting" defect --
+   * see REAL_VISITOR_DESPAWN_S's doc comment.
+   *
+   * No-op (returns false) for an unknown id or a simulated visitor. While the visitor is
+   * ACTIVELY escorting (`robotId != null`) its `realDespawnSeconds` is deliberately kept at
+   * null -- an in-escort visitor is never despawned and `endEscort` arms the window fresh the
+   * instant the escort ends -- so a keepalive during an escort leaves that null in place
+   * (preserving the "cleared-to-null while escorting" invariant) and just confirms the
+   * visitor exists. Returns true iff a matching real visitor was found.
+   */
+  keepAliveRealVisitor(visitorId: string): boolean {
+    const visitor = this.visitors.get(visitorId);
+    if (!visitor || visitor.kind !== "real") return false;
+    if (visitor.robotId === null) {
+      visitor.realDespawnSeconds = REAL_VISITOR_DESPAWN_S;
+    }
+    return true;
   }
 
   /** Every currently-tracked REAL visitor's id, for `WorldRoom.clearRealVisitors`'s

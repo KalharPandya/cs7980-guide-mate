@@ -244,6 +244,9 @@ def chat(req: ChatRequest) -> JSONResponse:
             if sessions.get_session(req.session_id) is None:
                 raise HTTPException(status_code=404, detail="unknown session")
             sessions.touch_session(req.session_id)  # keep the idle sweeper at bay
+            # Keep this session's virtual-world avatar alive while the chat is active
+            # (best-effort, no-op unless a visitor is bound; never raises).
+            sessions.keepalive_visitor(req.session_id, app.state.registry)
             result = app.state.agent.chat(req.message, session_id=req.session_id)
     except HTTPException:
         raise

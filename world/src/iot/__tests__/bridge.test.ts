@@ -115,6 +115,11 @@ class FakeWorldRoom implements WorldRoomLike {
   /** Count the fake reports as "removed" for a clear-real-visitors command. */
   clearRealVisitorsResult = 0;
 
+  // ---- scoped keepalive test hooks ----
+  keepAliveRealVisitorCalls: string[] = [];
+  /** What the fake reports for a keepalive: true = a matching real visitor was found. */
+  keepAliveRealVisitorResult = true;
+
   moveAgentTo(agentId: string, target: string | { x: number; z: number }): boolean {
     this.moveCalls.push({ agentId, target });
     if (this.moveResult && !this.state.agents.has(agentId)) {
@@ -179,6 +184,14 @@ class FakeWorldRoom implements WorldRoomLike {
   clearRealVisitors(): number {
     this.clearRealVisitorsCalls++;
     return this.clearRealVisitorsResult;
+  }
+
+  /** Mirrors the real WorldRoom.keepAliveRealVisitor -- records the visitor id the bridge
+   * re-armed so the keepalive scoped-stop test can assert it refreshed only that visitor,
+   * without pausing/clearing/toggling anything else. */
+  keepAliveRealVisitor(visitorId: string): boolean {
+    this.keepAliveRealVisitorCalls.push(visitorId);
+    return this.keepAliveRealVisitorResult;
   }
 }
 
@@ -1140,6 +1153,92 @@ async function main(): Promise<void> {
     assert.deepEqual(client.acksFor("cmd-cr6"), ["received", "failed"]);
     assert.equal(client.published.find((p) => p.payload.state === "failed")!.payload.reason, "world_not_ready");
     console.log("PASS: no active WorldRoom on a clear-real-visitors stop acks failed/world_not_ready");
+  }
+
+  // ==================================================================================
+  // Scoped fleet `stop`: params.scope==="keepalive" re-arms ONE real visitor's despawn
+  // window (the fix for a real chat user's avatar despawning mid-conversation). It must call
+  // room.keepAliveRealVisitor(visitor_id) and must NOT pause/resume the world, clear real
+  // visitors, or touch the simulated-spawner toggle. There is no resume overload -- it is a
+  // one-shot refresh, published by agent_service on every chat turn of a guided session.
+  // ==================================================================================
+
+  // ---- scope="keepalive" routes to keepAliveRealVisitor(visitor_id), touches nothing else ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(
+      fleetCmdTopic(),
+      JSON.stringify(fleetStopCmd("cmd-ka1", { scope: "keepalive", visitor_id: "visitor-42" })),
+    );
+
+    assert.deepEqual(
+      room.keepAliveRealVisitorCalls,
+      ["visitor-42"],
+      "scope=keepalive must re-arm exactly the named visitor's despawn window",
+    );
+    assert.equal(room.pauseCalls, 0, "a keepalive must NOT pause the whole world");
+    assert.equal(room.resumeCalls, 0, "a keepalive must NOT resume the whole world");
+    assert.equal(room.clearRealVisitorsCalls, 0, "a keepalive must NOT clear real visitors");
+    assert.equal(
+      room.setSimulatedVisitorsEnabledCalls.length,
+      0,
+      "a keepalive must NOT touch the simulated-spawner toggle",
+    );
+    assert.deepEqual(client.acksFor("cmd-ka1"), ["received", "done"]);
+    for (const { topic } of client.published) {
+      assert.equal(topic, fleetStatusTopic(), "keepalive acks must publish on the fleet status topic");
+    }
+    console.log("PASS: fleet stop scope=keepalive re-arms only the named visitor, pauses nothing, touches no other scope");
+  }
+
+  // ---- keepalive with a missing/non-string visitor_id is a harmless no-op that still acks
+  // done (best-effort: it must never fail the chat turn that published it) ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(fleetStopCmd("cmd-ka2", { scope: "keepalive" })));
+
+    assert.equal(room.keepAliveRealVisitorCalls.length, 0, "no visitor_id -> keepAliveRealVisitor must not be called");
+    assert.equal(room.pauseCalls, 0, "a keepalive without a visitor_id must still never pause the world");
+    assert.deepEqual(
+      client.acksFor("cmd-ka2"),
+      ["received", "done"],
+      "a keepalive is best-effort: it still acks done even with no visitor_id",
+    );
+    console.log("PASS: fleet stop scope=keepalive with no visitor_id is a harmless no-op that still acks done");
+  }
+
+  // ---- a bare (unscoped) stop must NOT be misread as a keepalive: it still pauses ----
+  {
+    const client = new FakeMqttClient();
+    const room = new FakeWorldRoom();
+    const bridge = new IotBridge({ getRoom: () => room, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(fleetCmdTopic(), JSON.stringify(fleetStopCmd("cmd-ka3")));
+
+    assert.equal(room.keepAliveRealVisitorCalls.length, 0, "an unscoped stop must never re-arm a keepalive");
+    assert.equal(room.pauseCalls, 1, "an unscoped stop must still pause the whole world");
+    console.log("PASS: a bare (unscoped) fleet stop is never misrouted to keepAliveRealVisitor");
+  }
+
+  // ---- no live WorldRoom on a keepalive stop -> failed/world_not_ready ----
+  {
+    const client = new FakeMqttClient();
+    const bridge = new IotBridge({ getRoom: () => undefined, client, log: { log() {}, warn() {}, error() {} } });
+
+    bridge.handleMessage(
+      fleetCmdTopic(),
+      JSON.stringify(fleetStopCmd("cmd-ka4", { scope: "keepalive", visitor_id: "v" })),
+    );
+
+    assert.deepEqual(client.acksFor("cmd-ka4"), ["received", "failed"]);
+    assert.equal(client.published.find((p) => p.payload.state === "failed")!.payload.reason, "world_not_ready");
+    console.log("PASS: no active WorldRoom on a keepalive stop acks failed/world_not_ready");
   }
 
   // ==================================================================================

@@ -219,6 +219,55 @@ def test_get_guide_status_empty_by_default(ddb):
     }
 
 
+# ---- keepalive_visitor (per-chat-turn avatar keepalive) ------------------
+def test_keepalive_visitor_publishes_one_keepalive_when_bound(ddb):
+    """A chat turn for a session WITH a bound virtual visitor publishes exactly
+    one fleet keepalive (a `stop` scoped "keepalive" carrying the visitor id)."""
+    sid = sessions.create_session("Ada", True)
+    sessions.bind_visitor(sid, "visitor-live")
+    reg = _FleetReg()
+
+    published = sessions.keepalive_visitor(sid, registry=reg)
+
+    assert published is True
+    assert len(reg.fleet_sent) == 1
+    cmd = reg.fleet_sent[0]
+    assert cmd.type == "stop" and cmd.name == "stop"
+    assert cmd.params["scope"] == "keepalive"
+    assert cmd.params["visitor_id"] == "visitor-live"
+
+
+def test_keepalive_visitor_no_bound_visitor_publishes_nothing(ddb):
+    """A chat turn for a session with NO bound visitor (physical/companion or a
+    pre-guide session) publishes no keepalive at all."""
+    sid = sessions.create_session("Bob", False)  # never bound a visitor
+    reg = _FleetReg()
+
+    published = sessions.keepalive_visitor(sid, registry=reg)
+
+    assert published is False
+    assert reg.fleet_sent == []
+
+
+def test_keepalive_visitor_swallows_publish_failure(ddb):
+    """A publish failure must NEVER break the chat turn: keepalive is best-effort,
+    so a raising registry is swallowed and the call returns False, not an exception."""
+    sid = sessions.create_session("Ada", True)
+    sessions.bind_visitor(sid, "visitor-live")
+
+    class _Boom:
+        def send_fleet_command(self, cmd, timeout_s=5.0, collect_all=False):
+            raise RuntimeError("mqtt down")
+
+    assert sessions.keepalive_visitor(sid, registry=_Boom()) is False
+
+
+def test_keepalive_visitor_no_registry_is_noop(ddb):
+    sid = sessions.create_session("Ada", True)
+    sessions.bind_visitor(sid, "visitor-live")
+    assert sessions.keepalive_visitor(sid, registry=None) is False
+
+
 # ---- dog_agent guide tool now creates a request (no direct publish) ------
 def test_guide_tool_creates_request_instead_of_dispatching(ddb):
     sid = sessions.create_session("Ada", True)

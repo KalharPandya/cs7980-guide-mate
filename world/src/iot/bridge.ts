@@ -166,6 +166,17 @@ export interface WorldRoomLike {
    */
   clearRealVisitors(): number;
   /**
+   * Re-arms a delivered REAL (Moses-dispatched) visitor's post-inactivity despawn window so
+   * their avatar is not removed from the world while their chat session is still active -- the
+   * fix for the "guided to a room, then despawned while still chatting" defect. Wired to a
+   * fleet `stop` command carrying `params.scope === "keepalive"` + `params.visitor_id` (see
+   * `handleFleetStop`). Best-effort by nature: returns `false` (a harmless no-op) for an
+   * unknown/simulated/despawned visitor. The real WorldRoom satisfies this via
+   * `WorldRoom.keepAliveRealVisitor`; a structural addition only, no change to WorldRoom.ts's
+   * public shape beyond that method.
+   */
+  keepAliveRealVisitor(visitorId: string): boolean;
+  /**
    * Bug fix (found by code review of Task 5.2's commit f6b79f2): exposes WorldRoom's
    * pause flag so pollPending() can stop a pending navigate's nav_timeout deadline from
    * advancing while the whole world is frozen -- see pollPending()'s doc comment for the
@@ -534,6 +545,19 @@ export class IotBridge {
    * automatic post-delivery despawn (EscortManager.tickRealDespawns), for an admin who wants
    * to wipe the real visitors immediately rather than wait out their dwell.
    *
+   * ---- SCOPED variant: keepalive (opposite of clear) ----
+   * A `stop` carrying `params.scope === "keepalive"` + `params.visitor_id` is a one-shot
+   * REFRESH, not a pause: it re-arms ONE real visitor's post-inactivity despawn window
+   * (room.keepAliveRealVisitor(visitor_id)) so their avatar is NOT auto-despawned while their
+   * chat session is still active -- the fix for the "guided to a room, then despawned ~20s
+   * later while still chatting" defect. agent_service publishes it on every chat turn of a
+   * guided session (see sessions.py's `keepalive_visitor`). No resume overload, and a
+   * missing/unknown visitor is a harmless no-op that still acks done -- it is best-effort and
+   * must never fail the chat turn that published it. It reuses the `stop` command (rather than
+   * a new command type) for the same reason clear-real-visitors does: `params` is already
+   * free-form on both the Python and TS sides, so a scope discriminator needs no wire-schema
+   * change.
+   *
    * Any `stop` WITHOUT a recognized `scope` falls through to the existing whole-world
    * pause/resume above, byte-for-byte unchanged. `params` is already free-form on both the
    * Python and TS sides, so carrying `scope` needs no wire-schema change.
@@ -547,7 +571,17 @@ export class IotBridge {
       return;
     }
 
-    if (cmd.params.scope === "clear-real-visitors") {
+    if (cmd.params.scope === "keepalive") {
+      // Scoped: re-arm ONE real visitor's post-inactivity despawn window (see
+      // keepAliveRealVisitor). A one-shot refresh, NOT a pause -- nothing is frozen and there
+      // is no resume overload. agent_service publishes this on every chat turn of a guided
+      // session so a real chat user's avatar is not despawned while they are still talking.
+      // A missing/non-string visitor_id, or an unknown/despawned visitor, is a harmless no-op
+      // (keepAliveRealVisitor returns false) that still acks done -- the keepalive is
+      // best-effort and must never fail the chat turn that published it.
+      const visitorId = cmd.params.visitor_id;
+      if (typeof visitorId === "string") room.keepAliveRealVisitor(visitorId);
+    } else if (cmd.params.scope === "clear-real-visitors") {
       // Scoped: immediately remove every real (Moses-dispatched) visitor. This is a
       // one-shot action, NOT a pause -- nothing is frozen and there is no resume overload;
       // the ambient simulated scene and the whole-world pause state are left untouched.

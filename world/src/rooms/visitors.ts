@@ -179,6 +179,14 @@ export class VisitorManager {
     this.escorts.tickRealDespawns(dtSeconds);
   }
 
+  /** Re-arms a delivered REAL visitor's post-inactivity despawn window so their avatar
+   * survives while their chat session is active -- passthrough to
+   * `EscortManager.keepAliveRealVisitor` (see its doc comment). Returns true iff a matching
+   * real visitor was found. */
+  keepAliveRealVisitor(visitorId: string): boolean {
+    return this.escorts.keepAliveRealVisitor(visitorId);
+  }
+
   /** Every currently-tracked REAL visitor's id -- passthrough to
    * `EscortManager.realVisitorIds`, for `WorldRoom.clearRealVisitors`'s admin clear. */
   realVisitorIds(): string[] {
