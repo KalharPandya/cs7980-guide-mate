@@ -292,7 +292,7 @@ async function reloadRequests() {
     robotIds.forEach((id) => {
       const opt = document.createElement("option");
       opt.value = id;
-      opt.textContent = id === "turtlebotsim" ? "Virtual pet — turtlebotsim" : id;
+      opt.textContent = id === "turtlebotsim" ? "Virtual pet - turtlebotsim" : id;
       robotSelect.appendChild(opt);
     });
     if (robotIds.includes(ROBOT_ID)) robotSelect.value = ROBOT_ID;
@@ -323,12 +323,22 @@ async function reloadRequests() {
 }
 
 async function reloadSessions() {
-  const ss = await (await api("/sessions")).json();
+  // Pull the same registry robot-id list the Requests tab uses, so the
+  // per-session physical picker offers every configured robot (not a hardcode).
+  const [ss, robotIds] = await Promise.all([
+    (await api("/sessions")).json(),
+    _registryRobotIds(),
+  ]);
   const ul = $("sessions-list");
   ul.innerHTML = "";
   ss.forEach((s) => {
     const li = document.createElement("li");
-    li.textContent = `${s.name} — ${s.request_status} — robot=${s.robot_id || "-"}`;
+    // MODE: a bound robot_id means PHYSICAL (emotes); no binding means VIRTUAL
+    // (navigation). This mirrors dog_agent's `physical = robot_for_session(...)`.
+    const physical = Boolean(s.robot_id);
+    const mode = physical ? `Physical: ${s.robot_id}` : "Virtual (navigation)";
+    li.textContent = `${s.name} - ${s.request_status} - ${mode}`;
+
     const view = document.createElement("button");
     view.textContent = "Transcript";
     view.className = "secondary";
@@ -337,17 +347,39 @@ async function reloadSessions() {
       $("transcript").textContent =
         msgs.map((m) => `${m.role}: ${m.text}`).join("\n") || "(no messages)";
     });
-    const reassign = document.createElement("button");
-    reassign.textContent = "Give robot";
-    reassign.addEventListener("click", async () => {
-      await api(`/robot/${ROBOT_ID}/reassign`, {
+
+    // (a) Assign PHYSICAL: pick a robot, then reassign (the existing endpoint).
+    const robotSelect = document.createElement("select");
+    robotSelect.className = "approve-robot-select";
+    robotIds.forEach((id) => {
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = id === "turtlebotsim" ? "Virtual pet - turtlebotsim" : id;
+      robotSelect.appendChild(opt);
+    });
+    if (physical && robotIds.includes(s.robot_id)) robotSelect.value = s.robot_id;
+    const assignPhysical = document.createElement("button");
+    assignPhysical.textContent = "Assign Physical";
+    assignPhysical.addEventListener("click", async () => {
+      await api(`/robot/${robotSelect.value}/reassign`, {
         method: "POST", headers: jsonHeaders,
         body: JSON.stringify({ session_id: s.session_id }),
       });
       reloadSessions();
       reloadAssignEvents();
     });
-    li.append(" ", view, " ", reassign);
+
+    // (b) Assign VIRTUAL: release any held physical robot + clear the binding.
+    const assignVirtual = document.createElement("button");
+    assignVirtual.textContent = "Assign Virtual (navigation)";
+    assignVirtual.className = "secondary";
+    assignVirtual.addEventListener("click", async () => {
+      await api(`/session/${s.session_id}/assign-virtual`, { method: "POST" });
+      reloadSessions();
+      reloadAssignEvents();
+    });
+
+    li.append(" ", view, " ", robotSelect, " ", assignPhysical, " ", assignVirtual);
     ul.appendChild(li);
   });
   if (!ss.length) ul.innerHTML = "<li class=\"hint\">No active sessions. Visitor conversations will list here once they start.</li>";

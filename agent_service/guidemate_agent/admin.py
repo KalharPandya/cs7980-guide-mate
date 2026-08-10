@@ -379,6 +379,17 @@ def admin_reassign_robot(
         robot_id, body.session_id, registry=request.app.state.registry)}
 
 
+@router.post("/session/{session_id}/assign-virtual")
+def admin_assign_virtual(
+    session_id: str, request: Request, _: bool = Depends(admin_required),
+) -> dict:
+    # Switch a session to VIRTUAL / navigation mode: release any physical robot
+    # it holds (best-effort dock, refusal recorded) and clear the binding. No
+    # request body -- the session id is the only input; the session stays active.
+    return {"session_id": session_id, "freed_robot_id": sessions.assign_virtual(
+        session_id, registry=request.app.state.registry)}
+
+
 @router.get("/robot/{robot_id}/assign-events")
 def admin_assign_events(robot_id: str, _: bool = Depends(admin_required)) -> list:
     """Assignment-triggered undock/dock attempts + their acks/refusals."""

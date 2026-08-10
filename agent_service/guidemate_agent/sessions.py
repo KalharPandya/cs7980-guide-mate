@@ -397,6 +397,23 @@ def reassign_robot(robot_id: str, session_id: str, registry=None) -> Optional[st
     return _bind_robot(robot_id, session_id, registry=registry)
 
 
+def assign_virtual(session_id: str, registry=None) -> Optional[str]:
+    """Put a session into VIRTUAL / navigation mode: release any physical robot
+    it holds (docking that robot via end_actions) and clear its binding, so
+    robot_for_session -> None and the agent runs in virtual mode on its next
+    turn. Returns the freed physical robot id, or None if it held none. The
+    session stays ACTIVE (this is a mode switch, not an end/abort)."""
+    robot_id = robot_for_session(session_id)
+    if robot_id:
+        release_robot_lock(robot_id)
+        _run_lifecycle(registry, robot_id, end_actions)          # unassign -> dock
+    # Clear the binding either way; request_status stays "approved" so the
+    # session keeps running (unlike abort_robot/end_session, which mark the
+    # holder aborted/ended).
+    _update_session(session_id, robot_id=None, request_status="approved")
+    return robot_id
+
+
 # ---- end of assignment (guest end button / idle timeout) -> dock ----
 def touch_session(session_id: str) -> None:
     """Stamp last activity so the idle sweeper leaves an active session alone."""
