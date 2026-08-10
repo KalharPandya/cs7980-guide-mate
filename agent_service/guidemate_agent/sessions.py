@@ -183,7 +183,22 @@ def create_request(
     if to_room is not None:
         item["to_room"] = to_room
     _table(TABLE_REQUESTS).put_item(Item=item)
-    _update_session(session_id, request_status="pending")
+    if kind == "guide":
+        # Clear any stale guide fields from a PRIOR, already-approved guide so a
+        # superseded guide's awareness (guide_robot_id/from_room/to_room) cannot
+        # leak into this new request. Without this, get_guide_status would keep
+        # returning the old from_room and dog_agent's awareness line would feed the
+        # model a wrong "current location" for the visitor. Only for kind=="guide":
+        # a companion request must never touch these virtual-fleet fields.
+        _update_session(
+            session_id,
+            request_status="pending",
+            guide_robot_id=None,
+            guide_from_room=None,
+            guide_to_room=None,
+        )
+    else:
+        _update_session(session_id, request_status="pending")
     return request_id
 
 

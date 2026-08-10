@@ -82,6 +82,47 @@ def test_create_request_guide_stores_kind_and_rooms(ddb):
     assert sessions.get_session(sid)["request_status"] == "pending"
 
 
+def test_create_request_guide_clears_stale_guide_fields(ddb):
+    """A new guide request must wipe the guide_robot_id/from_room/to_room left
+    on the session by a PRIOR, already-approved guide, so get_guide_status returns
+    all-None until the new request is approved. Otherwise the stale from_room leaks
+    into Moses's awareness line and it stops asking where the visitor is."""
+    sid = sessions.create_session("Ada", True)
+    # Simulate a previously approved guide having stamped these fields.
+    sessions._update_session(
+        sid,
+        guide_robot_id="virtual/7",
+        guide_from_room="Wellness Room",
+        guide_to_room="Kitchen",
+    )
+    assert sessions.get_guide_status(sid)["guide_from_room"] == "Wellness Room"
+
+    sessions.create_request(sid, kind="guide", to_room="Library")
+
+    assert sessions.get_guide_status(sid) == {
+        "guide_robot_id": None, "guide_from_room": None, "guide_to_room": None,
+    }
+
+
+def test_create_request_companion_does_not_clear_guide_fields(ddb):
+    """A companion request must NOT touch the virtual-fleet guide fields."""
+    sid = sessions.create_session("Ada", True)
+    sessions._update_session(
+        sid,
+        guide_robot_id="virtual/7",
+        guide_from_room="Wellness Room",
+        guide_to_room="Kitchen",
+    )
+
+    sessions.create_request(sid, kind="companion")
+
+    assert sessions.get_guide_status(sid) == {
+        "guide_robot_id": "virtual/7",
+        "guide_from_room": "Wellness Room",
+        "guide_to_room": "Kitchen",
+    }
+
+
 def test_create_request_companion_default_kind_and_no_rooms(ddb):
     """The existing companion callers keep their exact shape: kind defaults to
     'companion' and no from_room/to_room attributes are added."""

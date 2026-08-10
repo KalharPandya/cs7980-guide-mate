@@ -299,6 +299,32 @@ def test_system_prompt_truncates_history_to_last_10():
     assert "m4" not in prompt   # only the last 10 kept (m5..m14)
 
 
+# --- awareness line must NOT leak a stale from_room as the visitor's location ---
+# Regression: the old awareness line said "...dispatched to take X from <from_room>
+# to ..." and the model reused that stale from_room as the visitor's CURRENT
+# location, so it stopped asking. The line now names only the robot + destination
+# and explicitly says it is not the from_room.
+def test_awareness_line_omits_from_room_and_warns_not_location():
+    agent = _agent(RecordingRegistry())
+    # A sentinel from_room that cannot collide with any real room-vocabulary name.
+    stale_from = "ZZ Stale From Room Sentinel"
+    guide_status = {
+        "guide_robot_id": "virtual/3",
+        "guide_from_room": stale_from,
+        "guide_to_room": "Kitchen",
+    }
+    prompt = agent._build_system_prompt(
+        "Ada", None, physical=False, guide_status=guide_status
+    )
+    # The stale from_room value never appears in the rendered prompt.
+    assert stale_from not in prompt
+    # The robot id and destination still do (so "which robot is coming" works).
+    assert "virtual/3" in prompt
+    assert "Kitchen" in prompt
+    # And the explicit "not the visitor's current location" guard is present.
+    assert "not the visitor's current location" in prompt.lower()
+
+
 # --- tool gating by physical/virtual mode ---
 # Emotes are PHYSICAL-only now: the physical TurtleBot is the emote/trick fleet,
 # the virtual fleet is navigation-only. A virtual session gets guide_to_room and

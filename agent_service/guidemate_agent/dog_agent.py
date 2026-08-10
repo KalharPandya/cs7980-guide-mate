@@ -86,6 +86,10 @@ GUIDE_INSTRUCTION = (
     "earlier in this conversation, reuse that and do NOT ask again. Otherwise ask them "
     "once, in one short friendly line, which room or area they are in right now, and "
     "wait for their answer before calling guide_to_room. "
+    "The operator-update line above (if present) tells you which robot is coming, NOT "
+    "where the visitor is; never treat it as the visitor's current location. For each new "
+    "guide request, the visitor's current location must come from what THEY tell you in "
+    "the conversation; if you are not sure where they are right now, ask. "
     "Use the closest matching name from the room list below for BOTH arguments. If the "
     "tool reports that a name could not be found, say so and ask again with a name from "
     "that list; never tell the visitor a robot is coming when the tool did not say so. "
@@ -399,12 +403,13 @@ class DogAgent:
         # Moses awareness: a virtual session whose guide request the operator has
         # approved now knows which robot is on its way (see approve_guide_request).
         if not physical and guide_status and guide_status.get("guide_robot_id"):
-            who = user_name or "the visitor"
             parts.append(
                 f"Operator update: guide robot {guide_status['guide_robot_id']} has "
-                f"been dispatched to take {who} from {guide_status.get('guide_from_room')} "
-                f"to {guide_status.get('guide_to_room')}. If they ask about their guide, "
-                "tell them their robot is on its way."
+                f"been assigned to your visitor's guide request (destination "
+                f"{guide_status.get('guide_to_room')}). If they ask about their guide, "
+                f"tell them robot {guide_status['guide_robot_id']} is on its way to pick "
+                "them up. This line is NOT the visitor's current location: do not use it "
+                "as their from_room."
             )
         if history:
             lines = []
