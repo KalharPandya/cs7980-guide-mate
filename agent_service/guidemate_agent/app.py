@@ -27,6 +27,7 @@ from guidemate_agent.kb import KBManager
 from guidemate_agent.maps import fetch_map_meta, fetch_map_png
 from guidemate_agent.mqtt_link import RobotRegistry
 from guidemate_agent.observability import Observability
+from guidemate_agent.origin_gate import OriginGate
 from guidemate_agent.store import ConfigStore
 from guidemate_agent.ws_chat import CaptureRegistry, register as register_ws
 
@@ -139,6 +140,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+# L0a network-origin gate (NUwave allowlist). Ships dark: GUIDEMATE_ORIGIN_MODE
+# defaults to "off" (pass-through). Rollout: off -> log (measure egress IPs on
+# campus) -> enforce. See docs/agent-poc/nuwave-origin-gate.md.
+app.add_middleware(OriginGate)
 app.include_router(admin.router)
 register_ws(app)
 

@@ -33,6 +33,7 @@ Working documentation for the cs7980 TurtleBot 4 project.
 - [Echo UI mockups](agent-poc/echo-ui-mockups.html) - static mobile and admin screen mockups for the dog-agent POC
 - [Echo TurtleBot Pal UI mockups](agent-poc/echo-turtlebot-pal-ui-mockups.html) - cleaner full-screen mockups using the selected TurtleBot Pal direction
 - [GuideMate Echo design package](agent-poc/design-package/README.md) - logos, mascot assets, light/dark themes, tokens, and design-doc-ready brief
+- [NUwave origin gate (L0a)](agent-poc/nuwave-origin-gate.md) - restrict visitor routes to campus-network egress IPs; ships dark (off/log/enforce), rollout runbook + the on-campus measurements that gate enforcement
 
 ### Security workstream (WP A/B/C)
 - [Security workstream index](security/README.md) — design docs for WP A (ROS2/DDS LAN), WP B (cloud channel + broker), WP C (LLM safety guardrails); doc-language notes
